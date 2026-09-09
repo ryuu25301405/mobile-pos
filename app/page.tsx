@@ -10,50 +10,78 @@ const Scanner = dynamicImport(() => import("@/components/Scanner"), {
 
 export const dynamic = 'force-dynamic';
 
-interface ScannedProduct {
+interface ProductDetails {
+  styleCode: string;
+  styleName: string;
+  description: string;
+  color: string;
+  category: string;
+  department: string;
+  size: string;
+}
+
+interface ScannedProduct extends ProductDetails {
   id: string;
-  barcode: string;
-  name: string;
-  price: number;
   timestamp: string;
 }
 
 export default function Home() {
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState({ name: "", price: 0, stock: 0 });
+  const [product, setProduct] = useState<ProductDetails>({
+    styleCode: "",
+    styleName: "",
+    description: "",
+    color: "",
+    category: "",
+    department: "",
+    size: "",
+  });
   const [scannedItems, setScannedItems] = useState<ScannedProduct[]>([]);
   const [showList, setShowList] = useState(false);
 
   const handleScan = async (scannedBarcode: string) => {
-    // Pause scanner during DB fetch
     setIsPaused(true);
-    setBarcode(scannedBarcode);
     setLoading(true);
 
+    // Query Supabase for the scanned barcode/style code
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .eq("barcode", scannedBarcode)
+      .or(`style_code.eq.${scannedBarcode},barcode.eq.${scannedBarcode}`)
       .single();
 
     setLoading(false);
 
     if (error || !data) {
-      alert(`Barcode "${scannedBarcode}" not found in database.`);
-      setProduct({ name: "", price: 0, stock: 0 });
+      alert(`Style Code / Barcode "${scannedBarcode}" not found in database.`);
+      setProduct({
+        styleCode: scannedBarcode,
+        styleName: "",
+        description: "",
+        color: "",
+        category: "",
+        department: "",
+        size: "",
+      });
     } else {
-      const fetchedProduct = { name: data.name, price: data.price, stock: data.stock };
+      const fetchedProduct: ProductDetails = {
+        styleCode: data.style_code || data.barcode || scannedBarcode,
+        styleName: data.style_name || data.name || "",
+        description: data.description || "",
+        color: data.color || "",
+        category: data.category || "",
+        department: data.department || "",
+        size: data.size || "",
+      };
+
       setProduct(fetchedProduct);
 
-      // Add to scanned list automatically
+      // Add to scanned history list automatically
       const newItem: ScannedProduct = {
+        ...fetchedProduct,
         id: `${scannedBarcode}-${Date.now()}`,
-        barcode: scannedBarcode,
-        name: data.name,
-        price: Number(data.price),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       };
 
@@ -62,8 +90,15 @@ export default function Home() {
   };
 
   const handleScanNext = () => {
-    setBarcode("");
-    setProduct({ name: "", price: 0, stock: 0 });
+    setProduct({
+      styleCode: "",
+      styleName: "",
+      description: "",
+      color: "",
+      category: "",
+      department: "",
+      size: "",
+    });
     setIsPaused(false);
   };
 
@@ -76,8 +111,6 @@ export default function Home() {
       setScannedItems([]);
     }
   };
-
-  const totalPrice = scannedItems.reduce((acc, item) => acc + item.price, 0);
 
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-md md:max-w-xl mx-auto antialiased">
@@ -110,9 +143,9 @@ export default function Home() {
         </button>
       </header>
 
-      {/* Main Interactive Container */}
+      {/* Main Interactive Section */}
       <section className="space-y-4 my-auto py-2">
-        {/* Camera Scanner Window */}
+        {/* Scanner Viewport */}
         <div className="relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700/50 p-2 shadow-2xl backdrop-blur-sm">
           {scanning ? (
             <div className="relative rounded-xl overflow-hidden bg-black aspect-square max-w-full">
@@ -121,10 +154,10 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
                   <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Code Scanned & Added
+                    ✓ Code Scanned & Saved
                   </div>
                   <p className="text-xs text-slate-300 font-medium text-center">
-                    Tap below to continue scanning without re-opening camera
+                    Tap below to scan another item without opening camera
                   </p>
                   <button
                     onClick={handleScanNext}
@@ -165,90 +198,134 @@ export default function Home() {
         {/* Loading Indicator */}
         {loading && (
           <div className="flex items-center justify-center space-x-2 py-1 text-blue-400 font-medium animate-pulse text-xs">
-            <span>Querying database...</span>
+            <span>Fetching item attributes...</span>
           </div>
         )}
 
-        {/* Current Active Product Details */}
+        {/* Product Details Card with New Fields */}
         <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Latest Scanned Item</span>
-            {barcode && (
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
+            {product.styleCode && (
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">
                 Saved to List
               </span>
             )}
           </div>
 
+          {/* Row 1: Style Code & Style Name */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Barcode ID
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Style Code (Barcode)
               </label>
               <input
                 type="text"
-                value={barcode}
+                value={product.styleCode}
                 readOnly
                 placeholder="---"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-bold text-sm focus:outline-none placeholder:text-slate-600"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-bold text-xs focus:outline-none placeholder:text-slate-600 truncate"
               />
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Product Name
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Style Name
               </label>
               <input
                 type="text"
-                value={product.name}
+                value={product.styleName}
                 readOnly
                 placeholder="---"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold text-sm focus:outline-none placeholder:text-slate-600 truncate"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold text-xs focus:outline-none placeholder:text-slate-600 truncate"
               />
             </div>
           </div>
 
+          {/* Row 2: Description */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Description
+            </label>
+            <input
+              type="text"
+              value={product.description}
+              readOnly
+              placeholder="---"
+              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-medium text-xs focus:outline-none placeholder:text-slate-600 truncate"
+            />
+          </div>
+
+          {/* Row 3: Color & Size */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Price
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-slate-500 font-bold text-sm">$</span>
-                <input
-                  type="text"
-                  value={product.price ? product.price.toFixed(2) : "0.00"}
-                  readOnly
-                  className="w-full pl-7 pr-2 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Stock Left
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Color
               </label>
               <input
                 type="text"
-                value={product.stock || 0}
+                value={product.color}
                 readOnly
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm focus:outline-none text-center"
+                placeholder="---"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold text-xs focus:outline-none placeholder:text-slate-600 truncate"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Size
+              </label>
+              <input
+                type="text"
+                value={product.size}
+                readOnly
+                placeholder="---"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none placeholder:text-slate-600 truncate"
               />
             </div>
           </div>
 
-          {barcode && (
+          {/* Row 4: Department & Category */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Department
+              </label>
+              <input
+                type="text"
+                value={product.department}
+                readOnly
+                placeholder="---"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-medium text-xs focus:outline-none placeholder:text-slate-600 truncate"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Category
+              </label>
+              <input
+                type="text"
+                value={product.category}
+                readOnly
+                placeholder="---"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-medium text-xs focus:outline-none placeholder:text-slate-600 truncate"
+              />
+            </div>
+          </div>
+
+          {product.styleCode && (
             <button
               type="button"
               onClick={handleScanNext}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition active:scale-[0.98] text-xs flex items-center justify-center space-x-2"
+              className="w-full mt-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition active:scale-[0.98] text-xs flex items-center justify-center space-x-2"
             >
               <span>📷 Scan Next Item</span>
             </button>
           )}
         </div>
 
-        {/* Scanned Items Drawer / Card View */}
+        {/* Scanned Items History Drawer */}
         {showList && (
           <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-2xl backdrop-blur-md space-y-3">
             <div className="flex items-center justify-between border-b border-slate-700 pb-2">
@@ -271,22 +348,17 @@ export default function Home() {
                 No items scanned yet. Open camera and scan a barcode!
               </p>
             ) : (
-              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                 {scannedItems.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-700/60 text-xs"
+                    className="p-3 rounded-xl bg-slate-900 border border-slate-700/60 text-xs space-y-1.5"
                   >
-                    <div className="space-y-0.5 max-w-[65%]">
-                      <p className="font-bold text-white truncate">{item.name}</p>
-                      <p className="font-mono text-[10px] text-emerald-400">{item.barcode}</p>
-                      <p className="text-[9px] text-slate-500">{item.timestamp}</p>
-                    </div>
-
-                    <div className="flex items-center space-x-3">
-                      <span className="font-bold text-white text-sm">
-                        ${item.price.toFixed(2)}
-                      </span>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-bold text-white text-xs">{item.styleName || "Unnamed Item"}</p>
+                        <p className="font-mono text-[10px] text-emerald-400">{item.styleCode}</p>
+                      </div>
                       <button
                         onClick={() => handleRemoveItem(item.id)}
                         className="text-slate-500 hover:text-red-400 p-1"
@@ -295,18 +367,35 @@ export default function Home() {
                         ✕
                       </button>
                     </div>
+
+                    {item.description && (
+                      <p className="text-[11px] text-slate-300 line-clamp-1">{item.description}</p>
+                    )}
+
+                    <div className="flex flex-wrap gap-1.5 pt-1 text-[10px]">
+                      {item.color && (
+                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                          Color: {item.color}
+                        </span>
+                      )}
+                      {item.size && (
+                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                          Size: {item.size}
+                        </span>
+                      )}
+                      {item.department && (
+                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                          Dept: {item.department}
+                        </span>
+                      )}
+                      {item.category && (
+                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                          Cat: {item.category}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
-              </div>
-            )}
-
-            {/* List Footer Total */}
-            {scannedItems.length > 0 && (
-              <div className="border-t border-slate-700 pt-3 flex items-center justify-between text-sm">
-                <span className="font-semibold text-slate-400">Total Scanned Value:</span>
-                <span className="font-black text-emerald-400 text-base">
-                  ${totalPrice.toFixed(2)}
-                </span>
               </div>
             )}
           </div>
@@ -315,7 +404,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="text-center py-2 text-[11px] text-slate-500">
-        Cross-Platform Barcode Scanner POS
+        Retail POS Scanner Module
       </footer>
     </main>
   );
