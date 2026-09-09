@@ -54,22 +54,46 @@ export default function Home() {
 
       {loading && <p className="text-center text-gray-500">Fetching item...</p>}
 
-      <form className="bg-white p-4 rounded-xl shadow space-y-3">
-        <div>
-          <label className="text-xs font-semibold text-gray-500">Barcode ID</label>
-          <input type="text" value={barcode} readOnly className="w-full p-2 border rounded bg-gray-50" />
-        </div>
+     <form className="bg-white p-4 rounded-xl shadow-md space-y-4">
+  <div>
+    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+      Barcode ID
+    </label>
+    <input
+      type="text"
+      value={barcode}
+      readOnly
+      placeholder="Scanned barcode will appear here"
+      className="w-full p-3 border border-gray-300 rounded-lg bg-white text-black font-semibold text-base focus:outline-none"
+    />
+  </div>
 
-        <div>
-          <label className="text-xs font-semibold text-gray-500">Product Name</label>
-          <input type="text" value={product.name} readOnly className="w-full p-2 border rounded bg-gray-50" />
-        </div>
+  <div>
+    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+      Product Name
+    </label>
+    <input
+      type="text"
+      value={product.name}
+      readOnly
+      placeholder="Product name"
+      className="w-full p-3 border border-gray-300 rounded-lg bg-white text-black font-semibold text-base focus:outline-none"
+    />
+  </div>
 
-        <div>
-          <label className="text-xs font-semibold text-gray-500">Price ($)</label>
-          <input type="number" value={product.price} readOnly className="w-full p-2 border rounded bg-gray-50" />
-        </div>
-      </form>
+  <div>
+    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+      Price ($)
+    </label>
+    <input
+      type="number"
+      value={product.price || ""}
+      readOnly
+      placeholder="0.00"
+      className="w-full p-3 border border-gray-300 rounded-lg bg-white text-black font-semibold text-base focus:outline-none"
+    />
+  </div>
+</form>
     </main>
   );
 }
