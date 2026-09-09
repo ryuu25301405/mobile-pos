@@ -45,10 +45,10 @@ export default function Home() {
     setIsPaused(true);
     setLoading(true);
 
-    // Clean whitespace and hidden characters from raw scanner output
+    // Clean raw scan string (removes whitespace and line breaks)
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
-    // Query Supabase for style_code using case-insensitive matching
+    // Query Supabase for product matching style_code
     const { data, error } = await supabase
       .from("products")
       .select("*")
@@ -81,7 +81,7 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      // Save record to local scanned history list
+      // 1. Update UI state for history list
       const newItem: ScannedProduct = {
         ...fetchedProduct,
         id: `${cleanCode}-${Date.now()}`,
@@ -91,8 +91,24 @@ export default function Home() {
           second: "2-digit",
         }),
       };
-
       setScannedItems((prev) => [newItem, ...prev]);
+
+      // 2. Save scan log directly to Supabase database
+      const { error: logError } = await supabase.from("scanned_logs").insert([
+        {
+          style_code: fetchedProduct.styleCode,
+          style_name: fetchedProduct.styleName,
+          description: fetchedProduct.description,
+          color: fetchedProduct.color,
+          category: fetchedProduct.category,
+          department: fetchedProduct.department,
+          size: fetchedProduct.size,
+        },
+      ]);
+
+      if (logError) {
+        console.error("Failed to persist scan to database:", logError.message);
+      }
     }
   };
 
@@ -161,10 +177,10 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
                   <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Item Scanned & Saved
+                    ✓ Saved to Supabase
                   </div>
                   <p className="text-xs text-slate-300 font-medium text-center">
-                    Tap below to scan another item without closing the camera
+                    Tap below to scan another item without closing camera
                   </p>
                   <button
                     onClick={handleScanNext}
@@ -205,7 +221,7 @@ export default function Home() {
         {/* Querying Indicator */}
         {loading && (
           <div className="flex items-center justify-center space-x-2 py-1 text-blue-400 font-medium animate-pulse text-xs">
-            <span>Fetching item attributes...</span>
+            <span>Saving scan record...</span>
           </div>
         )}
 
@@ -215,7 +231,7 @@ export default function Home() {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
             {product.styleCode && (
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">
-                Saved to List
+                Saved
               </span>
             )}
           </div>
