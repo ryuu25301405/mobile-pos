@@ -45,19 +45,22 @@ export default function Home() {
     setIsPaused(true);
     setLoading(true);
 
-    // Query Supabase for the scanned barcode/style code
+    // Clean whitespace and hidden characters from raw scanner output
+    const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
+
+    // Query Supabase for style_code using case-insensitive matching
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .or(`style_code.eq.${scannedBarcode},barcode.eq.${scannedBarcode}`)
+      .ilike("style_code", cleanCode)
       .single();
 
     setLoading(false);
 
     if (error || !data) {
-      alert(`Style Code / Barcode "${scannedBarcode}" not found in database.`);
+      alert(`Style Code "${cleanCode}" not found in database.`);
       setProduct({
-        styleCode: scannedBarcode,
+        styleCode: cleanCode,
         styleName: "",
         description: "",
         color: "",
@@ -67,8 +70,8 @@ export default function Home() {
       });
     } else {
       const fetchedProduct: ProductDetails = {
-        styleCode: data.style_code || data.barcode || scannedBarcode,
-        styleName: data.style_name || data.name || "",
+        styleCode: data.style_code || cleanCode,
+        styleName: data.style_name || "",
         description: data.description || "",
         color: data.color || "",
         category: data.category || "",
@@ -78,11 +81,15 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      // Add to scanned history list automatically
+      // Save record to local scanned history list
       const newItem: ScannedProduct = {
         ...fetchedProduct,
-        id: `${scannedBarcode}-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        id: `${cleanCode}-${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
       };
 
       setScannedItems((prev) => [newItem, ...prev]);
@@ -107,14 +114,14 @@ export default function Home() {
   };
 
   const handleClearAll = () => {
-    if (confirm("Are you sure you want to clear the scanned list?")) {
+    if (confirm("Are you sure you want to clear the scanned history?")) {
       setScannedItems([]);
     }
   };
 
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-md md:max-w-xl mx-auto antialiased">
-      {/* Header */}
+      {/* Top Bar Header */}
       <header className="flex items-center justify-between py-2 border-b border-slate-800 pb-3">
         <div>
           <div className="inline-flex items-center space-x-2 bg-slate-800 border border-slate-700/60 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-blue-400">
@@ -126,7 +133,7 @@ export default function Home() {
           </h1>
         </div>
 
-        {/* Scanned List Toggle Button */}
+        {/* History List Toggle Button */}
         <button
           onClick={() => setShowList(!showList)}
           className="relative bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-2 transition active:scale-95 shadow-md"
@@ -154,10 +161,10 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
                   <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Code Scanned & Saved
+                    ✓ Item Scanned & Saved
                   </div>
                   <p className="text-xs text-slate-300 font-medium text-center">
-                    Tap below to scan another item without opening camera
+                    Tap below to scan another item without closing the camera
                   </p>
                   <button
                     onClick={handleScanNext}
@@ -195,14 +202,14 @@ export default function Home() {
           )}
         </div>
 
-        {/* Loading Indicator */}
+        {/* Querying Indicator */}
         {loading && (
           <div className="flex items-center justify-center space-x-2 py-1 text-blue-400 font-medium animate-pulse text-xs">
             <span>Fetching item attributes...</span>
           </div>
         )}
 
-        {/* Product Details Card with New Fields */}
+        {/* Product Details Form */}
         <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
