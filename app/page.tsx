@@ -47,7 +47,7 @@ export default function Home() {
     setIsPaused(true);
     setLoading(true);
 
-    // Clean raw scan string (removes whitespace and line breaks)
+    // Clean raw scan string
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
     // Query Supabase for product matching style_code
@@ -80,12 +80,12 @@ export default function Home() {
         category: data.category || "",
         department: data.department || "",
         size: data.size || "",
-        quantity: 1, // Default quantity set to 1
+        quantity: 1,
       };
 
       setProduct(fetchedProduct);
 
-      // Generate current ISO timestamp and PST formatted view string
+      // Current timestamps
       const now = new Date();
       const currentIsoTime = now.toISOString();
       const phFormattedTimestamp = now.toLocaleString("en-PH", {
@@ -94,15 +94,31 @@ export default function Home() {
         timeStyle: "medium",
       });
 
-      // 1. Update UI state for local history list
-      const newItem: ScannedProduct = {
-        ...fetchedProduct,
-        id: `${cleanCode}-${Date.now()}`,
-        timestamp: phFormattedTimestamp,
-      };
-      setScannedItems((prev) => [newItem, ...prev]);
+      // 1. Update UI state: Sum quantities if item already exists in the list
+      setScannedItems((prev) => {
+        const existingIndex = prev.findIndex((item) => item.styleCode === cleanCode);
 
-      // 2. Save scan log directly to Supabase database including quantity: 1
+        if (existingIndex > -1) {
+          const updatedList = [...prev];
+          const existingItem = updatedList[existingIndex];
+
+          updatedList[existingIndex] = {
+            ...existingItem,
+            quantity: existingItem.quantity + 1,
+            timestamp: phFormattedTimestamp,
+          };
+          return updatedList;
+        } else {
+          const newItem: ScannedProduct = {
+            ...fetchedProduct,
+            id: `${cleanCode}-${Date.now()}`,
+            timestamp: phFormattedTimestamp,
+          };
+          return [newItem, ...prev];
+        }
+      });
+
+      // 2. Save individual scan log record to Supabase
       const { error: logError } = await supabase.from("scanned_logs").insert([
         {
           style_code: fetchedProduct.styleCode,
@@ -112,7 +128,7 @@ export default function Home() {
           category: fetchedProduct.category,
           department: fetchedProduct.department,
           size: fetchedProduct.size,
-          quantity: fetchedProduct.quantity,
+          quantity: 1,
           scanned_at: currentIsoTime,
         },
       ]);
@@ -147,6 +163,9 @@ export default function Home() {
     }
   };
 
+  // Calculate total count of all combined items
+  const totalItemsCount = scannedItems.reduce((acc, item) => acc + item.quantity, 0);
+
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-md md:max-w-xl mx-auto antialiased">
       {/* Top Bar Header */}
@@ -172,7 +191,7 @@ export default function Home() {
           <span>List</span>
           {scannedItems.length > 0 && (
             <span className="bg-emerald-500 text-slate-950 font-black px-2 py-0.5 rounded-full text-[10px]">
-              {scannedItems.length}
+              {totalItemsCount}
             </span>
           )}
         </button>
@@ -189,7 +208,7 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
                   <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Saved to Supabase (Qty: 1)
+                    ✓ Saved to Supabase
                   </div>
                   <p className="text-xs text-slate-300 font-medium text-center">
                     Tap below to scan another item without closing camera
@@ -233,7 +252,7 @@ export default function Home() {
         {/* Querying Indicator */}
         {loading && (
           <div className="flex items-center justify-center space-x-2 py-1 text-blue-400 font-medium animate-pulse text-xs">
-            <span>Saving scan record with quantity 1...</span>
+            <span>Processing scan...</span>
           </div>
         )}
 
@@ -243,7 +262,7 @@ export default function Home() {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
             {product.styleCode && (
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">
-                Saved (Qty: 1)
+                Saved
               </span>
             )}
           </div>
@@ -291,7 +310,7 @@ export default function Home() {
             />
           </div>
 
-          {/* Row 3: Color, Size & Quantity (3 columns) */}
+          {/* Row 3: Color, Size & Quantity */}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
@@ -372,13 +391,15 @@ export default function Home() {
           )}
         </div>
 
-        {/* Scanned Items History Drawer */}
+        {/* Aggregated History Drawer */}
         {showList && (
           <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-2xl backdrop-blur-md space-y-3">
             <div className="flex items-center justify-between border-b border-slate-700 pb-2">
               <h2 className="text-sm font-bold text-white flex items-center space-x-2">
                 <span>Scanned History</span>
-                <span className="text-xs font-mono text-slate-400">({scannedItems.length})</span>
+                <span className="text-xs font-mono text-slate-400">
+                  ({scannedItems.length} unique | {totalItemsCount} total)
+                </span>
               </h2>
               {scannedItems.length > 0 && (
                 <button
@@ -425,7 +446,7 @@ export default function Home() {
                     )}
 
                     <div className="flex flex-wrap gap-1.5 pt-1 text-[10px]">
-                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
+                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-md font-extrabold text-xs">
                         Qty: {item.quantity}
                       </span>
                       {item.color && (
