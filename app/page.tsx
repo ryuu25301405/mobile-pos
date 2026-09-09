@@ -81,21 +81,26 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      const currentIsoTime = new Date().toISOString();
-      const formattedTimestamp = new Date().toLocaleString([], {
+      // Generate current ISO timestamp
+      const now = new Date();
+      const currentIsoTime = now.toISOString();
+
+      // Explicitly format date and time in Philippine Standard Time (PST - Asia/Manila)
+      const phFormattedTimestamp = now.toLocaleString("en-PH", {
+        timeZone: "Asia/Manila",
         dateStyle: "short",
         timeStyle: "medium",
       });
 
-      // 1. Update UI state for history list with timestamp
+      // 1. Update UI state for history list with PH timestamp
       const newItem: ScannedProduct = {
         ...fetchedProduct,
         id: `${cleanCode}-${Date.now()}`,
-        timestamp: formattedTimestamp,
+        timestamp: phFormattedTimestamp,
       };
       setScannedItems((prev) => [newItem, ...prev]);
 
-      // 2. Save scan log directly to Supabase database with explicit date and time
+      // 2. Save scan log directly to Supabase database
       const { error: logError } = await supabase.from("scanned_logs").insert([
         {
           style_code: fetchedProduct.styleCode,
@@ -145,7 +150,7 @@ export default function Home() {
         <div>
           <div className="inline-flex items-center space-x-2 bg-slate-800 border border-slate-700/60 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-blue-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Terminal Active</span>
+            <span>Terminal Active (PST)</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mt-1">
             Mobile POS
