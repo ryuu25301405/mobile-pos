@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Scanner from "@/components/Scanner";
+export const dynamic = 'force-dynamic';
 
 export default function Home() {
   const [scanning, setScanning] = useState(false);
