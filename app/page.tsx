@@ -4,7 +4,7 @@ import { useState } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 
-// Prevent scanner from running on server during build
+// Disable server-side rendering for the camera component
 const Scanner = dynamicImport(() => import("@/components/Scanner"), {
   ssr: false,
 });
