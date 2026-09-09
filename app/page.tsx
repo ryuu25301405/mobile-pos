@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
+import { triggerScanFeedback } from "@/lib/feedback";
 
 const Scanner = dynamicImport(() => import("@/components/Scanner"), {
   ssr: false,
@@ -47,7 +48,10 @@ export default function Home() {
     setIsPaused(true);
     setLoading(true);
 
-    // Clean raw scan string
+    // Trigger audio beep and haptic feedback
+    triggerScanFeedback();
+
+    // Clean raw scan string (removes whitespace and line breaks)
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
     // Query Supabase for product matching style_code
@@ -85,7 +89,7 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      // Current timestamps
+      // Current ISO timestamp and PST formatted view string
       const now = new Date();
       const currentIsoTime = now.toISOString();
       const phFormattedTimestamp = now.toLocaleString("en-PH", {
@@ -94,7 +98,7 @@ export default function Home() {
         timeStyle: "medium",
       });
 
-      // 1. Update UI state: Sum quantities if item already exists in the list
+      // 1. Update UI state: Aggregate duplicate barcodes and sum quantity
       setScannedItems((prev) => {
         const existingIndex = prev.findIndex((item) => item.styleCode === cleanCode);
 
@@ -163,7 +167,7 @@ export default function Home() {
     }
   };
 
-  // Calculate total count of all combined items
+  // Calculate overall item quantity count
   const totalItemsCount = scannedItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
