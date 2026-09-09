@@ -1,8 +1,16 @@
-"use client";
+'use client';
+
 import { useState } from "react";
+import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import Scanner from "@/components/Scanner";
+
+// Prevent scanner from running on server during build
+const Scanner = dynamicImport(() => import("@/components/Scanner"), {
+  ssr: false,
+});
+
 export const dynamic = 'force-dynamic';
+
 
 export default function Home() {
   const [scanning, setScanning] = useState(false);
