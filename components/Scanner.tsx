@@ -1,27 +1,35 @@
-"use client";
-import { useEffect } from "react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+'use client';
 
-export default function Scanner({ onScan }: { onScan: (code: string) => void }) {
+import { useEffect } from 'react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
+
+interface ScannerProps {
+  onScan: (decodedText: string) => void;
+}
+
+export default function Scanner({ onScan }: ScannerProps) {
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const scanner = new Html5QrcodeScanner(
-      "reader",
+      'reader',
       { fps: 10, qrbox: { width: 250, height: 250 } },
-      false
+      /* verbose= */ false
     );
 
     scanner.render(
-      (text) => {
-        onScan(text);
-        scanner.clear();
+      (decodedText) => {
+        onScan(decodedText);
       },
-      () => {}
+      (errorMessage) => {
+        // Ignore scan errors while searching
+      }
     );
 
     return () => {
-      scanner.clear().catch(() => {});
+      scanner.clear().catch((error) => console.error('Failed to clear scanner', error));
     };
   }, [onScan]);
 
-  return <div id="reader" className="w-full max-w-xs mx-auto my-2 overflow-hidden rounded-lg"></div>;
+  return <div id="reader" className="w-full max-w-md mx-auto"></div>;
 }

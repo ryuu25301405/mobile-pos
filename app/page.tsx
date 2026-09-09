@@ -4,13 +4,12 @@ import { useState } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 
-// Disable server-side rendering for the camera component
+// Dynamically import Scanner with SSR disabled
 const Scanner = dynamicImport(() => import("@/components/Scanner"), {
   ssr: false,
 });
 
 export const dynamic = 'force-dynamic';
-
 
 export default function Home() {
   const [scanning, setScanning] = useState(false);
