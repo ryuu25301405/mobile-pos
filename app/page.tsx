@@ -81,19 +81,21 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      // 1. Update UI state for history list
+      const currentIsoTime = new Date().toISOString();
+      const formattedTimestamp = new Date().toLocaleString([], {
+        dateStyle: "short",
+        timeStyle: "medium",
+      });
+
+      // 1. Update UI state for history list with timestamp
       const newItem: ScannedProduct = {
         ...fetchedProduct,
         id: `${cleanCode}-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
+        timestamp: formattedTimestamp,
       };
       setScannedItems((prev) => [newItem, ...prev]);
 
-      // 2. Save scan log directly to Supabase database
+      // 2. Save scan log directly to Supabase database with explicit date and time
       const { error: logError } = await supabase.from("scanned_logs").insert([
         {
           style_code: fetchedProduct.styleCode,
@@ -103,6 +105,7 @@ export default function Home() {
           category: fetchedProduct.category,
           department: fetchedProduct.department,
           size: fetchedProduct.size,
+          scanned_at: currentIsoTime,
         },
       ]);
 
@@ -382,13 +385,18 @@ export default function Home() {
                         <p className="font-bold text-white text-xs">{item.styleName || "Unnamed Item"}</p>
                         <p className="font-mono text-[10px] text-emerald-400">{item.styleCode}</p>
                       </div>
-                      <button
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="text-slate-500 hover:text-red-400 p-1"
-                        title="Remove item"
-                      >
-                        ✕
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {item.timestamp}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="text-slate-500 hover:text-red-400 p-1"
+                          title="Remove item"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
 
                     {item.description && (
