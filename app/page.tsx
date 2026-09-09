@@ -12,13 +12,15 @@ export const dynamic = 'force-dynamic';
 
 export default function Home() {
   const [scanning, setScanning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
   const [product, setProduct] = useState({ name: "", price: 0, stock: 0 });
 
   const handleScan = async (scannedBarcode: string) => {
+    // Pause scanning immediately to prevent duplicate triggers
+    setIsPaused(true);
     setBarcode(scannedBarcode);
-    setScanning(false);
     setLoading(true);
 
     const { data, error } = await supabase
@@ -37,13 +39,20 @@ export default function Home() {
     }
   };
 
+  const handleScanNext = () => {
+    // Clear product fields and resume scanning
+    setBarcode("");
+    setProduct({ name: "", price: 0, stock: 0 });
+    setIsPaused(false);
+  };
+
   return (
-    <main className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 sm:p-6 md:p-8 max-w-md md:max-w-xl mx-auto antialiased">
+    <main className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-md md:max-w-xl mx-auto antialiased">
       {/* Header */}
       <header className="text-center space-y-1 py-2">
-        <div className="inline-flex items-center space-x-2 bg-slate-800/80 border border-slate-700/60 px-3 py-1 rounded-full text-xs font-semibold text-blue-400">
+        <div className="inline-flex items-center space-x-2 bg-slate-800 border border-slate-700/60 px-3 py-1 rounded-full text-xs font-semibold text-blue-400">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>POS Terminal Online</span>
+          <span>POS Terminal Active</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
           Mobile POS
@@ -56,17 +65,42 @@ export default function Home() {
         <div className="relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700/50 p-2 shadow-2xl backdrop-blur-sm">
           {scanning ? (
             <div className="relative rounded-xl overflow-hidden bg-black aspect-square max-w-full">
-              <Scanner onScan={handleScan} />
+              <Scanner onScan={handleScan} isPaused={isPaused} />
+              
+              {/* Overlay status when scanner is paused after a scan */}
+              {isPaused && (
+                <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
+                  <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
+                    ✓ Code Captured
+                  </div>
+                  <p className="text-sm text-slate-300 font-medium text-center">
+                    Item fetched below
+                  </p>
+                  <button
+                    onClick={handleScanNext}
+                    className="w-full py-3 px-5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition text-sm"
+                  >
+                    📷 Scan Next Item
+                  </button>
+                </div>
+              )}
+
               <button
-                onClick={() => setScanning(false)}
-                className="absolute top-3 right-3 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md shadow-lg transition active:scale-95 text-xs font-bold px-3"
+                onClick={() => {
+                  setScanning(false);
+                  setIsPaused(false);
+                }}
+                className="absolute top-3 right-3 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md shadow-lg transition active:scale-95 text-xs font-bold px-3 z-10"
               >
-                ✕ Cancel
+                ✕ Close Camera
               </button>
             </div>
           ) : (
             <button
-              onClick={() => setScanning(true)}
+              onClick={() => {
+                setScanning(true);
+                setIsPaused(false);
+              }}
               className="w-full py-5 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition flex items-center justify-center space-x-3 text-base sm:text-lg"
             >
               <svg
@@ -88,40 +122,20 @@ export default function Home() {
                   d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"
                 />
               </svg>
-              <span>Scan Barcode / QR</span>
+              <span>Open Camera Scanner</span>
             </button>
           )}
         </div>
 
-        {/* Loading Indicator */}
+        {/* Loading State */}
         {loading && (
-          <div className="flex items-center justify-center space-x-2 py-3 text-blue-400 font-medium animate-pulse">
-            <svg
-              className="animate-spin h-5 w-5 text-blue-400"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+          <div className="flex items-center justify-center space-x-2 py-2 text-blue-400 font-medium animate-pulse text-sm">
             <span>Fetching item details...</span>
           </div>
         )}
 
-        {/* Scanned Data Display Card */}
-        <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-xl space-y-4">
+        {/* Product Scanned Card */}
+        <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
               Barcode ID
@@ -131,7 +145,7 @@ export default function Home() {
               value={barcode}
               readOnly
               placeholder="No scan detected"
-              className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-bold text-base sm:text-lg focus:outline-none placeholder:text-slate-600"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-bold text-base focus:outline-none placeholder:text-slate-600"
             />
           </div>
 
@@ -144,7 +158,7 @@ export default function Home() {
               value={product.name}
               readOnly
               placeholder="Waiting for scan..."
-              className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-semibold text-base sm:text-lg focus:outline-none placeholder:text-slate-600"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-semibold text-base focus:outline-none placeholder:text-slate-600"
             />
           </div>
 
@@ -154,12 +168,12 @@ export default function Home() {
                 Price
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-3.5 text-slate-500 font-bold">$</span>
+                <span className="absolute left-3 top-2.5 text-slate-500 font-bold">$</span>
                 <input
                   type="text"
                   value={product.price ? product.price.toFixed(2) : "0.00"}
                   readOnly
-                  className="w-full pl-7 pr-3 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base sm:text-lg focus:outline-none"
+                  className="w-full pl-7 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base focus:outline-none"
                 />
               </div>
             </div>
@@ -172,16 +186,27 @@ export default function Home() {
                 type="text"
                 value={product.stock || 0}
                 readOnly
-                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base sm:text-lg focus:outline-none text-center"
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base focus:outline-none text-center"
               />
             </div>
           </div>
+
+          {/* Quick Action Button to scan next item without prompt */}
+          {barcode && (
+            <button
+              type="button"
+              onClick={handleScanNext}
+              className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition active:scale-[0.98] text-sm flex items-center justify-center space-x-2"
+            >
+              <span>📷 Scan Next Item</span>
+            </button>
+          )}
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="text-center py-3 text-xs text-slate-500">
-        Optimized for iOS & Android Safari / Chrome
+      <footer className="text-center py-2 text-xs text-slate-500">
+        Continuous Scan Mode Active
       </footer>
     </main>
   );

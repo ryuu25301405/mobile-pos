@@ -4,23 +4,25 @@ import { useEffect, useRef } from 'react';
 
 interface ScannerProps {
   onScan: (decodedText: string) => void;
+  isPaused: boolean;
 }
 
-export default function Scanner({ onScan }: ScannerProps) {
+export default function Scanner({ onScan, isPaused }: ScannerProps) {
   const isMounted = useRef(true);
+  const scannerRef = useRef<any>(null);
 
   useEffect(() => {
     isMounted.current = true;
-    let html5QrCode: any = null;
 
     import('html5-qrcode').then(({ Html5Qrcode }) => {
       if (!isMounted.current) return;
 
-      html5QrCode = new Html5Qrcode('reader');
+      const html5QrCode = new Html5Qrcode('reader');
+      scannerRef.current = html5QrCode;
 
       html5QrCode
         .start(
-          { facingMode: 'environment' }, // Uses back camera
+          { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText: string) => {
             onScan(decodedText);
@@ -28,17 +30,35 @@ export default function Scanner({ onScan }: ScannerProps) {
           () => {}
         )
         .catch((err: any) => {
-          console.error('Camera access failed:', err);
+          console.error('Camera startup error:', err);
         });
     });
 
     return () => {
       isMounted.current = false;
-      if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch((err: any) => console.error(err));
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        scannerRef.current
+          .stop()
+          .then(() => scannerRef.current.clear())
+          .catch((err: any) => console.error(err));
       }
     };
-  }, [onScan]);
+  }, []);
+
+  // Handle pausing/resuming scanner without re-requesting permissions
+  useEffect(() => {
+    if (!scannerRef.current) return;
+
+    if (isPaused) {
+      scannerRef.current.pause(true);
+    } else {
+      try {
+        scannerRef.current.resume();
+      } catch (e) {
+        // Handle case where scanner wasn't fully running yet
+      }
+    }
+  }, [isPaused]);
 
   return <div id="reader" className="w-full max-w-md mx-auto overflow-hidden rounded-lg"></div>;
 }
