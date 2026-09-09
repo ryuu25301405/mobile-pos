@@ -18,6 +18,7 @@ interface ProductDetails {
   category: string;
   department: string;
   size: string;
+  quantity: number;
 }
 
 interface ScannedProduct extends ProductDetails {
@@ -37,6 +38,7 @@ export default function Home() {
     category: "",
     department: "",
     size: "",
+    quantity: 1,
   });
   const [scannedItems, setScannedItems] = useState<ScannedProduct[]>([]);
   const [showList, setShowList] = useState(false);
@@ -67,6 +69,7 @@ export default function Home() {
         category: "",
         department: "",
         size: "",
+        quantity: 1,
       });
     } else {
       const fetchedProduct: ProductDetails = {
@@ -77,22 +80,21 @@ export default function Home() {
         category: data.category || "",
         department: data.department || "",
         size: data.size || "",
+        quantity: 1, // Default quantity set to 1
       };
 
       setProduct(fetchedProduct);
 
-      // Generate current ISO timestamp
+      // Generate current ISO timestamp and PST formatted view string
       const now = new Date();
       const currentIsoTime = now.toISOString();
-
-      // Explicitly format date and time in Philippine Standard Time (PST - Asia/Manila)
       const phFormattedTimestamp = now.toLocaleString("en-PH", {
         timeZone: "Asia/Manila",
         dateStyle: "short",
         timeStyle: "medium",
       });
 
-      // 1. Update UI state for history list with PH timestamp
+      // 1. Update UI state for local history list
       const newItem: ScannedProduct = {
         ...fetchedProduct,
         id: `${cleanCode}-${Date.now()}`,
@@ -100,7 +102,7 @@ export default function Home() {
       };
       setScannedItems((prev) => [newItem, ...prev]);
 
-      // 2. Save scan log directly to Supabase database
+      // 2. Save scan log directly to Supabase database including quantity: 1
       const { error: logError } = await supabase.from("scanned_logs").insert([
         {
           style_code: fetchedProduct.styleCode,
@@ -110,6 +112,7 @@ export default function Home() {
           category: fetchedProduct.category,
           department: fetchedProduct.department,
           size: fetchedProduct.size,
+          quantity: fetchedProduct.quantity,
           scanned_at: currentIsoTime,
         },
       ]);
@@ -129,6 +132,7 @@ export default function Home() {
       category: "",
       department: "",
       size: "",
+      quantity: 1,
     });
     setIsPaused(false);
   };
@@ -185,7 +189,7 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
                   <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Saved to Supabase
+                    ✓ Saved to Supabase (Qty: 1)
                   </div>
                   <p className="text-xs text-slate-300 font-medium text-center">
                     Tap below to scan another item without closing camera
@@ -229,7 +233,7 @@ export default function Home() {
         {/* Querying Indicator */}
         {loading && (
           <div className="flex items-center justify-center space-x-2 py-1 text-blue-400 font-medium animate-pulse text-xs">
-            <span>Saving scan record...</span>
+            <span>Saving scan record with quantity 1...</span>
           </div>
         )}
 
@@ -239,7 +243,7 @@ export default function Home() {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
             {product.styleCode && (
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">
-                Saved
+                Saved (Qty: 1)
               </span>
             )}
           </div>
@@ -287,8 +291,8 @@ export default function Home() {
             />
           </div>
 
-          {/* Row 3: Color & Size */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Row 3: Color, Size & Quantity (3 columns) */}
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                 Color
@@ -312,6 +316,18 @@ export default function Home() {
                 readOnly
                 placeholder="---"
                 className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none placeholder:text-slate-600 truncate"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Quantity
+              </label>
+              <input
+                type="number"
+                value={product.quantity}
+                disabled
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-emerald-400 font-bold text-xs focus:outline-none cursor-not-allowed opacity-80"
               />
             </div>
           </div>
@@ -409,6 +425,9 @@ export default function Home() {
                     )}
 
                     <div className="flex flex-wrap gap-1.5 pt-1 text-[10px]">
+                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
+                        Qty: {item.quantity}
+                      </span>
                       {item.color && (
                         <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
                           Color: {item.color}
