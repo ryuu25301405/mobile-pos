@@ -13,23 +13,24 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+// Updated interface based on your database schema
 interface SalesLog {
   id: string;
-  sku: string;
-  style_code: string;
-  style_name: string;
-  description: string;
-  color: string;
-  size: string;
-  category: string;
-  department: string;
-  price: number;
-  quantity?: number;
-  store_name?: string;
-  created_at: string;
+  sku: string | null;
+  style_code: string | null;
+  style_name: string | null;
+  description: string | null;
+  color: string | null;
+  size: string | null;
+  category: string | null;
+  department: string | null;
+  price: number | null;
+  quantity?: number | null;
+  store?: string | null; // Matched to 'store'
+  scanned_at: string;     // Matched to 'scanned_at'
 }
 
-// FIX 1: Initialize Supabase client OUTSIDE component body to prevent infinite re-renders
+// Initialized outside component body to avoid re-creation on render
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -54,8 +55,8 @@ export default function DailySalesReportPage() {
     async function loadStores() {
       const { data, error } = await supabase
         .from("scanned_logs")
-        .select("store_name")
-        .not("store_name", "is", null);
+        .select("store")
+        .not("store", "is", null);
 
       if (error) {
         console.error("Error loading stores:", error);
@@ -64,9 +65,7 @@ export default function DailySalesReportPage() {
 
       if (data) {
         const uniqueStores = Array.from(
-          new Set(
-            data.map((item: { store_name: string | null }) => item.store_name)
-          )
+          new Set(data.map((item: { store: string | null }) => item.store))
         ).filter(Boolean) as string[];
         setStores(uniqueStores);
       }
@@ -80,19 +79,20 @@ export default function DailySalesReportPage() {
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
-    // FIX 2: Calculate local time bounds instead of forcing Z (UTC)
-    const startDate = new Date(`${selectedDate}T00:00:00`);
-    const endDate = new Date(`${selectedDate}T23:59:59.999`);
+    // Calculate local timezone boundaries
+    const [year, month, day] = selectedDate.split("-").map(Number);
+    const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .gte("created_at", startDate.toISOString())
-      .lte("created_at", endDate.toISOString())
-      .order("created_at", { ascending: false });
+      .gte("scanned_at", startDate.toISOString())
+      .lte("scanned_at", endDate.toISOString())
+      .order("scanned_at", { ascending: false });
 
     if (selectedStore !== "ALL") {
-      query = query.eq("store_name", selectedStore);
+      query = query.eq("store", selectedStore);
     }
 
     const { data, error } = await query;
@@ -157,7 +157,7 @@ export default function DailySalesReportPage() {
     > = {};
 
     salesData.forEach((item) => {
-      const key = item.sku || item.style_code;
+      const key = item.sku || item.style_code || "UNKNOWN";
       const qty = item.quantity || 1;
       const revenue = Number(item.price || 0) * qty;
 
@@ -187,7 +187,7 @@ export default function DailySalesReportPage() {
     }));
 
     salesData.forEach((item) => {
-      const date = new Date(item.created_at);
+      const date = new Date(item.scanned_at);
       const hourIndex = date.getHours();
       const qty = item.quantity || 1;
       hours[hourIndex].revenue += Number(item.price || 0) * qty;
@@ -220,16 +220,16 @@ export default function DailySalesReportPage() {
     ];
 
     const rows = salesData.map((s) => [
-      new Date(s.created_at).toLocaleTimeString(),
-      s.sku,
-      s.style_code,
+      new Date(s.scanned_at).toLocaleTimeString(),
+      s.sku || "",
+      s.style_code || "",
       `"${s.description || ""}"`,
-      s.color,
-      s.size,
-      s.category,
-      s.department,
-      s.price,
-      s.store_name || "N/A",
+      s.color || "",
+      s.size || "",
+      s.category || "",
+      s.department || "",
+      s.price || 0,
+      s.store || "N/A",
     ]);
 
     const csvContent =
@@ -348,7 +348,7 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Total Scans / Orders */}
+        {/* Total Scans / Items */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -393,11 +393,9 @@ export default function DailySalesReportPage() {
                 className="flex-1 flex flex-col items-center h-full justify-end group min-w-[20px]"
               >
                 <div className="relative w-full flex justify-center">
-                  {/* Hover Tooltip */}
                   <div className="absolute -top-8 hidden group-hover:flex bg-slate-800 text-slate-200 text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-10 border border-slate-700">
                     ₱{item.revenue.toLocaleString()} ({item.count} items)
                   </div>
-                  {/* Bar */}
                   <div
                     style={{ height: `${item.percentage}%` }}
                     className={`w-full max-w-[18px] rounded-t transition-all duration-300 ${
@@ -490,14 +488,14 @@ export default function DailySalesReportPage() {
                     className="hover:bg-slate-800/30 transition-colors"
                   >
                     <td className="px-4 py-3 text-slate-400">
-                      {new Date(log.created_at).toLocaleTimeString([], {
+                      {new Date(log.scanned_at).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                         second: "2-digit",
                       })}
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-200">
-                      {log.sku || log.style_code}
+                      {log.sku || log.style_code || "-"}
                     </td>
                     <td className="px-4 py-3 text-slate-300">
                       {log.description || log.style_name || "-"}
@@ -509,7 +507,7 @@ export default function DailySalesReportPage() {
                       {log.department || "-"}
                     </td>
                     <td className="px-4 py-3 text-slate-400">
-                      {log.store_name || "N/A"}
+                      {log.store || "N/A"}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-emerald-400">
                       ₱{Number(log.price || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
