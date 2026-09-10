@@ -9,9 +9,6 @@ import {
   Area,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -32,8 +29,6 @@ const STORES = [
   "Landmark Nuvali",
   "Landmark Trinoma",
 ];
-
-const PIE_COLORS = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4"];
 
 interface RawLogItem {
   id: string;
@@ -76,7 +71,7 @@ export default function ScanViewPage() {
 
   // Pagination States
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(25);
 
   const [isExportOpen, setIsExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -139,7 +134,6 @@ export default function ScanViewPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Reset to Page 1 on control change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedStoreFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
@@ -181,7 +175,6 @@ export default function ScanViewPage() {
     }
   };
 
-  // 1. Filter by Search Query & Date Range
   const filteredRawLogs = useMemo(() => {
     return rawLogs.filter((item) => {
       const q = searchQuery.toLowerCase();
@@ -218,7 +211,6 @@ export default function ScanViewPage() {
     });
   }, [rawLogs, searchQuery, startDate, endDate]);
 
-  // 2. Summary Metrics
   const metrics = useMemo(() => {
     const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
     const uniqueStyles = new Set(filteredRawLogs.map((log) => log.styleCode)).size;
@@ -246,9 +238,7 @@ export default function ScanViewPage() {
     };
   }, [filteredRawLogs]);
 
-  // 3. Chart Visualizations Data
   const chartData = useMemo(() => {
-    // A. Daily Scan Trends
     const timeMap: Record<string, { date: string; units: number; scans: number }> = {};
     filteredRawLogs.forEach((log) => {
       if (!log.rawTimestamp) return;
@@ -261,7 +251,6 @@ export default function ScanViewPage() {
     });
     const timeSeries = Object.values(timeMap).reverse();
 
-    // B. Store Comparison
     const storeMap: Record<string, { store: string; units: number }> = {};
     filteredRawLogs.forEach((log) => {
       const shortStore = log.store.replace("Metro Gaisano ", "MG ").replace("Landmark ", "LM ");
@@ -270,20 +259,11 @@ export default function ScanViewPage() {
       }
       storeMap[shortStore].units += log.quantity;
     });
-    const storeSeries = Object.values(storeMap).sort((a, b) => b.units - a.units).slice(0, 5);
+    const storeSeries = Object.values(storeMap).sort((a, b) => b.units - a.units).slice(0, 6);
 
-    // C. Category Share
-    const catMap: Record<string, number> = {};
-    filteredRawLogs.forEach((log) => {
-      const cat = log.category !== "-" ? log.category : "Other";
-      catMap[cat] = (catMap[cat] || 0) + log.quantity;
-    });
-    const categorySeries = Object.entries(catMap).map(([name, value]) => ({ name, value }));
-
-    return { timeSeries, storeSeries, categorySeries };
+    return { timeSeries, storeSeries };
   }, [filteredRawLogs]);
 
-  // 4. Apply Dynamic Grouping Logic
   const groupedItems = useMemo(() => {
     if (groupBy === "none") {
       return filteredRawLogs.map((log) => ({
@@ -324,7 +304,6 @@ export default function ScanViewPage() {
     return Array.from(groupedMap.values());
   }, [filteredRawLogs, groupBy]);
 
-  // 5. Apply Dynamic Sorting Logic
   const processedItems = useMemo(() => {
     const list = [...groupedItems];
 
@@ -348,7 +327,6 @@ export default function ScanViewPage() {
     });
   }, [groupedItems, sortBy]);
 
-  // 6. Pagination Calculations
   const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, processedItems.length);
@@ -356,7 +334,6 @@ export default function ScanViewPage() {
     return processedItems.slice(startIndex, endIndex);
   }, [processedItems, startIndex, endIndex]);
 
-  // Export Handler
   const handleExport = (format: "xlsx" | "xls" | "csv") => {
     if (processedItems.length === 0) return;
 
@@ -394,35 +371,37 @@ export default function ScanViewPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 max-w-6xl mx-auto antialiased space-y-6">
-      {/* Header Section */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 max-w-[1600px] mx-auto antialiased space-y-5">
+      {/* Top Header Bar */}
+      <header className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-            Database View
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">
-            Scanned Logs Management
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+              Desktop Workspace
+            </span>
+            <span className="text-xs text-slate-500 font-mono">
+              Total Records: {rawLogs.length}
+            </span>
+          </div>
+          <h1 className="text-2xl font-black text-white mt-1">
+            Scanned Inventory & Database Management
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Filter, group, and analyze database records across store locations
-          </p>
         </div>
 
-        <div className="flex items-center space-x-2 self-start sm:self-auto">
+        <div className="flex items-center space-x-2.5">
           <button
             onClick={() => setShowAnalytics(!showAnalytics)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition border border-slate-700/60"
+            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <span>{showAnalytics ? "Hide Charts" : "Show Charts"}</span>
+            <span>{showAnalytics ? "Hide Analytics" : "Show Analytics"}</span>
           </button>
 
           <button
             onClick={fetchScannedLogs}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition border border-slate-700/60"
+            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -434,37 +413,37 @@ export default function ScanViewPage() {
             <button
               onClick={() => setIsExportOpen(!isExportOpen)}
               disabled={processedItems.length === 0}
-              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition shadow-lg shadow-emerald-500/10"
+              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              <span>Export</span>
+              <span>Export Report</span>
             </button>
 
             {isExportOpen && (
-              <div className="absolute right-0 mt-2 w-44 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">Select Format</p>
+              <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">File Format</p>
                 <button
                   onClick={() => handleExport("xlsx")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800/80 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
                 >
-                  <span>Excel (.xlsx)</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">XLSX</span>
+                  <span>Excel Workbook</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">.XLSX</span>
                 </button>
                 <button
                   onClick={() => handleExport("xls")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800/80 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
                 >
-                  <span>Excel Legacy (.xls)</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">XLS</span>
+                  <span>Legacy Excel</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">.XLS</span>
                 </button>
                 <button
                   onClick={() => handleExport("csv")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800/80 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
                 >
-                  <span>CSV File (.csv)</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">CSV</span>
+                  <span>CSV File</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">.CSV</span>
                 </button>
               </div>
             )}
@@ -472,380 +451,323 @@ export default function ScanViewPage() {
         </div>
       </header>
 
-      {/* Advanced Metrics Summary Dashboard Cards */}
-      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Scanned Units</p>
-          <div className="flex items-baseline space-x-1.5">
-            <span className="text-2xl sm:text-3xl font-black text-white">{metrics.totalUnits}</span>
-            <span className="text-[10px] font-bold text-emerald-400">pcs</span>
+      {/* Summary KPI Ribbon */}
+      <section className="grid grid-cols-4 gap-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Volume</p>
+            <p className="text-2xl font-black text-white mt-0.5">{metrics.totalUnits} <span className="text-xs text-emerald-400 font-bold">units</span></p>
           </div>
-          <p className="text-[10px] text-slate-500">Across active filters</p>
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+          </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Styles</p>
-          <div className="flex items-baseline space-x-1.5">
-            <span className="text-2xl sm:text-3xl font-black text-white">{metrics.uniqueStyles}</span>
-            <span className="text-[10px] font-bold text-blue-400">codes</span>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Codes</p>
+            <p className="text-2xl font-black text-white mt-0.5">{metrics.uniqueStyles} <span className="text-xs text-blue-400 font-bold">styles</span></p>
           </div>
-          <p className="text-[10px] text-slate-500">Distinct product codes</p>
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
-          <div className="truncate">
-            <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topCategoryName}</span>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
+            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topCategoryName}</p>
+            <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} pcs logged</p>
           </div>
-          <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} units logged</p>
+          <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 11h.01M7 15h.01M11 7h.01M11 11h.01M11 15h.01M15 7h.01M15 11h.01M15 15h.01" /></svg>
+          </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Highest Volume Store</p>
-          <div className="truncate">
-            <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topStoreName}</span>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Primary Store Volume</p>
+            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topStoreName}</p>
+            <p className="text-[10px] text-amber-400 font-bold">{metrics.topStoreQty} pcs logged</p>
           </div>
-          <p className="text-[10px] text-amber-400 font-bold">{metrics.topStoreQty} units logged</p>
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+          </div>
         </div>
       </section>
 
-      {/* Visual Analytics & Charts Section */}
+      {/* Analytics Panel */}
       {showAnalytics && (
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center space-x-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span>Visual Analytics Dashboard</span>
-            </h2>
-            <span className="text-[10px] font-mono text-slate-500">Live Data</span>
+        <section className="grid grid-cols-12 gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <div className="col-span-7 bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+            <p className="text-xs font-bold text-slate-400 mb-2">Daily Scan Trends</p>
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData.timeSeries}>
+                  <defs>
+                    <linearGradient id="colorUnits" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#64748b" fontSize={10} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "11px" }}
+                    itemStyle={{ color: "#10b981" }}
+                  />
+                  <Area type="monotone" dataKey="units" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorUnits)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            {/* Chart 1: Time Series Area Chart */}
-            <div className="lg:col-span-7 bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-              <p className="text-[11px] font-bold text-slate-400">Daily Scan Volume Trends</p>
-              <div className="h-48 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData.timeSeries}>
-                    <defs>
-                      <linearGradient id="colorUnits" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={10} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "12px", fontSize: "12px" }}
-                      itemStyle={{ color: "#10b981" }}
-                    />
-                    <Area type="monotone" dataKey="units" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorUnits)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Chart 2: Store Bar Chart */}
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-              <p className="text-[11px] font-bold text-slate-400">Volume by Store (Top 5)</p>
-              <div className="h-48 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData.storeSeries} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis type="number" stroke="#64748b" fontSize={10} hide />
-                    <YAxis dataKey="store" type="category" stroke="#94a3b8" fontSize={9} width={80} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "12px", fontSize: "12px" }}
-                      itemStyle={{ color: "#3b82f6" }}
-                    />
-                    <Bar dataKey="units" fill="#3b82f6" radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          <div className="col-span-5 bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+            <p className="text-xs font-bold text-slate-400 mb-2">Store Distribution</p>
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData.storeSeries} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis type="number" stroke="#64748b" fontSize={10} hide />
+                  <YAxis dataKey="store" type="category" stroke="#94a3b8" fontSize={10} width={90} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "11px" }}
+                    itemStyle={{ color: "#3b82f6" }}
+                  />
+                  <Bar dataKey="units" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </section>
       )}
 
-      {/* Controls Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-        <div className="sm:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      {/* Desktop Horizontal Control Bar */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
+        {/* Search */}
+        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             type="text"
-            placeholder="Search by code, product name, or store..."
+            placeholder="Search code, product, category..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
+            className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
           />
         </div>
 
-        <div className="sm:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-2 flex items-center">
+        {/* Store Filter */}
+        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={selectedStoreFilter}
             onChange={(e) => setSelectedStoreFilter(e.target.value)}
-            className="w-full bg-transparent text-xs font-bold text-emerald-400 px-3 py-1 focus:outline-none cursor-pointer"
+            className="w-full bg-transparent text-xs font-bold text-emerald-400 focus:outline-none cursor-pointer"
           >
             {STORES.map((store) => (
               <option key={store} value={store} className="bg-slate-900 text-white font-normal">
-                {store === "All Stores" ? "Filter by Store: All Stores" : store}
+                {store}
               </option>
             ))}
           </select>
         </div>
-      </div>
 
-      {/* Grouping & Sorting Controls Card */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
-            Group By:
-          </span>
+        {/* Grouping */}
+        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={groupBy}
             onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
-            className="w-full bg-slate-950 border border-slate-800 text-xs font-bold text-emerald-400 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="store_style">Store Location + QR Code (Consolidated)</option>
-            <option value="category">Category</option>
-            <option value="department">Department</option>
-            <option value="none">None (Individual Raw Logs)</option>
+            <option value="store_style">Group: Store + QR Code</option>
+            <option value="category">Group: Category</option>
+            <option value="department">Group: Department</option>
+            <option value="none">Group: None (Raw Entries)</option>
           </select>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
-            Sort By:
-          </span>
+        {/* Sorting */}
+        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="w-full bg-slate-950 border border-slate-800 text-xs font-bold text-emerald-400 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="qty_desc">Highest Quantity First</option>
-            <option value="qty_asc">Lowest Quantity First</option>
-            <option value="name_asc">Alphabetical (Product Name A-Z)</option>
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+            <option value="qty_desc">Sort: Highest Qty</option>
+            <option value="qty_asc">Sort: Lowest Qty</option>
+            <option value="name_asc">Sort: Product A-Z</option>
           </select>
         </div>
-      </div>
+      </section>
 
-      {/* Date Filter Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>Filter by Date Range</span>
-          </span>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => handlePresetDate("today")}
-              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => handlePresetDate("7days")}
-              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
-            >
-              Last 7 Days
-            </button>
-            <button
-              onClick={() => handlePresetDate("month")}
-              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
-            >
-              This Month
-            </button>
-            {(startDate || endDate) && (
-              <button
-                onClick={() => handlePresetDate("clear")}
-                className="text-[10px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition"
-              >
-                Clear Date
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-800/60">
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
-            <label className="text-[10px] font-bold uppercase text-slate-500 whitespace-nowrap">From:</label>
+      {/* Desktop Date Bar */}
+      <section className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Date Range:</span>
+          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
+            <span className="text-[10px] text-slate-500 font-bold uppercase">From</span>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none w-full cursor-pointer scheme-dark"
+              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
             />
           </div>
-
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
-            <label className="text-[10px] font-bold uppercase text-slate-500 whitespace-nowrap">To:</label>
+          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
+            <span className="text-[10px] text-slate-500 font-bold uppercase">To</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none w-full cursor-pointer scheme-dark"
+              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
             />
           </div>
         </div>
-      </div>
 
-      {/* Main Scanned Items List View */}
-      <section>
+        <div className="flex items-center space-x-2">
+          <button onClick={() => handlePresetDate("today")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Today</button>
+          <button onClick={() => handlePresetDate("7days")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Last 7 Days</button>
+          <button onClick={() => handlePresetDate("month")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">This Month</button>
+          {(startDate || endDate) && (
+            <button onClick={() => handlePresetDate("clear")} className="text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg transition">Reset</button>
+          )}
+        </div>
+      </section>
+
+      {/* Main High-Density Desktop Data Table */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
         {loading ? (
-          <div className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-12 text-center space-y-3">
+          <div className="p-12 text-center space-y-3">
             <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs text-slate-400">Loading database logs...</p>
+            <p className="text-xs text-slate-400">Loading database items...</p>
           </div>
         ) : processedItems.length === 0 ? (
-          <div className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-12 text-center space-y-3">
-            <div className="w-16 h-16 bg-slate-800/80 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-            </div>
-            <h2 className="text-base font-bold text-white">No logs found</h2>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              No scanned records match your current criteria.
-            </p>
+          <div className="p-12 text-center space-y-2">
+            <p className="text-sm font-bold text-white">No entries match your search filters.</p>
+            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
           </div>
         ) : (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
-            <div className="hidden sm:grid grid-cols-12 text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 pb-2 border-b border-slate-800">
-              <span className="col-span-3">Store Location</span>
-              <span className="col-span-4">Product Details</span>
-              <span className="col-span-2">Attributes</span>
-              <span className="col-span-1 text-center">Qty</span>
-              <span className="col-span-2 text-right">Timestamp</span>
-            </div>
-
-            <div className="space-y-2.5">
-              {paginatedItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center gap-3 sm:gap-0"
-                >
-                  <div className="sm:col-span-3 space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
-                      {item.store}
-                    </span>
-                  </div>
-
-                  <div className="sm:col-span-4 space-y-0.5">
-                    <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
-                    <p className="font-mono text-emerald-400 text-xs font-semibold">{item.styleCode}</p>
-                  </div>
-
-                  <div className="sm:col-span-2 flex flex-wrap gap-1 text-[10px]">
-                    {item.category !== "-" && (
-                      <span className="bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">
-                        {item.category}
-                      </span>
-                    )}
-                    {item.size !== "-" && (
-                      <span className="bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-bold">
-                        Size: {item.size}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="sm:col-span-1 flex sm:justify-center items-center w-full sm:w-auto justify-between">
-                    <span className="sm:hidden text-xs text-slate-500 font-bold">Qty:</span>
-                    <div className="text-center">
-                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-sm px-3 py-1 rounded-full inline-block">
-                        x{item.quantity}
-                      </span>
-                      {groupBy !== "none" && item.scanCount > 1 && (
-                        <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
-                          ({item.scanCount} scans)
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="sm:col-span-2 flex items-center justify-between sm:justify-end space-x-3 w-full sm:w-auto border-t sm:border-0 border-slate-800/80 pt-2 sm:pt-0">
-                    <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
-                    <button
-                      onClick={() => handleRemoveItem(item)}
-                      className="text-slate-600 hover:text-red-400 p-1 text-xs font-bold transition"
-                      title="Delete entry"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center space-x-4 text-xs text-slate-400">
-                <span>
-                  Showing <strong className="text-white">{processedItems.length === 0 ? 0 : startIndex + 1}</strong> to{" "}
-                  <strong className="text-white">{endIndex}</strong> of <strong className="text-white">{processedItems.length}</strong> entries
-                </span>
-
-                <div className="flex items-center space-x-1.5">
-                  <label htmlFor="perPage" className="text-[10px] font-bold uppercase text-slate-500">Per page:</label>
-                  <select
-                    id="perPage"
-                    value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-xs font-bold text-emerald-400 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3 px-4">Store Location</th>
+                  <th className="py-3 px-4">Style Code</th>
+                  <th className="py-3 px-4">Product Name</th>
+                  <th className="py-3 px-4">Category / Dept</th>
+                  <th className="py-3 px-4">Color / Size</th>
+                  <th className="py-3 px-4 text-center">Quantity</th>
+                  <th className="py-3 px-4 text-right">Last Scanned</th>
+                  <th className="py-3 px-4 text-center w-12">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-xs">
+                {paginatedItems.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
                   >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-1.5">
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                >
-                  «
-                </button>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                >
-                  Prev
-                </button>
-                <span className="text-xs font-bold text-slate-300 px-2">
-                  Page <span className="text-emerald-400">{currentPage}</span> of <span className="text-white">{totalPages}</span>
-                </span>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                >
-                  Next
-                </button>
-                <button
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                >
-                  »
-                </button>
-              </div>
-            </div>
+                    <td className="py-3 px-4 font-semibold text-emerald-400">
+                      {item.store}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-slate-200">
+                      {item.styleCode}
+                    </td>
+                    <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
+                      {item.styleName}
+                    </td>
+                    <td className="py-3 px-4 text-slate-400">
+                      {item.category !== "-" ? item.category : item.department}
+                    </td>
+                    <td className="py-3 px-4 text-slate-400">
+                      {item.color !== "-" ? item.color : ""}{item.size !== "-" ? ` / ${item.size}` : "-"}
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold">
+                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
+                        {item.quantity} pcs
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-slate-400 text-[11px]">
+                      {item.timestamp}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => handleRemoveItem(item)}
+                        className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition"
+                        title="Delete log"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+
+        {/* Footer Pagination Bar */}
+        <div className="bg-slate-950 border-t border-slate-800 p-3 flex items-center justify-between">
+          <div className="flex items-center space-x-4 text-xs text-slate-400">
+            <span>
+              Showing <strong className="text-white">{processedItems.length === 0 ? 0 : startIndex + 1}</strong> to{" "}
+              <strong className="text-white">{endIndex}</strong> of <strong className="text-white">{processedItems.length}</strong> items
+            </span>
+
+            <div className="flex items-center space-x-1.5">
+              <label htmlFor="perPage" className="text-[10px] font-bold uppercase text-slate-500">Rows per page:</label>
+              <select
+                id="perPage"
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className="bg-slate-900 border border-slate-800 text-xs font-bold text-emerald-400 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+              >
+                <option value={15}>15</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              Prev
+            </button>
+            <span className="text-xs font-bold text-slate-300 px-2">
+              Page <span className="text-emerald-400">{currentPage}</span> of <span className="text-white">{totalPages}</span>
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              »
+            </button>
+          </div>
+        </div>
       </section>
     </main>
   );
