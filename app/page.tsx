@@ -77,7 +77,7 @@ export default function Home() {
     setErrorMessage(null);
   };
 
-  // Handle barcode/QR processing
+  // Fixed handleScan with reliable multi-column search
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -85,12 +85,34 @@ export default function Home() {
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
-    // Query products table
-    const { data, error } = await supabase
+    // 1. Try matching exact barcode first
+    let { data, error } = await supabase
       .from("products")
       .select("*")
-      .or(`style_code.ilike.${cleanCode},barcode.ilike.${cleanCode}`)
+      .eq("barcode", cleanCode)
       .maybeSingle();
+
+    // 2. If not found by barcode, try style_code
+    if (!data) {
+      const res = await supabase
+        .from("products")
+        .select("*")
+        .ilike("style_code", cleanCode)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
+    }
+
+    // 3. If still not found, try matching sku
+    if (!data) {
+      const res = await supabase
+        .from("products")
+        .select("*")
+        .ilike("sku", cleanCode)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
+    }
 
     setLoading(false);
 
