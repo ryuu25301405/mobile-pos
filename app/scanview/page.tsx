@@ -41,6 +41,7 @@ interface RawLogItem {
   category: string;
   department: string;
   size: string;
+  price: number;
   quantity: number;
   rawTimestamp: string;
   timestamp: string;
@@ -112,6 +113,7 @@ export default function ScanViewPage() {
         category: item.category || "-",
         department: item.department || "-",
         size: item.size || "-",
+        price: Number(item.price) || 0,
         quantity: item.quantity || 1,
         rawTimestamp: item.scanned_at || "",
         timestamp: formatTimestamp(item.scanned_at),
@@ -350,6 +352,7 @@ export default function ScanViewPage() {
       "Department": item.department,
       "Color": item.color,
       "Size": item.size,
+      "Price": item.price,
       "Quantity": item.quantity,
       "Total Scan Logs": item.scanCount,
       "Timestamp": item.timestamp,
@@ -665,6 +668,7 @@ export default function ScanViewPage() {
                   <th className="py-3 px-4">Product Name</th>
                   <th className="py-3 px-4">Category / Dept</th>
                   <th className="py-3 px-4">Color / Size</th>
+                  <th className="py-3 px-4 text-right">Price</th>
                   <th className="py-3 px-4 text-center">Quantity</th>
                   <th className="py-3 px-4 text-right">Last Scanned</th>
                   <th className="py-3 px-4 text-center w-12">Action</th>
@@ -694,6 +698,9 @@ export default function ScanViewPage() {
                     <td className="py-3 px-4 text-slate-400">
                       {item.color !== "-" ? item.color : ""}{item.size !== "-" ? ` / ${item.size}` : "-"}
                     </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
+                      ₱{item.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
                     <td className="py-3 px-4 text-center font-bold">
                       <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
                         {item.quantity} pcs
@@ -705,10 +712,12 @@ export default function ScanViewPage() {
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => handleRemoveItem(item)}
-                        className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition"
-                        title="Delete log"
+                        className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800"
+                        title="Delete Item"
                       >
-                        ✕
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                       </button>
                     </td>
                   </tr>
@@ -718,64 +727,52 @@ export default function ScanViewPage() {
           </div>
         )}
 
-        {/* Footer Pagination Bar */}
-        <div className="bg-slate-950 border-t border-slate-800 p-3 flex items-center justify-between">
-          <div className="flex items-center space-x-4 text-xs text-slate-400">
-            <span>
-              Showing <strong className="text-white">{processedItems.length === 0 ? 0 : startIndex + 1}</strong> to{" "}
-              <strong className="text-white">{endIndex}</strong> of <strong className="text-white">{processedItems.length}</strong> items
-            </span>
+        {/* Pagination Bar */}
+        {processedItems.length > 0 && (
+          <div className="bg-slate-950 border-t border-slate-800 p-4 flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <span className="text-xs text-slate-400 font-medium">
+                Showing <span className="text-white font-bold">{startIndex + 1}</span> to{" "}
+                <span className="text-white font-bold">{endIndex}</span> of{" "}
+                <span className="text-white font-bold">{processedItems.length}</span> entries
+              </span>
 
-            <div className="flex items-center space-x-1.5">
-              <label htmlFor="perPage" className="text-[10px] font-bold uppercase text-slate-500">Rows per page:</label>
-              <select
-                id="perPage"
-                value={itemsPerPage}
-                onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-800 text-xs font-bold text-emerald-400 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-500">Per page:</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                  className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
               >
-                <option value={15}>15</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+                Previous
+              </button>
+              <span className="text-xs text-slate-400 font-mono px-2">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+              >
+                Next
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center space-x-1.5">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              «
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              Prev
-            </button>
-            <span className="text-xs font-bold text-slate-300 px-2">
-              Page <span className="text-emerald-400">{currentPage}</span> of <span className="text-white">{totalPages}</span>
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              »
-            </button>
-          </div>
-        </div>
+        )}
       </section>
     </main>
   );
