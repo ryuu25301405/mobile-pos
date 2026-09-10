@@ -29,12 +29,13 @@ interface SalesLog {
   created_at: string;
 }
 
-export default function DailySalesReportPage() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+// FIX 1: Initialize Supabase client OUTSIDE component body to prevent infinite re-renders
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
+export default function DailySalesReportPage() {
   // Filters
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -51,10 +52,15 @@ export default function DailySalesReportPage() {
   // ----------------------------------------------------
   useEffect(() => {
     async function loadStores() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("scanned_logs")
         .select("store_name")
         .not("store_name", "is", null);
+
+      if (error) {
+        console.error("Error loading stores:", error);
+        return;
+      }
 
       if (data) {
         const uniqueStores = Array.from(
@@ -66,7 +72,7 @@ export default function DailySalesReportPage() {
       }
     }
     loadStores();
-  }, [supabase]);
+  }, []);
 
   // ----------------------------------------------------
   // 2. Fetch Daily Sales Logs
@@ -74,15 +80,15 @@ export default function DailySalesReportPage() {
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
-    // Calculate UTC start and end bounds for the selected calendar date
-    const startOfDay = `${selectedDate}T00:00:00.000Z`;
-    const endOfDay = `${selectedDate}T23:59:59.999Z`;
+    // FIX 2: Calculate local time bounds instead of forcing Z (UTC)
+    const startDate = new Date(`${selectedDate}T00:00:00`);
+    const endDate = new Date(`${selectedDate}T23:59:59.999`);
 
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .gte("created_at", startOfDay)
-      .lte("created_at", endOfDay)
+      .gte("created_at", startDate.toISOString())
+      .lte("created_at", endDate.toISOString())
       .order("created_at", { ascending: false });
 
     if (selectedStore !== "ALL") {
@@ -97,7 +103,7 @@ export default function DailySalesReportPage() {
       setSalesData(data || []);
     }
     setLoading(false);
-  }, [selectedDate, selectedStore, supabase]);
+  }, [selectedDate, selectedStore]);
 
   // Initial Fetch & Realtime Subscription
   useEffect(() => {
@@ -117,7 +123,7 @@ export default function DailySalesReportPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchDailySales, supabase]);
+  }, [fetchDailySales]);
 
   // ----------------------------------------------------
   // 3. Computed Aggregations
