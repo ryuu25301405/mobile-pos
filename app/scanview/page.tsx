@@ -199,7 +199,37 @@ export default function ScanViewPage() {
     });
   }, [rawLogs, searchQuery, startDate, endDate]);
 
-  // 2. Apply Dynamic Grouping Logic
+  // 2. Compute Summary Metrics
+  const metrics = useMemo(() => {
+    const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
+    const uniqueStyles = new Set(filteredRawLogs.map((log) => log.styleCode)).size;
+
+    // Top Category
+    const categoryCounts: Record<string, number> = {};
+    filteredRawLogs.forEach((log) => {
+      const cat = log.category !== "-" ? log.category : "Unassigned";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + log.quantity;
+    });
+    const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
+
+    // Top Store
+    const storeCounts: Record<string, number> = {};
+    filteredRawLogs.forEach((log) => {
+      storeCounts[log.store] = (storeCounts[log.store] || 0) + log.quantity;
+    });
+    const topStore = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
+
+    return {
+      totalUnits,
+      uniqueStyles,
+      topCategoryName: topCategory[0],
+      topCategoryQty: topCategory[1],
+      topStoreName: topStore[0],
+      topStoreQty: topStore[1],
+    };
+  }, [filteredRawLogs]);
+
+  // 3. Apply Dynamic Grouping Logic
   const groupedItems = useMemo(() => {
     if (groupBy === "none") {
       return filteredRawLogs.map((log) => ({
@@ -240,7 +270,7 @@ export default function ScanViewPage() {
     return Array.from(groupedMap.values());
   }, [filteredRawLogs, groupBy]);
 
-  // 3. Apply Dynamic Sorting Logic
+  // 4. Apply Dynamic Sorting Logic
   const processedItems = useMemo(() => {
     const list = [...groupedItems];
 
@@ -264,7 +294,7 @@ export default function ScanViewPage() {
     });
   }, [groupedItems, sortBy]);
 
-  // 4. Pagination Calculations
+  // 5. Pagination Calculations
   const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, processedItems.length);
@@ -308,8 +338,6 @@ export default function ScanViewPage() {
 
     setIsExportOpen(false);
   };
-
-  const totalSummedQuantity = processedItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 max-w-6xl mx-auto antialiased space-y-6">
@@ -380,10 +408,55 @@ export default function ScanViewPage() {
         </div>
       </header>
 
+      {/* Advanced Metrics & Summary Dashboard Cards */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Card 1: Total Units */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/5 rounded-bl-full pointer-events-none" />
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Scanned Units</p>
+          <div className="flex items-baseline space-x-1.5">
+            <span className="text-2xl sm:text-3xl font-black text-white">{metrics.totalUnits}</span>
+            <span className="text-[10px] font-bold text-emerald-400">pcs</span>
+          </div>
+          <p className="text-[10px] text-slate-500">Across active filters</p>
+        </div>
+
+        {/* Card 2: Unique Styles */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-bl-full pointer-events-none" />
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Styles</p>
+          <div className="flex items-baseline space-x-1.5">
+            <span className="text-2xl sm:text-3xl font-black text-white">{metrics.uniqueStyles}</span>
+            <span className="text-[10px] font-bold text-blue-400">codes</span>
+          </div>
+          <p className="text-[10px] text-slate-500">Distinct product codes</p>
+        </div>
+
+        {/* Card 3: Top Category */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500/5 rounded-bl-full pointer-events-none" />
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
+          <div className="truncate">
+            <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topCategoryName}</span>
+          </div>
+          <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} units logged</p>
+        </div>
+
+        {/* Card 4: Top Store */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-amber-500/5 rounded-bl-full pointer-events-none" />
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Highest Volume Store</p>
+          <div className="truncate">
+            <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topStoreName}</span>
+          </div>
+          <p className="text-[10px] text-amber-400 font-bold">{metrics.topStoreQty} units logged</p>
+        </div>
+      </section>
+
       {/* Controls Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
         {/* Search Input */}
-        <div className="sm:col-span-6 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
+        <div className="sm:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -397,7 +470,7 @@ export default function ScanViewPage() {
         </div>
 
         {/* Store Location Filter */}
-        <div className="sm:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-2 flex items-center">
+        <div className="sm:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-2 flex items-center">
           <select
             value={selectedStoreFilter}
             onChange={(e) => setSelectedStoreFilter(e.target.value)}
@@ -409,14 +482,6 @@ export default function ScanViewPage() {
               </option>
             ))}
           </select>
-        </div>
-
-        {/* Total Summary */}
-        <div className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between sm:justify-center space-x-2 text-center">
-          <span className="text-[10px] font-bold uppercase text-slate-500 sm:hidden">Total Summed:</span>
-          <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
-            {totalSummedQuantity} Units ({processedItems.length} Rows)
-          </span>
         </div>
       </div>
 
