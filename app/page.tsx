@@ -85,11 +85,11 @@ export default function Home() {
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
-    // Query products table by style_code, sku, or barcode
+    // Query products table
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .or(`style_code.ilike.${cleanCode},sku.ilike.${cleanCode},barcode.ilike.${cleanCode}`)
+      .or(`style_code.ilike.${cleanCode},barcode.ilike.${cleanCode}`)
       .maybeSingle();
 
     setLoading(false);
@@ -255,7 +255,7 @@ export default function Home() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
                     {item.sku && item.sku !== "-" && (
-                      <span className="font-mono text-blue-400 text-[10px]">({item.sku})</span>
+                      <span className="font-mono text-blue-400 text-xs font-semibold">SKU: {item.sku}</span>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-500">
@@ -359,16 +359,9 @@ export default function Home() {
                           <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
                             ✓ Saved to {selectedStore}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-mono text-emerald-400 font-bold">
-                              {lastScannedItem.styleCode}
-                            </span>
-                            {lastScannedItem.sku && lastScannedItem.sku !== "-" && (
-                              <span className="text-xs font-mono text-blue-400 font-bold">
-                                • {lastScannedItem.sku}
-                              </span>
-                            )}
-                          </div>
+                          <span className="text-xs font-mono text-emerald-400 font-bold">
+                            {lastScannedItem.styleCode}
+                          </span>
                         </div>
 
                         <div>
@@ -382,8 +375,17 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* All QR Code Fields Grid */}
+                        {/* Details Grid including SKU */}
                         <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 col-span-2">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              SKU
+                            </span>
+                            <span className="text-blue-400 font-mono font-bold text-sm truncate block">
+                              {lastScannedItem.sku}
+                            </span>
+                          </div>
+
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
                               Category
