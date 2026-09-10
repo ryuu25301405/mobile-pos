@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { triggerScanFeedback } from "@/lib/feedback";
@@ -31,11 +31,56 @@ export default function ScanViewPage() {
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [scannedItems, setScannedItems] = useState<ScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
 
+  // 1. Fetch all previous scan logs from Supabase on page mount
+  const fetchScannedLogs = useCallback(async () => {
+    setPageLoading(true);
+    const { data, error } = await supabase
+      .from("scanned_logs")
+      .select("*")
+      .order("scanned_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching scanned logs:", error);
+    } else if (data) {
+      // Map Supabase rows into local UI state structure
+      const formattedData: ScannedProduct[] = data.map((item: any) => {
+        const rawDate = item.scanned_at ? new Date(item.scanned_at) : new Date();
+        const formattedTimestamp = rawDate.toLocaleString("en-PH", {
+          timeZone: "Asia/Manila",
+          dateStyle: "short",
+          timeStyle: "medium",
+        });
+
+        return {
+          id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
+          styleCode: item.style_code || "N/A",
+          styleName: item.style_name || "Unassigned Item",
+          description: item.description || "",
+          color: item.color || "-",
+          category: item.category || "-",
+          department: item.department || "-",
+          size: item.size || "-",
+          quantity: item.quantity || 1,
+          timestamp: formattedTimestamp,
+        };
+      });
+
+      setScannedItems(formattedData);
+    }
+    setPageLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchScannedLogs();
+  }, [fetchScannedLogs]);
+
+  // 2. Handle scanning new items
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -43,7 +88,6 @@ export default function ScanViewPage() {
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
-    // 1. Fetch item details from Supabase products table
     const { data, error } = await supabase
       .from("products")
       .select("*")
@@ -73,51 +117,30 @@ export default function ScanViewPage() {
 
       const now = new Date();
       const currentIsoTime = now.toISOString();
-      const phFormattedTimestamp = now.toLocaleString("en-PH", {
-        timeZone: "Asia/Manila",
-        dateStyle: "short",
-        timeStyle: "medium",
-      });
 
-      // 2. Add or increment item in local dashboard table
-      setScannedItems((prev) => {
-        const existingIndex = prev.findIndex((item) => item.styleCode === cleanCode);
+      // Log entry into Supabase
+      const { data: insertedData, error: insertError } = await supabase
+        .from("scanned_logs")
+        .insert([
+          {
+            style_code: fetchedProduct.styleCode,
+            style_name: fetchedProduct.styleName,
+            description: fetchedProduct.description,
+            color: fetchedProduct.color,
+            category: fetchedProduct.category,
+            department: fetchedProduct.department,
+            size: fetchedProduct.size,
+            quantity: 1,
+            scanned_at: currentIsoTime,
+          },
+        ])
+        .select()
+        .single();
 
-        if (existingIndex > -1) {
-          const updatedList = [...prev];
-          const existingItem = updatedList[existingIndex];
-          updatedList[existingIndex] = {
-            ...existingItem,
-            quantity: existingItem.quantity + 1,
-            timestamp: phFormattedTimestamp,
-          };
-          return updatedList;
-        } else {
-          return [
-            {
-              ...fetchedProduct,
-              id: `${cleanCode}-${Date.now()}`,
-              timestamp: phFormattedTimestamp,
-            },
-            ...prev,
-          ];
-        }
-      });
-
-      // 3. Log scan entry into Supabase database
-      await supabase.from("scanned_logs").insert([
-        {
-          style_code: fetchedProduct.styleCode,
-          style_name: fetchedProduct.styleName,
-          description: fetchedProduct.description,
-          color: fetchedProduct.color,
-          category: fetchedProduct.category,
-          department: fetchedProduct.department,
-          size: fetchedProduct.size,
-          quantity: 1,
-          scanned_at: currentIsoTime,
-        },
-      ]);
+      if (!insertError) {
+        // Refresh full list from database to ensure state sync
+        fetchScannedLogs();
+      }
     }
   };
 
@@ -127,14 +150,10 @@ export default function ScanViewPage() {
     setIsPaused(false);
   };
 
-  const handleRemoveItem = (id: string) => {
+  const handleRemoveItem = async (id: string) => {
+    // Attempt deleting from database if ID is numeric/UUID
+    await supabase.from("scanned_logs").delete().eq("id", id);
     setScannedItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleClearAll = () => {
-    if (confirm("Are you sure you want to clear all scanned items?")) {
-      setScannedItems([]);
-    }
   };
 
   const totalUniqueItems = scannedItems.length;
@@ -150,7 +169,7 @@ export default function ScanViewPage() {
               Live Terminal View
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Scanned Inventory Items
+              Scanned Inventory History
             </h1>
           </div>
 
@@ -172,26 +191,24 @@ export default function ScanViewPage() {
         {/* Counter Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Unique Products</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Scan Entries</p>
             <p className="text-2xl font-black text-white mt-0.5">{totalUniqueItems}</p>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Quantity Scanned</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Quantity</p>
             <p className="text-2xl font-black text-emerald-400 mt-0.5">{totalQuantityScanned}</p>
           </div>
           <div className="col-span-2 sm:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Session Actions</p>
-              <p className="text-xs text-slate-400 mt-1">Clear active view</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Database Sync</p>
+              <p className="text-xs text-emerald-400 mt-1 font-semibold">● Connected</p>
             </div>
-            {scannedItems.length > 0 && (
-              <button
-                onClick={handleClearAll}
-                className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-bold px-3 py-1.5 rounded-lg transition"
-              >
-                Clear All
-              </button>
-            )}
+            <button
+              onClick={fetchScannedLogs}
+              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-1.5 rounded-lg transition"
+            >
+              Refresh
+            </button>
           </div>
         </div>
       </header>
@@ -205,7 +222,7 @@ export default function ScanViewPage() {
 
               {loading && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
-                  Verifying Code...
+                  Verifying & Saving...
                 </div>
               )}
 
@@ -227,7 +244,7 @@ export default function ScanViewPage() {
                           ✓
                         </div>
                         <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase">
-                          Item Added
+                          Saved to Database
                         </span>
                         <h3 className="text-lg font-bold text-white leading-tight">{lastScannedItem.styleName}</h3>
                         <p className="text-xs font-mono text-emerald-400 font-bold">{lastScannedItem.styleCode}</p>
@@ -265,16 +282,21 @@ export default function ScanViewPage() {
 
       {/* Main Scanned Items List View */}
       <section className="my-6 flex-1">
-        {scannedItems.length === 0 ? (
+        {pageLoading ? (
+          <div className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-12 text-center my-auto space-y-3">
+            <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs text-slate-400">Loading scan logs from database...</p>
+          </div>
+        ) : scannedItems.length === 0 ? (
           <div className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-12 text-center my-auto space-y-3">
             <div className="w-16 h-16 bg-slate-800/80 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
             </div>
-            <h2 className="text-base font-bold text-white">No items scanned yet</h2>
+            <h2 className="text-base font-bold text-white">No scan history found</h2>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Tap the "Scan Barcode / QR" button at the top to start scanning products into this live list.
+              Tap "Scan Barcode / QR" to add items to your database logs.
             </p>
           </div>
         ) : (
@@ -282,8 +304,8 @@ export default function ScanViewPage() {
             <div className="hidden sm:grid grid-cols-12 text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 pb-2 border-b border-slate-800">
               <span className="col-span-5">Product Info</span>
               <span className="col-span-3">Attributes</span>
-              <span className="col-span-2 text-center">Quantity</span>
-              <span className="col-span-2 text-right">Time</span>
+              <span className="col-span-2 text-center">Qty</span>
+              <span className="col-span-2 text-right">Scanned At</span>
             </div>
 
             <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
@@ -334,7 +356,7 @@ export default function ScanViewPage() {
                     <button
                       onClick={() => handleRemoveItem(item.id)}
                       className="text-slate-600 hover:text-red-400 p-1 text-xs font-bold transition"
-                      title="Remove from list"
+                      title="Delete log"
                     >
                       ✕
                     </button>
@@ -348,7 +370,7 @@ export default function ScanViewPage() {
 
       {/* Footer */}
       <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Live Inventory View Engine Active
+        Database Sync Active
       </footer>
     </main>
   );
