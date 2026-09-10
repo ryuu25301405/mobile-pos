@@ -1,15 +1,7 @@
 'use client';
 
-import { useState } from "react";
-import dynamicImport from "next/dynamic";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { triggerScanFeedback } from "@/lib/feedback";
-
-const Scanner = dynamicImport(() => import("@/components/Scanner"), {
-  ssr: false,
-});
-
-export const dynamic = 'force-dynamic';
 
 const STORES = [
   "Metro Gaisano Ayala Cebu",
@@ -23,422 +15,270 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-interface ProductDetails {
+interface Product {
+  id?: string;
   styleCode: string;
+  sku?: string;
   styleName: string;
-  description: string;
-  color: string;
-  category: string;
-  department: string;
-  size: string;
-  quantity: number;
+  description?: string;
+  category?: string;
+  department?: string;
+  color?: string;
+  size?: string;
+  price?: number;
 }
 
-interface SessionScannedProduct extends ProductDetails {
-  id: string;
-  store: string;
-  timestamp: string;
-}
-
-export default function Home() {
+export default function MobileScanPage() {
   const [selectedStore, setSelectedStore] = useState<string>("");
-  const [tempStore, setTempStore] = useState<string>("");
-  const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
+  const [scannedInput, setScannedInput] = useState<string>("");
+  const [scannedItem, setScannedItem] = useState<Product | null>(null);
+  const [quantity, setQuantity] = useState<number>(1);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const [scanning, setScanning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Local state for current active session scans
-  const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
-  const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
+  // Auto-focus barcode input field
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [scannedItem, statusMessage]);
 
-  // Open scanner handler
-  const handleOpenScanner = () => {
+  // Handle parsing / searching scanned code and direct auto-saving
+  const handleScanSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = scannedInput.trim();
+    if (!query) return;
+
     if (!selectedStore) {
-      setTempStore(STORES[0]);
-      setIsStoreModalOpen(true);
+      setStatusMessage({
+        type: "error",
+        text: "Please select a store location first!",
+      });
       return;
     }
-    setScanning(true);
-    setIsPaused(false);
-    setErrorMessage(null);
-  };
 
-  // Confirm store selection from popup modal
-  const handleConfirmStore = () => {
-    if (!tempStore) return;
-    setSelectedStore(tempStore);
-    setIsStoreModalOpen(false);
-    setScanning(true);
-    setIsPaused(false);
-    setErrorMessage(null);
-  };
+    setIsSubmitting(true);
+    setStatusMessage({ type: "info", text: "Searching product database..." });
 
-  // Handle barcode/QR processing
-  const handleScan = async (scannedBarcode: string) => {
-    setIsPaused(true);
-    setLoading(true);
-    setErrorMessage(null);
-
-    const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
-
+    // Lookup item in Supabase master products table
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .ilike("style_code", cleanCode)
-      .single();
+      .or(`style_code.eq.${query},sku.eq.${query},barcode.eq.${query}`)
+      .maybeSingle();
 
-    setLoading(false);
-
-    if (error || !data) {
-      triggerScanFeedback("error");
-      setErrorMessage(`Code "${cleanCode}" not found in database.`);
-    } else {
-      triggerScanFeedback("success");
-
-      const fetchedProduct: ProductDetails = {
-        styleCode: data.style_code || cleanCode,
-        styleName: data.style_name || "Unassigned Item",
-        description: data.description || "N/A",
-        color: data.color || "-",
-        category: data.category || "-",
-        department: data.department || "-",
-        size: data.size || "-",
-        quantity: 1,
-      };
-
-      setLastScannedItem(fetchedProduct);
-
-      const now = new Date();
-      const formattedTimestamp = now.toLocaleTimeString("en-PH", {
-        timeZone: "Asia/Manila",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
+    if (error) {
+      console.error("Database query error:", error);
+      setStatusMessage({
+        type: "error",
+        text: "Error looking up item. Please try again.",
       });
-
-      // Add to session list view instantly
-      const newSessionItem: SessionScannedProduct = {
-        ...fetchedProduct,
-        id: `${cleanCode}-${Date.now()}`,
-        store: selectedStore,
-        timestamp: formattedTimestamp,
-      };
-
-      setSessionScans((prev) => [newSessionItem, ...prev]);
-
-      // Save to Supabase scanned_logs database
-      await supabase.from("scanned_logs").insert([
-        {
-          store: selectedStore,
-          style_code: fetchedProduct.styleCode,
-          style_name: fetchedProduct.styleName,
-          description: fetchedProduct.description,
-          color: fetchedProduct.color,
-          category: fetchedProduct.category,
-          department: fetchedProduct.department,
-          size: fetchedProduct.size,
-          quantity: 1,
-          scanned_at: now.toISOString(),
-        },
-      ]);
+      setIsSubmitting(false);
+      return;
     }
-  };
 
-  const handleScanNext = () => {
-    setErrorMessage(null);
-    setLastScannedItem(null);
-    setIsPaused(false);
-  };
+    const itemData: Product = data
+      ? {
+          styleCode: data.style_code || query,
+          sku: data.sku || "-",
+          styleName: data.style_name || "Unassigned Item",
+          description: data.description || "",
+          category: data.category || "-",
+          department: data.department || "-",
+          color: data.color || "-",
+          size: data.size || "-",
+          price: data.price || 0,
+        }
+      : {
+          styleCode: query,
+          sku: "-",
+          styleName: `Scanned Item (${query})`,
+          category: "Unassigned",
+          department: "Unassigned",
+          color: "-",
+          size: "-",
+        };
 
-  const handleRemoveFromSession = (id: string) => {
-    setSessionScans((prev) => prev.filter((item) => item.id !== id));
-  };
+    // Auto-save entry directly to scanned_logs
+    const logPayload = {
+      store: selectedStore,
+      style_code: itemData.styleCode,
+      sku: itemData.sku !== "-" ? itemData.sku : null,
+      style_name: itemData.styleName,
+      description: itemData.description || "",
+      category: itemData.category || "-",
+      department: itemData.department || "-",
+      color: itemData.color || "-",
+      size: itemData.size || "-",
+      quantity: 1,
+      scanned_at: new Date().toISOString(),
+    };
 
-  const clearCurrentSession = () => {
-    setSessionScans([]);
-  };
+    const { error: logError } = await supabase.from("scanned_logs").insert([logPayload]);
 
-  const totalSessionItems = sessionScans.length;
+    if (logError) {
+      console.error("Error logging scan:", logError);
+      setStatusMessage({
+        type: "error",
+        text: "Failed to save scan record. Try again.",
+      });
+    } else {
+      setScannedItem(itemData);
+      setQuantity(1);
+      setStatusMessage({
+        type: "success",
+        text: `Saved to ${selectedStore}`,
+      });
+    }
+
+    setScannedInput("");
+    setIsSubmitting(false);
+  };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
-      {/* Header & Store Selector */}
-      <header className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              Mobile Terminal
-            </span>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Barcode / QR Scanner
-            </h1>
-          </div>
-
-          <button
-            onClick={handleOpenScanner}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Scan Now</span>
-          </button>
-        </div>
-
-        {/* Store Location Picker Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-            Store Location <span className="text-red-400">*</span>
-          </label>
-          <select
-            value={selectedStore}
-            onChange={(e) => setSelectedStore(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
-          >
-            <option value="" disabled className="text-slate-500">
-              -- Select Store Location --
-            </option>
-            {STORES.map((store) => (
-              <option key={store} value={store} className="text-white font-normal">
-                {store}
-              </option>
-            ))}
-          </select>
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-md mx-auto antialiased space-y-4 pb-12">
+      {/* Header Bar */}
+      <header className="border-b border-slate-800 pb-3 flex items-center justify-between">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+            Mobile Terminal
+          </span>
+          <h1 className="text-xl font-black text-white mt-1">
+            Barcode & QR Scanner
+          </h1>
         </div>
       </header>
 
-      {/* Current Session Scanned Items View */}
-      <section className="my-6 flex-1">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Current Session Scans
-            </h2>
-            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] px-2 py-0.5 rounded-full">
-              {totalSessionItems}
-            </span>
-          </div>
-
-          {totalSessionItems > 0 && (
-            <button
-              onClick={clearCurrentSession}
-              className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
-            >
-              Clear List
-            </button>
-          )}
-        </div>
-
-        {sessionScans.length === 0 ? (
-          <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-3xl p-8 text-center my-auto space-y-2">
-            <p className="text-sm font-bold text-slate-300">No active scans right now</p>
-            <p className="text-xs text-slate-500 max-w-xs mx-auto">
-              Select your store and tap "Scan Now" to begin adding items to this session.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {sessionScans.map((item) => (
-              <div
-                key={item.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm"
-              >
-                <div className="space-y-0.5">
-                  <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
-                  <p className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</p>
-                  <p className="text-[10px] text-slate-500">
-                    {item.store} • {item.timestamp}
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <span className="bg-slate-950 text-slate-300 border border-slate-800 font-bold text-xs px-2.5 py-1 rounded-lg">
-                    x{item.quantity}
-                  </span>
-                  <button
-                    onClick={() => handleRemoveFromSession(item.id)}
-                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition"
-                    title="Remove from current session"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Store Selector */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-1.5">
+        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+          Selected Store Location <span className="text-red-400">*</span>
+        </label>
+        <select
+          value={selectedStore}
+          onChange={(e) => setSelectedStore(e.target.value)}
+          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-bold text-emerald-400 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+        >
+          <option value="" disabled className="bg-slate-900 text-slate-500">
+            -- Select Active Store --
+          </option>
+          {STORES.map((store) => (
+            <option key={store} value={store} className="bg-slate-900 text-white">
+              {store}
+            </option>
+          ))}
+        </select>
       </section>
 
-      {/* Store Prompt Modal */}
-      {isStoreModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 text-left">
-            <div className="space-y-1">
-              <h2 className="text-lg font-bold text-white">Select Current Store</h2>
-              <p className="text-xs text-slate-400">Please choose a store before opening camera.</p>
-            </div>
+      {/* Barcode/QR Scanner Input Field */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+          Scan Barcode / QR Code
+        </label>
+        <form onSubmit={handleScanSubmit} className="flex space-x-2">
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Scan or enter code..."
+            value={scannedInput}
+            onChange={(e) => setScannedInput(e.target.value)}
+            disabled={!selectedStore || isSubmitting}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 disabled:opacity-50 transition"
+          />
+          <button
+            type="submit"
+            disabled={!selectedStore || !scannedInput.trim() || isSubmitting}
+            className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition cursor-pointer shrink-0"
+          >
+            Scan
+          </button>
+        </form>
+      </section>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store</label>
-              <select
-                value={tempStore}
-                onChange={(e) => setTempStore(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 font-semibold cursor-pointer"
-              >
-                {STORES.map((store) => (
-                  <option key={store} value={store}>
-                    {store}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex space-x-2 pt-2">
-              <button
-                onClick={handleConfirmStore}
-                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
-              >
-                Confirm & Open Scanner
-              </button>
-              <button
-                onClick={() => setIsStoreModalOpen(false)}
-                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      {/* Notification / Status Feedback */}
+      {statusMessage && (
+        <div
+          className={`p-3 rounded-xl border text-xs font-semibold flex items-start justify-between ${
+            statusMessage.type === "success"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+              : statusMessage.type === "error"
+              ? "bg-red-500/10 border-red-500/30 text-red-300"
+              : "bg-blue-500/10 border-blue-500/30 text-blue-300"
+          }`}
+        >
+          <span>{statusMessage.text}</span>
+          <button
+            onClick={() => setStatusMessage(null)}
+            className="text-slate-400 hover:text-white ml-2"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Camera Viewport Modal */}
-      {scanning && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
-          <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
-            <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
-              <span className="text-slate-400 font-medium">Store:</span>
-              <span className="font-bold text-emerald-400">{selectedStore}</span>
-            </div>
-
-            <div className="relative aspect-square bg-black">
-              <Scanner onScan={handleScan} isPaused={isPaused} />
-
-              {loading && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
-                  Verifying & Saving...
-                </div>
-              )}
-
-              {/* Detailed Scan Results Overlay */}
-              {isPaused && (
-                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
-                  {errorMessage ? (
-                    <div className="space-y-2 my-auto">
-                      <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
-                        ✕
-                      </div>
-                      <h3 className="text-base font-bold text-white">Item Not Found</h3>
-                      <p className="text-xs text-red-300/80 max-w-xs">{errorMessage}</p>
-                    </div>
-                  ) : (
-                    lastScannedItem && (
-                      <div className="w-full space-y-3 my-auto text-left">
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                            ✓ Saved to {selectedStore}
-                          </span>
-                          <span className="text-xs font-mono text-emerald-400 font-bold">
-                            {lastScannedItem.styleCode}
-                          </span>
-                        </div>
-
-                        <div>
-                          <h3 className="text-base font-bold text-white leading-snug">
-                            {lastScannedItem.styleName}
-                          </h3>
-                          {lastScannedItem.description && lastScannedItem.description !== "N/A" && (
-                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                              {lastScannedItem.description}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* All QR Code Fields Grid */}
-                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Category
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.category}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Department
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.department}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Color
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.color}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Size
-                            </span>
-                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
-                              {lastScannedItem.size}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
-                    <button
-                      onClick={handleScanNext}
-                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
-                    >
-                      Scan Next
-                    </button>
-                    <button
-                      onClick={() => setScanning(false)}
-                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
+      {/* Scanned Result Card */}
+      {scannedItem && (
+        <section className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 space-y-4 shadow-xl shadow-emerald-500/5">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+              ✓ Saved Entry
+            </span>
             <button
-              onClick={() => setScanning(false)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60"
+              onClick={() => setScannedItem(null)}
+              className="text-xs text-slate-500 hover:text-red-400 transition"
             >
-              Close Camera View
+              Clear
             </button>
           </div>
-        </div>
-      )}
 
-      <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Active Session Log
-      </footer>
+          <div className="space-y-2">
+            {/* Style Code & SKU Display Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-mono font-bold bg-slate-950 border border-slate-800 text-emerald-400 px-2.5 py-1 rounded-lg">
+                Style: {scannedItem.styleCode}
+              </span>
+              <span className="text-xs font-mono font-bold bg-slate-950 border border-slate-800 text-blue-400 px-2.5 py-1 rounded-lg">
+                SKU: {scannedItem.sku || "-"}
+              </span>
+            </div>
+
+            <h2 className="text-base font-black text-white leading-snug">
+              {scannedItem.styleName}
+            </h2>
+
+            {scannedItem.description && (
+              <p className="text-xs text-slate-400 line-clamp-2">
+                {scannedItem.description}
+              </p>
+            )}
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
+                <p className="text-[9px] font-bold uppercase text-slate-500">Category</p>
+                <p className="text-xs font-bold text-slate-300 truncate">{scannedItem.category}</p>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
+                <p className="text-[9px] font-bold uppercase text-slate-500">Department</p>
+                <p className="text-xs font-bold text-slate-300 truncate">{scannedItem.department}</p>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
+                <p className="text-[9px] font-bold uppercase text-slate-500">Color</p>
+                <p className="text-xs font-bold text-slate-300 truncate">{scannedItem.color}</p>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
+                <p className="text-[9px] font-bold uppercase text-slate-500">Size</p>
+                <p className="text-xs font-bold text-slate-300 truncate">{scannedItem.size}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
