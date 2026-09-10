@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import {
   Calendar as CalendarIcon,
   Store,
@@ -19,7 +17,6 @@ import {
   Filter,
   Zap,
   Building2,
-  Printer,
   FileText,
 } from "lucide-react";
 
@@ -64,7 +61,6 @@ export default function DailySalesReportPage() {
   // Core Data & State
   const [salesData, setSalesData] = useState<SalesLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -257,32 +253,9 @@ export default function DailySalesReportPage() {
       .slice(0, 5);
   }, [filteredSalesData]);
 
-  // PDF Export Function
-  const exportToPDF = async () => {
-    if (!reportContainerRef.current) return;
-    setIsExportingPDF(true);
-
-    try {
-      const element = reportContainerRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#020617", // slate-950 background consistency
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Daily_Sales_Report_${selectedDate}.pdf`);
-    } catch (err) {
-      console.error("PDF generation failed:", err);
-    } finally {
-      setIsExportingPDF(false);
-    }
+  // Robust Native PDF Export Handler
+  const exportToPDF = () => {
+    window.print();
   };
 
   // CSV Export Function
@@ -330,28 +303,41 @@ export default function DailySalesReportPage() {
 
   return (
     <>
+      {/* Print media styling for pixel-perfect PDF export */}
       <style jsx global>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm;
+          }
           body {
             background-color: #ffffff !important;
-            color: #000000 !important;
+            color: #0f172a !important;
           }
           .no-print {
             display: none !important;
           }
-          .print-only {
+          .print-container {
             display: block !important;
+            color: #0f172a !important;
           }
-        }
-        .print-only {
-          display: none;
+          .print-card {
+            border: 1px solid #cbd5e1 !important;
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+          }
+          .print-table th, .print-table td {
+            color: #0f172a !important;
+            border-color: #e2e8f0 !important;
+          }
         }
       `}</style>
 
       {/* Main Dashboard Layout */}
-      <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6 no-print">
+      <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+        
         {/* Header Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5 no-print">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">
               Daily Sales Report
@@ -394,21 +380,21 @@ export default function DailySalesReportPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
             </button>
 
-            {/* Export PDF with Charts */}
+            {/* Export PDF Button */}
             <button
               onClick={exportToPDF}
-              disabled={isExportingPDF || filteredSalesData.length === 0}
-              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors"
+              disabled={filteredSalesData.length === 0}
+              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors cursor-pointer"
             >
               <FileText className="w-4 h-4" />
-              {isExportingPDF ? "Generating PDF..." : "Export PDF Report"}
+              Export PDF Report
             </button>
 
             {/* CSV Export */}
             <button
               onClick={exportToCSV}
               disabled={filteredSalesData.length === 0}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4" />
               Export CSV
@@ -416,22 +402,31 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* PDF EXPORT TARGET CONTAINER */}
-        <div ref={reportContainerRef} className="space-y-6">
+        {/* Printable & Screen Report Container */}
+        <div ref={reportContainerRef} className="space-y-6 print-container">
+          
+          {/* Print-Only Header */}
+          <div className="hidden print:block border-b border-slate-300 pb-3 mb-4">
+            <h1 className="text-xl font-bold text-slate-900">DAILY SALES & PERFORMANCE REPORT</h1>
+            <p className="text-xs text-slate-600">
+              Date: {selectedDate} | Store: {selectedStore} | Filtered Department: {selectedDepartment}
+            </p>
+          </div>
+
           {/* Peak Hour Banner */}
           {hourlyData.peakHour && (
-            <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
+            <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 print-card rounded-xl p-4 flex items-center justify-between shadow-lg">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 rounded-lg text-indigo-400">
+                <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 rounded-lg text-indigo-400 no-print">
                   <Zap className="w-5 h-5 fill-indigo-400/20" />
                 </div>
                 <div>
-                  <p className="text-xs uppercase font-semibold text-indigo-300 tracking-wider">
+                  <p className="text-xs uppercase font-semibold text-indigo-300 print:text-indigo-700 tracking-wider">
                     Peak Sales Window
                   </p>
-                  <p className="text-sm font-medium text-slate-200">
+                  <p className="text-sm font-medium text-slate-200 print:text-slate-800">
                     Highest activity recorded at{" "}
-                    <strong className="text-white">
+                    <strong>
                       {hourlyData.peakHour.hourLabel} - {hourlyData.peakHour.hourNumber + 1}:00
                     </strong>
                   </p>
@@ -439,8 +434,8 @@ export default function DailySalesReportPage() {
               </div>
 
               <div className="text-right">
-                <span className="text-xs text-slate-400 block">Peak Revenue</span>
-                <span className="text-lg font-bold text-emerald-400">
+                <span className="text-xs text-slate-400 print:text-slate-600 block">Peak Revenue</span>
+                <span className="text-lg font-bold text-emerald-400 print:text-emerald-700">
                   ₱{hourlyData.peakHour.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -449,46 +444,46 @@ export default function DailySalesReportPage() {
 
           {/* Metric Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Revenue</p>
-                <h3 className="text-2xl font-bold text-white mt-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400 print:text-slate-600">Total Revenue</p>
+                <h3 className="text-2xl font-bold text-white print:text-slate-900 mt-1">
                   ₱{metrics.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                 </h3>
               </div>
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl no-print">
                 <DollarSign className="w-6 h-6" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Units Sold</p>
-                <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalUnits.toLocaleString()}</h3>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400 print:text-slate-600">Units Sold</p>
+                <h3 className="text-2xl font-bold text-white print:text-slate-900 mt-1">{metrics.totalUnits.toLocaleString()}</h3>
               </div>
-              <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+              <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl no-print">
                 <ShoppingBag className="w-6 h-6" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Scans</p>
-                <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalTransactions.toLocaleString()}</h3>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400 print:text-slate-600">Total Scans</p>
+                <h3 className="text-2xl font-bold text-white print:text-slate-900 mt-1">{metrics.totalTransactions.toLocaleString()}</h3>
               </div>
-              <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl no-print">
                 <Receipt className="w-6 h-6" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Avg Item Price</p>
-                <h3 className="text-2xl font-bold text-white mt-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400 print:text-slate-600">Avg Item Price</p>
+                <h3 className="text-2xl font-bold text-white print:text-slate-900 mt-1">
                   ₱{metrics.avgOrderValue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                 </h3>
               </div>
-              <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
+              <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl no-print">
                 <TrendingUp className="w-6 h-6" />
               </div>
             </div>
@@ -496,24 +491,24 @@ export default function DailySalesReportPage() {
 
           {/* Store Breakdown Cards */}
           {selectedStore === "ALL" && storeBreakdown.length > 1 && (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-3">
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-indigo-400" />
-                <h2 className="text-sm font-semibold text-slate-200">Store Contribution Breakdown</h2>
+                <Building2 className="w-4 h-4 text-indigo-400 print:text-indigo-700" />
+                <h2 className="text-sm font-semibold text-slate-200 print:text-slate-900">Store Contribution Breakdown</h2>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {storeBreakdown.map((s) => {
                   const pct = metrics.totalRevenue > 0 ? (s.revenue / metrics.totalRevenue) * 100 : 0;
                   return (
-                    <div key={s.store} className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-lg space-y-1.5">
+                    <div key={s.store} className="p-3 bg-slate-950/80 border border-slate-800/80 print-card rounded-lg space-y-1.5">
                       <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-200 truncate">{s.store}</span>
-                        <span className="text-slate-400">{pct.toFixed(1)}%</span>
+                        <span className="font-semibold text-slate-200 print:text-slate-800 truncate">{s.store}</span>
+                        <span className="text-slate-400 print:text-slate-600">{pct.toFixed(1)}%</span>
                       </div>
-                      <div className="text-sm font-bold text-emerald-400">
+                      <div className="text-sm font-bold text-emerald-400 print:text-emerald-700">
                         ₱{s.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                       </div>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden no-print">
                         <div style={{ width: `${pct}%` }} className="bg-indigo-500 h-full rounded-full" />
                       </div>
                     </div>
@@ -525,10 +520,10 @@ export default function DailySalesReportPage() {
 
           {/* Graphical Representation Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-200">Hourly Sales Volume</h2>
-                <span className="text-xs text-slate-500">Hourly Distribution (00:00 - 23:00)</span>
+                <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">Hourly Sales Volume</h2>
+                <span className="text-xs text-slate-500 print:text-slate-600">Hourly Distribution (00:00 - 23:00)</span>
               </div>
               <div className="h-48 flex items-end gap-1.5 pt-6 pb-2 px-2 overflow-x-auto relative">
                 {hourlyData.hours.map((item, idx) => (
@@ -540,7 +535,7 @@ export default function DailySalesReportPage() {
                   >
                     <div className="relative w-full flex justify-center">
                       {activeHourIndex === idx && (
-                        <div className="absolute -top-16 bg-slate-900 border border-indigo-500/40 text-slate-100 text-xs p-2 rounded shadow-xl z-30 min-w-[120px] text-center pointer-events-none">
+                        <div className="absolute -top-16 bg-slate-900 border border-indigo-500/40 text-slate-100 text-xs p-2 rounded shadow-xl z-30 min-w-[120px] text-center pointer-events-none no-print">
                           <p className="font-semibold text-indigo-300">{item.hourLabel}</p>
                           <p className="text-emerald-400 font-bold">₱{item.revenue.toLocaleString()}</p>
                         </div>
@@ -551,12 +546,12 @@ export default function DailySalesReportPage() {
                           activeHourIndex === idx
                             ? "bg-indigo-400"
                             : item.revenue > 0
-                            ? "bg-indigo-600 hover:bg-indigo-500"
-                            : "bg-slate-800/40"
+                            ? "bg-indigo-600 print:bg-indigo-700"
+                            : "bg-slate-800/40 print:bg-slate-300"
                         }`}
                       />
                     </div>
-                    <span className="text-[10px] text-slate-500 mt-2">
+                    <span className="text-[10px] text-slate-500 print:text-slate-700 mt-2">
                       {item.hourLabel.split(":")[0]}h
                     </span>
                   </div>
@@ -564,26 +559,26 @@ export default function DailySalesReportPage() {
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-              <h2 className="text-base font-semibold text-slate-200">Top Performing Items</h2>
+            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
+              <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">Top Performing Items</h2>
               <div className="space-y-3">
                 {topProducts.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-4 text-center">No transactions recorded.</p>
+                  <p className="text-sm text-slate-500 print:text-slate-600 py-4 text-center">No transactions recorded.</p>
                 ) : (
                   topProducts.map((prod, idx) => (
                     <div
                       key={prod.sku}
-                      className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800"
+                      className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800 print-card"
                     >
                       <div className="space-y-0.5 max-w-[180px]">
-                        <p className="text-xs font-semibold text-slate-200 truncate">
+                        <p className="text-xs font-semibold text-slate-200 print:text-slate-900 truncate">
                           {idx + 1}. {prod.name}
                         </p>
-                        <p className="text-[11px] text-slate-500">
+                        <p className="text-[11px] text-slate-500 print:text-slate-600">
                           SKU: {prod.sku} | Qty: {prod.qty}
                         </p>
                       </div>
-                      <p className="text-xs font-bold text-emerald-400">
+                      <p className="text-xs font-bold text-emerald-400 print:text-emerald-700">
                         ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -595,8 +590,8 @@ export default function DailySalesReportPage() {
         </div>
 
         {/* Itemized Table Container */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden space-y-4">
-          <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl overflow-hidden space-y-4">
+          <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-semibold text-slate-200">Itemized Sales Log</h2>
               <span className="text-xs font-medium bg-slate-800 text-indigo-400 px-2.5 py-1 rounded-full border border-slate-700">
@@ -648,8 +643,8 @@ export default function DailySalesReportPage() {
 
           {/* Data Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-800/50 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800">
+            <table className="w-full text-left text-xs print-table">
+              <thead className="bg-slate-800/50 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 print:bg-slate-100 print:text-slate-700">
                 <tr>
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3">SKU / Style</th>
@@ -661,7 +656,7 @@ export default function DailySalesReportPage() {
                   <th className="px-4 py-3 text-right">Price</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-800/60 print:divide-slate-200">
                 {loading ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
@@ -677,26 +672,26 @@ export default function DailySalesReportPage() {
                 ) : (
                   paginatedData.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-400">
+                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">
                         {new Date(log.scanned_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",
                         })}
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-200">
+                      <td className="px-4 py-3 font-medium text-slate-200 print:text-slate-900">
                         {log.sku || log.style_code || "-"}
                       </td>
-                      <td className="px-4 py-3 text-slate-300">
+                      <td className="px-4 py-3 text-slate-300 print:text-slate-800">
                         {log.description || log.style_name || "-"}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">
+                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">
                         {log.color || "-"} / {log.size || "-"}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{log.category || "-"}</td>
-                      <td className="px-4 py-3 text-slate-400">{log.department || "-"}</td>
-                      <td className="px-4 py-3 text-slate-400">{log.store || "N/A"}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-emerald-400">
+                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.category || "-"}</td>
+                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.department || "-"}</td>
+                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.store || "N/A"}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-emerald-400 print:text-emerald-700">
                         ₱{Number(log.price || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
@@ -707,7 +702,7 @@ export default function DailySalesReportPage() {
           </div>
 
           {/* Pagination Controls */}
-          <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+          <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 no-print">
             <div className="flex items-center gap-3">
               <span>
                 Showing <strong className="text-slate-200">{totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}</strong> to{" "}
@@ -753,6 +748,7 @@ export default function DailySalesReportPage() {
             </div>
           </div>
         </div>
+
       </div>
     </>
   );
