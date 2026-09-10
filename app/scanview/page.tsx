@@ -3,6 +3,20 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +32,8 @@ const STORES = [
   "Landmark Nuvali",
   "Landmark Trinoma",
 ];
+
+const PIE_COLORS = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4"];
 
 interface RawLogItem {
   id: string;
@@ -46,6 +62,9 @@ export default function ScanViewPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+
+  // Analytics Toggle State
+  const [showAnalytics, setShowAnalytics] = useState(true);
 
   // Date Filter States
   const [startDate, setStartDate] = useState<string>("");
@@ -199,12 +218,11 @@ export default function ScanViewPage() {
     });
   }, [rawLogs, searchQuery, startDate, endDate]);
 
-  // 2. Compute Summary Metrics
+  // 2. Summary Metrics
   const metrics = useMemo(() => {
     const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
     const uniqueStyles = new Set(filteredRawLogs.map((log) => log.styleCode)).size;
 
-    // Top Category
     const categoryCounts: Record<string, number> = {};
     filteredRawLogs.forEach((log) => {
       const cat = log.category !== "-" ? log.category : "Unassigned";
@@ -212,7 +230,6 @@ export default function ScanViewPage() {
     });
     const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
 
-    // Top Store
     const storeCounts: Record<string, number> = {};
     filteredRawLogs.forEach((log) => {
       storeCounts[log.store] = (storeCounts[log.store] || 0) + log.quantity;
@@ -229,7 +246,44 @@ export default function ScanViewPage() {
     };
   }, [filteredRawLogs]);
 
-  // 3. Apply Dynamic Grouping Logic
+  // 3. Chart Visualizations Data
+  const chartData = useMemo(() => {
+    // A. Daily Scan Trends
+    const timeMap: Record<string, { date: string; units: number; scans: number }> = {};
+    filteredRawLogs.forEach((log) => {
+      if (!log.rawTimestamp) return;
+      const d = new Date(log.rawTimestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+      if (!timeMap[d]) {
+        timeMap[d] = { date: d, units: 0, scans: 0 };
+      }
+      timeMap[d].units += log.quantity;
+      timeMap[d].scans += 1;
+    });
+    const timeSeries = Object.values(timeMap).reverse();
+
+    // B. Store Comparison
+    const storeMap: Record<string, { store: string; units: number }> = {};
+    filteredRawLogs.forEach((log) => {
+      const shortStore = log.store.replace("Metro Gaisano ", "MG ").replace("Landmark ", "LM ");
+      if (!storeMap[shortStore]) {
+        storeMap[shortStore] = { store: shortStore, units: 0 };
+      }
+      storeMap[shortStore].units += log.quantity;
+    });
+    const storeSeries = Object.values(storeMap).sort((a, b) => b.units - a.units).slice(0, 5);
+
+    // C. Category Share
+    const catMap: Record<string, number> = {};
+    filteredRawLogs.forEach((log) => {
+      const cat = log.category !== "-" ? log.category : "Other";
+      catMap[cat] = (catMap[cat] || 0) + log.quantity;
+    });
+    const categorySeries = Object.entries(catMap).map(([name, value]) => ({ name, value }));
+
+    return { timeSeries, storeSeries, categorySeries };
+  }, [filteredRawLogs]);
+
+  // 4. Apply Dynamic Grouping Logic
   const groupedItems = useMemo(() => {
     if (groupBy === "none") {
       return filteredRawLogs.map((log) => ({
@@ -270,7 +324,7 @@ export default function ScanViewPage() {
     return Array.from(groupedMap.values());
   }, [filteredRawLogs, groupBy]);
 
-  // 4. Apply Dynamic Sorting Logic
+  // 5. Apply Dynamic Sorting Logic
   const processedItems = useMemo(() => {
     const list = [...groupedItems];
 
@@ -294,7 +348,7 @@ export default function ScanViewPage() {
     });
   }, [groupedItems, sortBy]);
 
-  // 5. Pagination Calculations
+  // 6. Pagination Calculations
   const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, processedItems.length);
@@ -351,14 +405,24 @@ export default function ScanViewPage() {
             Scanned Logs Management
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Filter, group, and sort database records across store locations
+            Filter, group, and analyze database records across store locations
           </p>
         </div>
 
         <div className="flex items-center space-x-2 self-start sm:self-auto">
           <button
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition border border-slate-700/60"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span>{showAnalytics ? "Hide Charts" : "Show Charts"}</span>
+          </button>
+
+          <button
             onClick={fetchScannedLogs}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-700/60"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition border border-slate-700/60"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -370,7 +434,7 @@ export default function ScanViewPage() {
             <button
               onClick={() => setIsExportOpen(!isExportOpen)}
               disabled={processedItems.length === 0}
-              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10"
+              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition shadow-lg shadow-emerald-500/10"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -408,11 +472,9 @@ export default function ScanViewPage() {
         </div>
       </header>
 
-      {/* Advanced Metrics & Summary Dashboard Cards */}
+      {/* Advanced Metrics Summary Dashboard Cards */}
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Card 1: Total Units */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/5 rounded-bl-full pointer-events-none" />
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Scanned Units</p>
           <div className="flex items-baseline space-x-1.5">
             <span className="text-2xl sm:text-3xl font-black text-white">{metrics.totalUnits}</span>
@@ -421,9 +483,7 @@ export default function ScanViewPage() {
           <p className="text-[10px] text-slate-500">Across active filters</p>
         </div>
 
-        {/* Card 2: Unique Styles */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-bl-full pointer-events-none" />
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Styles</p>
           <div className="flex items-baseline space-x-1.5">
             <span className="text-2xl sm:text-3xl font-black text-white">{metrics.uniqueStyles}</span>
@@ -432,9 +492,7 @@ export default function ScanViewPage() {
           <p className="text-[10px] text-slate-500">Distinct product codes</p>
         </div>
 
-        {/* Card 3: Top Category */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500/5 rounded-bl-full pointer-events-none" />
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
           <div className="truncate">
             <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topCategoryName}</span>
@@ -442,9 +500,7 @@ export default function ScanViewPage() {
           <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} units logged</p>
         </div>
 
-        {/* Card 4: Top Store */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-amber-500/5 rounded-bl-full pointer-events-none" />
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Highest Volume Store</p>
           <div className="truncate">
             <span className="text-base sm:text-lg font-black text-white truncate block">{metrics.topStoreName}</span>
@@ -453,9 +509,69 @@ export default function ScanViewPage() {
         </div>
       </section>
 
+      {/* Visual Analytics & Charts Section */}
+      {showAnalytics && (
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center space-x-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>Visual Analytics Dashboard</span>
+            </h2>
+            <span className="text-[10px] font-mono text-slate-500">Live Data</span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Chart 1: Time Series Area Chart */}
+            <div className="lg:col-span-7 bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+              <p className="text-[11px] font-bold text-slate-400">Daily Scan Volume Trends</p>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData.timeSeries}>
+                    <defs>
+                      <linearGradient id="colorUnits" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                    <YAxis stroke="#64748b" fontSize={10} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "12px", fontSize: "12px" }}
+                      itemStyle={{ color: "#10b981" }}
+                    />
+                    <Area type="monotone" dataKey="units" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorUnits)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: Store Bar Chart */}
+            <div className="lg:col-span-5 bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+              <p className="text-[11px] font-bold text-slate-400">Volume by Store (Top 5)</p>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData.storeSeries} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis type="number" stroke="#64748b" fontSize={10} hide />
+                    <YAxis dataKey="store" type="category" stroke="#94a3b8" fontSize={9} width={80} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "12px", fontSize: "12px" }}
+                      itemStyle={{ color: "#3b82f6" }}
+                    />
+                    <Bar dataKey="units" fill="#3b82f6" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Controls Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-        {/* Search Input */}
         <div className="sm:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -469,7 +585,6 @@ export default function ScanViewPage() {
           />
         </div>
 
-        {/* Store Location Filter */}
         <div className="sm:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-2 flex items-center">
           <select
             value={selectedStoreFilter}
@@ -487,7 +602,6 @@ export default function ScanViewPage() {
 
       {/* Grouping & Sorting Controls Card */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Group By Selector */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
             Group By:
@@ -504,7 +618,6 @@ export default function ScanViewPage() {
           </select>
         </div>
 
-        {/* Sort By Selector */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
             Sort By:
@@ -621,20 +734,17 @@ export default function ScanViewPage() {
                   key={item.id}
                   className="bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center gap-3 sm:gap-0"
                 >
-                  {/* Store Column */}
                   <div className="sm:col-span-3 space-y-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
                       {item.store}
                     </span>
                   </div>
 
-                  {/* Product Info Column */}
                   <div className="sm:col-span-4 space-y-0.5">
                     <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
                     <p className="font-mono text-emerald-400 text-xs font-semibold">{item.styleCode}</p>
                   </div>
 
-                  {/* Attributes Column */}
                   <div className="sm:col-span-2 flex flex-wrap gap-1 text-[10px]">
                     {item.category !== "-" && (
                       <span className="bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">
@@ -648,7 +758,6 @@ export default function ScanViewPage() {
                     )}
                   </div>
 
-                  {/* Quantity Column */}
                   <div className="sm:col-span-1 flex sm:justify-center items-center w-full sm:w-auto justify-between">
                     <span className="sm:hidden text-xs text-slate-500 font-bold">Qty:</span>
                     <div className="text-center">
@@ -663,7 +772,6 @@ export default function ScanViewPage() {
                     </div>
                   </div>
 
-                  {/* Timestamp & Delete Action */}
                   <div className="sm:col-span-2 flex items-center justify-between sm:justify-end space-x-3 w-full sm:w-auto border-t sm:border-0 border-slate-800/80 pt-2 sm:pt-0">
                     <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
                     <button
@@ -678,9 +786,8 @@ export default function ScanViewPage() {
               ))}
             </div>
 
-            {/* Pagination Controls Footer */}
+            {/* Pagination Controls */}
             <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-              {/* Entries Info & Per-Page Selector */}
               <div className="flex items-center space-x-4 text-xs text-slate-400">
                 <span>
                   Showing <strong className="text-white">{processedItems.length === 0 ? 0 : startIndex + 1}</strong> to{" "}
@@ -703,42 +810,35 @@ export default function ScanViewPage() {
                 </div>
               </div>
 
-              {/* Page Navigation Buttons */}
               <div className="flex items-center space-x-1.5">
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-950 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                  title="First Page"
+                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
                 >
                   «
                 </button>
-
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-950 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
+                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
                 >
                   Prev
                 </button>
-
                 <span className="text-xs font-bold text-slate-300 px-2">
                   Page <span className="text-emerald-400">{currentPage}</span> of <span className="text-white">{totalPages}</span>
                 </span>
-
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-950 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
+                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
                 >
                   Next
                 </button>
-
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-950 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
-                  title="Last Page"
+                  className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition"
                 >
                   »
                 </button>
