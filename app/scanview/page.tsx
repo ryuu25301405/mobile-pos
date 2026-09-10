@@ -34,6 +34,7 @@ interface RawLogItem {
   id: string;
   store: string;
   styleCode: string;
+  sku: string;
   styleName: string;
   description: string;
   color: string;
@@ -104,6 +105,7 @@ export default function ScanViewPage() {
         id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
         store: item.store || "Unassigned Store",
         styleCode: item.style_code || "N/A",
+        sku: item.sku || "-",
         styleName: item.style_name || "Unassigned Item",
         description: item.description || "",
         color: item.color || "-",
@@ -181,6 +183,7 @@ export default function ScanViewPage() {
 
       const matchesSearch =
         item.styleCode.toLowerCase().includes(q) ||
+        item.sku.toLowerCase().includes(q) ||
         item.styleName.toLowerCase().includes(q) ||
         item.store.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
@@ -278,7 +281,7 @@ export default function ScanViewPage() {
       let groupKey = "";
 
       if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.color}|${item.size}`;
+        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
       } else if (groupBy === "category") {
         groupKey = `${item.store}|${item.category}|${item.styleCode}`;
       } else if (groupBy === "department") {
@@ -340,6 +343,7 @@ export default function ScanViewPage() {
     const exportData = processedItems.map((item) => ({
       "Store Location": item.store,
       "Style Code": item.styleCode,
+      "SKU": item.sku,
       "Style Name": item.styleName,
       "Description": item.description,
       "Category": item.category,
@@ -552,7 +556,7 @@ export default function ScanViewPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search code, product, category..."
+            placeholder="Search code, SKU, product, category..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
@@ -638,7 +642,7 @@ export default function ScanViewPage() {
         </div>
       </section>
 
-      {/* Main High-Density Desktop Data Table */}
+      {/* Main Data Table */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
         {loading ? (
           <div className="p-12 text-center space-y-3">
@@ -657,6 +661,7 @@ export default function ScanViewPage() {
                 <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Store Location</th>
                   <th className="py-3 px-4">Style Code</th>
+                  <th className="py-3 px-4">SKU</th>
                   <th className="py-3 px-4">Product Name</th>
                   <th className="py-3 px-4">Category / Dept</th>
                   <th className="py-3 px-4">Color / Size</th>
@@ -676,6 +681,9 @@ export default function ScanViewPage() {
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-200">
                       {item.styleCode}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-semibold text-blue-400">
+                      {item.sku}
                     </td>
                     <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
                       {item.styleName}
