@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 
@@ -19,7 +19,7 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-interface ScannedProduct {
+interface RawLogItem {
   id: string;
   store: string;
   styleCode: string;
@@ -32,11 +32,17 @@ interface ScannedProduct {
   quantity: number;
   rawTimestamp: string;
   timestamp: string;
-  scanCount: number; // Number of logs grouped together
 }
 
+interface GroupedProduct extends RawLogItem {
+  scanCount: number;
+}
+
+type GroupByOption = "store_style" | "category" | "department" | "none";
+type SortOption = "newest" | "oldest" | "qty_desc" | "qty_asc" | "name_asc";
+
 export default function ScanViewPage() {
-  const [scannedItems, setScannedItems] = useState<ScannedProduct[]>([]);
+  const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
@@ -44,6 +50,10 @@ export default function ScanViewPage() {
   // Date Filter States
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // Grouping & Sorting States
+  const [groupBy, setGroupBy] = useState<GroupByOption>("store_style");
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
 
   const [isExportOpen, setIsExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -72,48 +82,22 @@ export default function ScanViewPage() {
     const { data, error } = await query;
 
     if (!error && data) {
-      // Grouping and consolidating identical items per store
-      const groupedMap = new Map<string, ScannedProduct>();
+      const logs: RawLogItem[] = data.map((item: any) => ({
+        id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
+        store: item.store || "Unassigned Store",
+        styleCode: item.style_code || "N/A",
+        styleName: item.style_name || "Unassigned Item",
+        description: item.description || "",
+        color: item.color || "-",
+        category: item.category || "-",
+        department: item.department || "-",
+        size: item.size || "-",
+        quantity: item.quantity || 1,
+        rawTimestamp: item.scanned_at || "",
+        timestamp: formatTimestamp(item.scanned_at),
+      }));
 
-      data.forEach((item: any) => {
-        const store = item.store || "Unassigned Store";
-        const styleCode = item.style_code || "N/A";
-        const color = item.color || "-";
-        const size = item.size || "-";
-
-        // Group key uniquely identifies store + product attributes
-        const groupKey = `${store}|${styleCode}|${color}|${size}`;
-        const qty = item.quantity || 1;
-
-        if (groupedMap.has(groupKey)) {
-          const existing = groupedMap.get(groupKey)!;
-          existing.quantity += qty;
-          existing.scanCount += 1;
-          // Keep the latest timestamp
-          if (new Date(item.scanned_at) > new Date(existing.rawTimestamp)) {
-            existing.rawTimestamp = item.scanned_at;
-            existing.timestamp = formatTimestamp(item.scanned_at);
-          }
-        } else {
-          groupedMap.set(groupKey, {
-            id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-            store,
-            styleCode,
-            styleName: item.style_name || "Unassigned Item",
-            description: item.description || "",
-            color,
-            category: item.category || "-",
-            department: item.department || "-",
-            size,
-            quantity: qty,
-            rawTimestamp: item.scanned_at || "",
-            timestamp: formatTimestamp(item.scanned_at),
-            scanCount: 1,
-          });
-        }
-      });
-
-      setScannedItems(Array.from(groupedMap.values()));
+      setRawLogs(logs);
     }
     setLoading(false);
   }, [selectedStoreFilter]);
@@ -122,7 +106,6 @@ export default function ScanViewPage() {
     fetchScannedLogs();
   }, [fetchScannedLogs]);
 
-  // Close export dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
@@ -133,18 +116,20 @@ export default function ScanViewPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleRemoveItem = async (itemToRemove: ScannedProduct) => {
-    setScannedItems((prev) => prev.filter((item) => item.id !== itemToRemove.id));
-    
-    // Delete entries matching the store and style code from DB
-    await supabase
-      .from("scanned_logs")
-      .delete()
-      .eq("store", itemToRemove.store)
-      .eq("style_code", itemToRemove.styleCode);
+  const handleRemoveItem = async (itemToRemove: GroupedProduct) => {
+    setRawLogs((prev) => prev.filter((item) => item.id !== itemToRemove.id));
+
+    if (groupBy === "none") {
+      await supabase.from("scanned_logs").delete().eq("id", itemToRemove.id);
+    } else {
+      await supabase
+        .from("scanned_logs")
+        .delete()
+        .eq("store", itemToRemove.store)
+        .eq("style_code", itemToRemove.styleCode);
+    }
   };
 
-  // Date Shortcut Handlers
   const handlePresetDate = (type: "today" | "7days" | "month" | "clear") => {
     const now = new Date();
     const formatDate = (d: Date) => d.toISOString().split("T")[0];
@@ -168,46 +153,113 @@ export default function ScanViewPage() {
     }
   };
 
-  // Combined Search & Date Filtering Logic
-  const filteredItems = scannedItems.filter((item) => {
-    const q = searchQuery.toLowerCase();
+  // 1. Filter by Search Query & Date Range
+  const filteredRawLogs = useMemo(() => {
+    return rawLogs.filter((item) => {
+      const q = searchQuery.toLowerCase();
 
-    const matchesSearch =
-      item.styleCode.toLowerCase().includes(q) ||
-      item.styleName.toLowerCase().includes(q) ||
-      item.store.toLowerCase().includes(q) ||
-      item.category.toLowerCase().includes(q) ||
-      item.department.toLowerCase().includes(q);
+      const matchesSearch =
+        item.styleCode.toLowerCase().includes(q) ||
+        item.styleName.toLowerCase().includes(q) ||
+        item.store.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q) ||
+        item.department.toLowerCase().includes(q);
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (startDate || endDate) {
-      if (!item.rawTimestamp) return false;
+      if (startDate || endDate) {
+        if (!item.rawTimestamp) return false;
 
-      const itemDate = new Date(item.rawTimestamp);
-      itemDate.setHours(0, 0, 0, 0);
+        const itemDate = new Date(item.rawTimestamp);
+        itemDate.setHours(0, 0, 0, 0);
 
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        if (itemDate < start) return false;
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) return false;
+        }
+
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) return false;
+        }
       }
 
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        if (itemDate > end) return false;
-      }
+      return true;
+    });
+  }, [rawLogs, searchQuery, startDate, endDate]);
+
+  // 2. Apply Dynamic Grouping Logic
+  const groupedItems = useMemo(() => {
+    if (groupBy === "none") {
+      return filteredRawLogs.map((log) => ({
+        ...log,
+        scanCount: 1,
+      }));
     }
 
-    return true;
-  });
+    const groupedMap = new Map<string, GroupedProduct>();
 
-  // Export Data Handler
+    filteredRawLogs.forEach((item) => {
+      let groupKey = "";
+
+      if (groupBy === "store_style") {
+        groupKey = `${item.store}|${item.styleCode}|${item.color}|${item.size}`;
+      } else if (groupBy === "category") {
+        groupKey = `${item.store}|${item.category}|${item.styleCode}`;
+      } else if (groupBy === "department") {
+        groupKey = `${item.store}|${item.department}|${item.styleCode}`;
+      }
+
+      if (groupedMap.has(groupKey)) {
+        const existing = groupedMap.get(groupKey)!;
+        existing.quantity += item.quantity;
+        existing.scanCount += 1;
+        if (new Date(item.rawTimestamp) > new Date(existing.rawTimestamp)) {
+          existing.rawTimestamp = item.rawTimestamp;
+          existing.timestamp = item.timestamp;
+        }
+      } else {
+        groupedMap.set(groupKey, {
+          ...item,
+          scanCount: 1,
+        });
+      }
+    });
+
+    return Array.from(groupedMap.values());
+  }, [filteredRawLogs, groupBy]);
+
+  // 3. Apply Dynamic Sorting Logic
+  const processedItems = useMemo(() => {
+    const list = [...groupedItems];
+
+    return list.sort((a, b) => {
+      if (sortBy === "newest") {
+        return new Date(b.rawTimestamp).getTime() - new Date(a.rawTimestamp).getTime();
+      }
+      if (sortBy === "oldest") {
+        return new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime();
+      }
+      if (sortBy === "qty_desc") {
+        return b.quantity - a.quantity;
+      }
+      if (sortBy === "qty_asc") {
+        return a.quantity - b.quantity;
+      }
+      if (sortBy === "name_asc") {
+        return a.styleName.localeCompare(b.styleName);
+      }
+      return 0;
+    });
+  }, [groupedItems, sortBy]);
+
+  // Export Handler
   const handleExport = (format: "xlsx" | "xls" | "csv") => {
-    if (filteredItems.length === 0) return;
+    if (processedItems.length === 0) return;
 
-    const exportData = filteredItems.map((item) => ({
+    const exportData = processedItems.map((item) => ({
       "Store Location": item.store,
       "Style Code": item.styleCode,
       "Style Name": item.styleName,
@@ -216,18 +268,18 @@ export default function ScanViewPage() {
       "Department": item.department,
       "Color": item.color,
       "Size": item.size,
-      "Total Quantity": item.quantity,
+      "Quantity": item.quantity,
       "Total Scan Logs": item.scanCount,
-      "Latest Scan At": item.timestamp,
+      "Timestamp": item.timestamp,
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Consolidated Logs");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
     const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Consolidated_Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
+    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -240,8 +292,7 @@ export default function ScanViewPage() {
     setIsExportOpen(false);
   };
 
-  const totalDistinctStyles = filteredItems.length;
-  const totalSummedQuantity = filteredItems.reduce((acc, item) => acc + item.quantity, 0);
+  const totalSummedQuantity = processedItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 max-w-6xl mx-auto antialiased space-y-6">
@@ -252,15 +303,14 @@ export default function ScanViewPage() {
             Database View
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">
-            Consolidated Scanned Logs
+            Scanned Logs Management
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Summed quantities per QR style code and store location
+            Filter, group, and sort database records across store locations
           </p>
         </div>
 
         <div className="flex items-center space-x-2 self-start sm:self-auto">
-          {/* Refresh Button */}
           <button
             onClick={fetchScannedLogs}
             className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-700/60"
@@ -271,11 +321,10 @@ export default function ScanViewPage() {
             <span>Refresh</span>
           </button>
 
-          {/* Export Dropdown */}
           <div className="relative" ref={exportRef}>
             <button
               onClick={() => setIsExportOpen(!isExportOpen)}
-              disabled={filteredItems.length === 0}
+              disabled={processedItems.length === 0}
               className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -349,8 +398,46 @@ export default function ScanViewPage() {
         <div className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between sm:justify-center space-x-2 text-center">
           <span className="text-[10px] font-bold uppercase text-slate-500 sm:hidden">Total Summed:</span>
           <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
-            {totalSummedQuantity} Total Qty ({totalDistinctStyles} Items)
+            {totalSummedQuantity} Units ({processedItems.length} Rows)
           </span>
+        </div>
+      </div>
+
+      {/* Grouping & Sorting Controls Card */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Group By Selector */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+            Group By:
+          </span>
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
+            className="w-full bg-slate-950 border border-slate-800 text-xs font-bold text-emerald-400 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+          >
+            <option value="store_style">Store Location + QR Code (Consolidated)</option>
+            <option value="category">Category</option>
+            <option value="department">Department</option>
+            <option value="none">None (Individual Raw Logs)</option>
+          </select>
+        </div>
+
+        {/* Sort By Selector */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center space-x-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+            Sort By:
+          </span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            className="w-full bg-slate-950 border border-slate-800 text-xs font-bold text-emerald-400 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="qty_desc">Highest Quantity First</option>
+            <option value="qty_asc">Lowest Quantity First</option>
+            <option value="name_asc">Alphabetical (Product Name A-Z)</option>
+          </select>
         </div>
       </div>
 
@@ -424,7 +511,7 @@ export default function ScanViewPage() {
             <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="text-xs text-slate-400">Loading database logs...</p>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : processedItems.length === 0 ? (
           <div className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-12 text-center space-y-3">
             <div className="w-16 h-16 bg-slate-800/80 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -442,12 +529,12 @@ export default function ScanViewPage() {
               <span className="col-span-3">Store Location</span>
               <span className="col-span-4">Product Details</span>
               <span className="col-span-2">Attributes</span>
-              <span className="col-span-1 text-center">Total Qty</span>
-              <span className="col-span-2 text-right">Latest Scan</span>
+              <span className="col-span-1 text-center">Qty</span>
+              <span className="col-span-2 text-right">Timestamp</span>
             </div>
 
             <div className="space-y-2.5 max-h-[70vh] overflow-y-auto pr-1">
-              {filteredItems.map((item) => (
+              {processedItems.map((item) => (
                 <div
                   key={item.id}
                   className="bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center gap-3 sm:gap-0"
@@ -467,9 +554,9 @@ export default function ScanViewPage() {
 
                   {/* Attributes Column */}
                   <div className="sm:col-span-2 flex flex-wrap gap-1 text-[10px]">
-                    {item.color !== "-" && (
-                      <span className="bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md">
-                        {item.color}
+                    {item.category !== "-" && (
+                      <span className="bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">
+                        {item.category}
                       </span>
                     )}
                     {item.size !== "-" && (
@@ -479,14 +566,14 @@ export default function ScanViewPage() {
                     )}
                   </div>
 
-                  {/* Total Summed Quantity Column */}
+                  {/* Quantity Column */}
                   <div className="sm:col-span-1 flex sm:justify-center items-center w-full sm:w-auto justify-between">
-                    <span className="sm:hidden text-xs text-slate-500 font-bold">Total Qty:</span>
+                    <span className="sm:hidden text-xs text-slate-500 font-bold">Qty:</span>
                     <div className="text-center">
                       <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-sm px-3 py-1 rounded-full inline-block">
                         x{item.quantity}
                       </span>
-                      {item.scanCount > 1 && (
+                      {groupBy !== "none" && item.scanCount > 1 && (
                         <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
                           ({item.scanCount} scans)
                         </p>
@@ -494,13 +581,13 @@ export default function ScanViewPage() {
                     </div>
                   </div>
 
-                  {/* Timestamp & Actions */}
+                  {/* Timestamp & Delete Action */}
                   <div className="sm:col-span-2 flex items-center justify-between sm:justify-end space-x-3 w-full sm:w-auto border-t sm:border-0 border-slate-800/80 pt-2 sm:pt-0">
                     <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
                     <button
                       onClick={() => handleRemoveItem(item)}
                       className="text-slate-600 hover:text-red-400 p-1 text-xs font-bold transition"
-                      title="Delete log group"
+                      title="Delete entry"
                     >
                       ✕
                     </button>
