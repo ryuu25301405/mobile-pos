@@ -1,24 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState } from "react";
+import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import * as XLSX from "xlsx";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from "recharts";
+import { triggerScanFeedback } from "@/lib/feedback";
+
+const Scanner = dynamicImport(() => import("@/components/Scanner"), {
+  ssr: false,
+});
 
 export const dynamic = 'force-dynamic';
 
 const STORES = [
-  "All Stores",
   "Metro Gaisano Ayala Cebu",
   "Metro Gaisano Colon",
   "Metro Gaisano Mandaue",
@@ -30,753 +23,488 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-interface RawLogItem {
-  id: string;
-  store: string;
+interface ProductDetails {
   styleCode: string;
-  sku: string;
+  sku?: string;
   styleName: string;
   description: string;
   color: string;
   category: string;
   department: string;
   size: string;
+  price: number;
   quantity: number;
-  rawTimestamp: string;
+}
+
+interface SessionScannedProduct extends ProductDetails {
+  id: string;
+  store: string;
   timestamp: string;
 }
 
-interface GroupedProduct extends RawLogItem {
-  scanCount: number;
-}
+export default function Home() {
+  const [selectedStore, setSelectedStore] = useState<string>("");
+  const [tempStore, setTempStore] = useState<string>("");
+  const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
 
-type GroupByOption = "store_style" | "category" | "department" | "none";
-type SortOption = "newest" | "oldest" | "qty_desc" | "qty_asc" | "name_asc";
+  const [scanning, setScanning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-export default function ScanViewPage() {
-  const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+  // Local state for current active session scans
+  const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
+  const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
 
-  // Analytics Toggle State
-  const [showAnalytics, setShowAnalytics] = useState(true);
-
-  // Date Filter States
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
-
-  // Grouping & Sorting States
-  const [groupBy, setGroupBy] = useState<GroupByOption>("store_style");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
-
-  // Pagination States
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(25);
-
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  const formatTimestamp = (isoString?: string) => {
-    if (!isoString) return "N/A";
-    const rawDate = new Date(isoString);
-    return rawDate.toLocaleString("en-PH", {
-      timeZone: "Asia/Manila",
-      dateStyle: "short",
-      timeStyle: "medium",
-    });
+  // Open scanner handler
+  const handleOpenScanner = () => {
+    if (!selectedStore) {
+      setTempStore(STORES[0]);
+      setIsStoreModalOpen(true);
+      return;
+    }
+    setScanning(true);
+    setIsPaused(false);
+    setErrorMessage(null);
   };
 
-  const fetchScannedLogs = useCallback(async () => {
+  // Confirm store selection from popup modal
+  const handleConfirmStore = () => {
+    if (!tempStore) return;
+    setSelectedStore(tempStore);
+    setIsStoreModalOpen(false);
+    setScanning(true);
+    setIsPaused(false);
+    setErrorMessage(null);
+  };
+
+  // Handle barcode/QR processing with price retrieval
+  const handleScan = async (scannedBarcode: string) => {
+    setIsPaused(true);
     setLoading(true);
-    let query = supabase
-      .from("scanned_logs")
+    setErrorMessage(null);
+
+    const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
+
+    // 1. Try matching exact barcode first
+    let { data, error } = await supabase
+      .from("products")
       .select("*")
-      .order("scanned_at", { ascending: false });
+      .eq("barcode", cleanCode)
+      .maybeSingle();
 
-    if (selectedStoreFilter !== "All Stores") {
-      query = query.eq("store", selectedStoreFilter);
+    // 2. If not found by barcode, try style_code
+    if (!data) {
+      const res = await supabase
+        .from("products")
+        .select("*")
+        .ilike("style_code", cleanCode)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
     }
 
-    const { data, error } = await query;
-
-    if (!error && data) {
-      const logs: RawLogItem[] = data.map((item: any) => ({
-        id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-        store: item.store || "Unassigned Store",
-        styleCode: item.style_code || "N/A",
-        sku: item.sku || "-",
-        styleName: item.style_name || "Unassigned Item",
-        description: item.description || "",
-        color: item.color || "-",
-        category: item.category || "-",
-        department: item.department || "-",
-        size: item.size || "-",
-        quantity: item.quantity || 1,
-        rawTimestamp: item.scanned_at || "",
-        timestamp: formatTimestamp(item.scanned_at),
-      }));
-
-      setRawLogs(logs);
+    // 3. If still not found, try matching sku
+    if (!data) {
+      const res = await supabase
+        .from("products")
+        .select("*")
+        .ilike("sku", cleanCode)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
     }
+
     setLoading(false);
-  }, [selectedStoreFilter]);
 
-  useEffect(() => {
-    fetchScannedLogs();
-  }, [fetchScannedLogs]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
-        setIsExportOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, selectedStoreFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
-
-  const handleRemoveItem = async (itemToRemove: GroupedProduct) => {
-    setRawLogs((prev) => prev.filter((item) => item.id !== itemToRemove.id));
-
-    if (groupBy === "none") {
-      await supabase.from("scanned_logs").delete().eq("id", itemToRemove.id);
+    if (error || !data) {
+      triggerScanFeedback("error");
+      setErrorMessage(`Code "${cleanCode}" not found in database.`);
     } else {
-      await supabase
-        .from("scanned_logs")
-        .delete()
-        .eq("store", itemToRemove.store)
-        .eq("style_code", itemToRemove.styleCode);
+      triggerScanFeedback("success");
+
+      const fetchedProduct: ProductDetails = {
+        styleCode: data.style_code || cleanCode,
+        sku: data.sku || "-",
+        styleName: data.style_name || "Unassigned Item",
+        description: data.description || "N/A",
+        color: data.color || "-",
+        category: data.category || "-",
+        department: data.department || "-",
+        size: data.size || "-",
+        price: Number(data.price) || 0,
+        quantity: 1,
+      };
+
+      setLastScannedItem(fetchedProduct);
+
+      const now = new Date();
+      const formattedTimestamp = now.toLocaleTimeString("en-PH", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+
+      // Add to session list view instantly
+      const newSessionItem: SessionScannedProduct = {
+        ...fetchedProduct,
+        id: `${cleanCode}-${Date.now()}`,
+        store: selectedStore,
+        timestamp: formattedTimestamp,
+      };
+
+      setSessionScans((prev) => [newSessionItem, ...prev]);
+
+      // Direct auto-save to Supabase scanned_logs database
+      await supabase.from("scanned_logs").insert([
+        {
+          store: selectedStore,
+          style_code: fetchedProduct.styleCode,
+          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+          style_name: fetchedProduct.styleName,
+          description: fetchedProduct.description,
+          color: fetchedProduct.color,
+          category: fetchedProduct.category,
+          department: fetchedProduct.department,
+          size: fetchedProduct.size,
+          price: fetchedProduct.price,
+          quantity: 1,
+          scanned_at: now.toISOString(),
+        },
+      ]);
     }
   };
 
-  const handlePresetDate = (type: "today" | "7days" | "month" | "clear") => {
-    const now = new Date();
-    const formatDate = (d: Date) => d.toISOString().split("T")[0];
-
-    if (type === "today") {
-      const todayStr = formatDate(now);
-      setStartDate(todayStr);
-      setEndDate(todayStr);
-    } else if (type === "7days") {
-      const past = new Date();
-      past.setDate(now.getDate() - 7);
-      setStartDate(formatDate(past));
-      setEndDate(formatDate(now));
-    } else if (type === "month") {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(formatDate(firstDay));
-      setEndDate(formatDate(now));
-    } else if (type === "clear") {
-      setStartDate("");
-      setEndDate("");
-    }
+  const handleScanNext = () => {
+    setErrorMessage(null);
+    setLastScannedItem(null);
+    setIsPaused(false);
   };
 
-  const filteredRawLogs = useMemo(() => {
-    return rawLogs.filter((item) => {
-      const q = searchQuery.toLowerCase();
-
-      const matchesSearch =
-        item.styleCode.toLowerCase().includes(q) ||
-        item.sku.toLowerCase().includes(q) ||
-        item.styleName.toLowerCase().includes(q) ||
-        item.store.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q) ||
-        item.department.toLowerCase().includes(q);
-
-      if (!matchesSearch) return false;
-
-      if (startDate || endDate) {
-        if (!item.rawTimestamp) return false;
-
-        const itemDate = new Date(item.rawTimestamp);
-        itemDate.setHours(0, 0, 0, 0);
-
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [rawLogs, searchQuery, startDate, endDate]);
-
-  const metrics = useMemo(() => {
-    const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
-    const uniqueStyles = new Set(filteredRawLogs.map((log) => log.styleCode)).size;
-
-    const categoryCounts: Record<string, number> = {};
-    filteredRawLogs.forEach((log) => {
-      const cat = log.category !== "-" ? log.category : "Unassigned";
-      categoryCounts[cat] = (categoryCounts[cat] || 0) + log.quantity;
-    });
-    const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
-
-    const storeCounts: Record<string, number> = {};
-    filteredRawLogs.forEach((log) => {
-      storeCounts[log.store] = (storeCounts[log.store] || 0) + log.quantity;
-    });
-    const topStore = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
-
-    return {
-      totalUnits,
-      uniqueStyles,
-      topCategoryName: topCategory[0],
-      topCategoryQty: topCategory[1],
-      topStoreName: topStore[0],
-      topStoreQty: topStore[1],
-    };
-  }, [filteredRawLogs]);
-
-  const chartData = useMemo(() => {
-    const timeMap: Record<string, { date: string; units: number; scans: number }> = {};
-    filteredRawLogs.forEach((log) => {
-      if (!log.rawTimestamp) return;
-      const d = new Date(log.rawTimestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
-      if (!timeMap[d]) {
-        timeMap[d] = { date: d, units: 0, scans: 0 };
-      }
-      timeMap[d].units += log.quantity;
-      timeMap[d].scans += 1;
-    });
-    const timeSeries = Object.values(timeMap).reverse();
-
-    const storeMap: Record<string, { store: string; units: number }> = {};
-    filteredRawLogs.forEach((log) => {
-      const shortStore = log.store.replace("Metro Gaisano ", "MG ").replace("Landmark ", "LM ");
-      if (!storeMap[shortStore]) {
-        storeMap[shortStore] = { store: shortStore, units: 0 };
-      }
-      storeMap[shortStore].units += log.quantity;
-    });
-    const storeSeries = Object.values(storeMap).sort((a, b) => b.units - a.units).slice(0, 6);
-
-    return { timeSeries, storeSeries };
-  }, [filteredRawLogs]);
-
-  const groupedItems = useMemo(() => {
-    if (groupBy === "none") {
-      return filteredRawLogs.map((log) => ({
-        ...log,
-        scanCount: 1,
-      }));
-    }
-
-    const groupedMap = new Map<string, GroupedProduct>();
-
-    filteredRawLogs.forEach((item) => {
-      let groupKey = "";
-
-      if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
-      } else if (groupBy === "category") {
-        groupKey = `${item.store}|${item.category}|${item.styleCode}`;
-      } else if (groupBy === "department") {
-        groupKey = `${item.store}|${item.department}|${item.styleCode}`;
-      }
-
-      if (groupedMap.has(groupKey)) {
-        const existing = groupedMap.get(groupKey)!;
-        existing.quantity += item.quantity;
-        existing.scanCount += 1;
-        if (new Date(item.rawTimestamp) > new Date(existing.rawTimestamp)) {
-          existing.rawTimestamp = item.rawTimestamp;
-          existing.timestamp = item.timestamp;
-        }
-      } else {
-        groupedMap.set(groupKey, {
-          ...item,
-          scanCount: 1,
-        });
-      }
-    });
-
-    return Array.from(groupedMap.values());
-  }, [filteredRawLogs, groupBy]);
-
-  const processedItems = useMemo(() => {
-    const list = [...groupedItems];
-
-    return list.sort((a, b) => {
-      if (sortBy === "newest") {
-        return new Date(b.rawTimestamp).getTime() - new Date(a.rawTimestamp).getTime();
-      }
-      if (sortBy === "oldest") {
-        return new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime();
-      }
-      if (sortBy === "qty_desc") {
-        return b.quantity - a.quantity;
-      }
-      if (sortBy === "qty_asc") {
-        return a.quantity - b.quantity;
-      }
-      if (sortBy === "name_asc") {
-        return a.styleName.localeCompare(b.styleName);
-      }
-      return 0;
-    });
-  }, [groupedItems, sortBy]);
-
-  const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, processedItems.length);
-  const paginatedItems = useMemo(() => {
-    return processedItems.slice(startIndex, endIndex);
-  }, [processedItems, startIndex, endIndex]);
-
-  const handleExport = (format: "xlsx" | "xls" | "csv") => {
-    if (processedItems.length === 0) return;
-
-    const exportData = processedItems.map((item) => ({
-      "Store Location": item.store,
-      "Style Code": item.styleCode,
-      "SKU": item.sku,
-      "Style Name": item.styleName,
-      "Description": item.description,
-      "Category": item.category,
-      "Department": item.department,
-      "Color": item.color,
-      "Size": item.size,
-      "Quantity": item.quantity,
-      "Total Scan Logs": item.scanCount,
-      "Timestamp": item.timestamp,
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
-
-    const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
-    const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
-
-    if (format === "csv") {
-      XLSX.writeFile(workbook, fileName, { bookType: "csv" });
-    } else if (format === "xls") {
-      XLSX.writeFile(workbook, fileName, { bookType: "biff8" });
-    } else {
-      XLSX.writeFile(workbook, fileName, { bookType: "xlsx" });
-    }
-
-    setIsExportOpen(false);
+  const handleRemoveFromSession = (id: string) => {
+    setSessionScans((prev) => prev.filter((item) => item.id !== id));
   };
+
+  const clearCurrentSession = () => {
+    setSessionScans([]);
+  };
+
+  const totalSessionItems = sessionScans.length;
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 max-w-[1600px] mx-auto antialiased space-y-5">
-      {/* Top Header Bar */}
-      <header className="flex items-center justify-between border-b border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center space-x-2">
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
+      {/* Header & Store Selector */}
+      <header className="space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              Desktop Workspace
+              Mobile Terminal
             </span>
-            <span className="text-xs text-slate-500 font-mono">
-              Total Records: {rawLogs.length}
-            </span>
+            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
+              Barcode / QR Scanner
+            </h1>
           </div>
-          <h1 className="text-2xl font-black text-white mt-1">
-            Scanned Inventory & Database Management
-          </h1>
-        </div>
-
-        <div className="flex items-center space-x-2.5">
-          <button
-            onClick={() => setShowAnalytics(!showAnalytics)}
-            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span>{showAnalytics ? "Hide Analytics" : "Show Analytics"}</span>
-          </button>
 
           <button
-            onClick={fetchScannedLogs}
-            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
+            onClick={handleOpenScanner}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            <span>Refresh</span>
+            <span>Scan Now</span>
           </button>
-
-          <div className="relative" ref={exportRef}>
-            <button
-              onClick={() => setIsExportOpen(!isExportOpen)}
-              disabled={processedItems.length === 0}
-              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Export Report</span>
-            </button>
-
-            {isExportOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">File Format</p>
-                <button
-                  onClick={() => handleExport("xlsx")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>Excel Workbook</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.XLSX</span>
-                </button>
-                <button
-                  onClick={() => handleExport("xls")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>Legacy Excel</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.XLS</span>
-                </button>
-                <button
-                  onClick={() => handleExport("csv")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>CSV File</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.CSV</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Summary KPI Ribbon */}
-      <section className="grid grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Volume</p>
-            <p className="text-2xl font-black text-white mt-0.5">{metrics.totalUnits} <span className="text-xs text-emerald-400 font-bold">units</span></p>
-          </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-          </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Codes</p>
-            <p className="text-2xl font-black text-white mt-0.5">{metrics.uniqueStyles} <span className="text-xs text-blue-400 font-bold">styles</span></p>
-          </div>
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
-            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topCategoryName}</p>
-            <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} pcs logged</p>
-          </div>
-          <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 11h.01M7 15h.01M11 7h.01M11 11h.01M11 15h.01M15 7h.01M15 11h.01M15 15h.01" /></svg>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Primary Store Volume</p>
-            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topStoreName}</p>
-            <p className="text-[10px] text-amber-400 font-bold">{metrics.topStoreQty} pcs logged</p>
-          </div>
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-          </div>
-        </div>
-      </section>
-
-      {/* Analytics Panel */}
-      {showAnalytics && (
-        <section className="grid grid-cols-12 gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <div className="col-span-7 bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-            <p className="text-xs font-bold text-slate-400 mb-2">Daily Scan Trends</p>
-            <div className="h-44 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData.timeSeries}>
-                  <defs>
-                    <linearGradient id="colorUnits" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#64748b" fontSize={10} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "11px" }}
-                    itemStyle={{ color: "#10b981" }}
-                  />
-                  <Area type="monotone" dataKey="units" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorUnits)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="col-span-5 bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-            <p className="text-xs font-bold text-slate-400 mb-2">Store Distribution</p>
-            <div className="h-44 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData.storeSeries} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis type="number" stroke="#64748b" fontSize={10} hide />
-                  <YAxis dataKey="store" type="category" stroke="#94a3b8" fontSize={10} width={90} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "11px" }}
-                    itemStyle={{ color: "#3b82f6" }}
-                  />
-                  <Bar dataKey="units" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Desktop Horizontal Control Bar */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        {/* Search */}
-        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search code, SKU, product, category..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
-          />
-        </div>
-
-        {/* Store Filter */}
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+        {/* Store Location Picker Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+            Store Location <span className="text-red-400">*</span>
+          </label>
           <select
-            value={selectedStoreFilter}
-            onChange={(e) => setSelectedStoreFilter(e.target.value)}
-            className="w-full bg-transparent text-xs font-bold text-emerald-400 focus:outline-none cursor-pointer"
+            value={selectedStore}
+            onChange={(e) => setSelectedStore(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
           >
+            <option value="" disabled className="text-slate-500">
+              -- Select Store Location --
+            </option>
             {STORES.map((store) => (
-              <option key={store} value={store} className="bg-slate-900 text-white font-normal">
+              <option key={store} value={store} className="text-white font-normal">
                 {store}
               </option>
             ))}
           </select>
         </div>
+      </header>
 
-        {/* Grouping */}
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
-            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
-          >
-            <option value="store_style">Group: Store + QR Code</option>
-            <option value="category">Group: Category</option>
-            <option value="department">Group: Department</option>
-            <option value="none">Group: None (Raw Entries)</option>
-          </select>
-        </div>
-
-        {/* Sorting */}
-        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
-          >
-            <option value="newest">Sort: Newest</option>
-            <option value="oldest">Sort: Oldest</option>
-            <option value="qty_desc">Sort: Highest Qty</option>
-            <option value="qty_asc">Sort: Lowest Qty</option>
-            <option value="name_asc">Sort: Product A-Z</option>
-          </select>
-        </div>
-      </section>
-
-      {/* Desktop Date Bar */}
-      <section className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Date Range:</span>
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[10px] text-slate-500 font-bold uppercase">From</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
-            />
+      {/* Current Session Scanned Items View */}
+      <section className="my-6 flex-1">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Current Session Scans
+            </h2>
+            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] px-2 py-0.5 rounded-full">
+              {totalSessionItems}
+            </span>
           </div>
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[10px] text-slate-500 font-bold uppercase">To</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
-            />
-          </div>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <button onClick={() => handlePresetDate("today")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Today</button>
-          <button onClick={() => handlePresetDate("7days")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Last 7 Days</button>
-          <button onClick={() => handlePresetDate("month")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">This Month</button>
-          {(startDate || endDate) && (
-            <button onClick={() => handlePresetDate("clear")} className="text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg transition">Reset</button>
+          {totalSessionItems > 0 && (
+            <button
+              onClick={clearCurrentSession}
+              className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
+            >
+              Clear List
+            </button>
           )}
         </div>
-      </section>
 
-      {/* Main Data Table */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-        {loading ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs text-slate-400">Loading database items...</p>
-          </div>
-        ) : processedItems.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
-            <p className="text-sm font-bold text-white">No entries match your search filters.</p>
-            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
+        {sessionScans.length === 0 ? (
+          <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-3xl p-8 text-center my-auto space-y-2">
+            <p className="text-sm font-bold text-slate-300">No active scans right now</p>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+              Select your store and tap "Scan Now" to begin adding items to this session.
+            </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3 px-4">Store Location</th>
-                  <th className="py-3 px-4">Style Code</th>
-                  <th className="py-3 px-4">SKU</th>
-                  <th className="py-3 px-4">Product Name</th>
-                  <th className="py-3 px-4">Category / Dept</th>
-                  <th className="py-3 px-4">Color / Size</th>
-                  <th className="py-3 px-4 text-center">Quantity</th>
-                  <th className="py-3 px-4 text-right">Last Scanned</th>
-                  <th className="py-3 px-4 text-center w-12">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 text-xs">
-                {paginatedItems.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            {sessionScans.map((item) => (
+              <div
+                key={item.id}
+                className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm gap-4"
+              >
+                <div className="space-y-1 flex-1 min-w-0">
+                  <p className="font-bold text-white text-sm leading-tight truncate">{item.styleName}</p>
+                  
+                  {/* Structured Column Layout for Style Code, SKU, and Price */}
+                  <div className="grid grid-cols-3 gap-2 text-xs pt-0.5">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">Style Code</span>
+                      <span className="font-mono text-emerald-400 font-bold truncate block">{item.styleCode}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">SKU</span>
+                      <span className="font-mono text-blue-400 font-semibold truncate block">{item.sku || "-"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">Price</span>
+                      <span className="font-mono text-amber-400 font-bold truncate block">₱{item.price.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 pt-0.5">
+                    {item.store} • {item.timestamp}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3 shrink-0">
+                  <div className="text-right">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">Qty</span>
+                    <span className="bg-slate-950 text-slate-300 border border-slate-800 font-bold text-xs px-2.5 py-1 rounded-lg inline-block">
+                      x{item.quantity}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveFromSession(item.id)}
+                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition"
+                    title="Remove from current session"
                   >
-                    <td className="py-3 px-4 font-semibold text-emerald-400">
-                      {item.store}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-200">
-                      {item.styleCode}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-semibold text-blue-400">
-                      {item.sku}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
-                      {item.styleName}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400">
-                      {item.category !== "-" ? item.category : item.department}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400">
-                      {item.color !== "-" ? item.color : ""}{item.size !== "-" ? ` / ${item.size}` : "-"}
-                    </td>
-                    <td className="py-3 px-4 text-center font-bold">
-                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
-                        {item.quantity} pcs
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-400 text-[11px]">
-                      {item.timestamp}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleRemoveItem(item)}
-                        className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition"
-                        title="Delete log"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+      </section>
 
-        {/* Footer Pagination Bar */}
-        <div className="bg-slate-950 border-t border-slate-800 p-3 flex items-center justify-between">
-          <div className="flex items-center space-x-4 text-xs text-slate-400">
-            <span>
-              Showing <strong className="text-white">{processedItems.length === 0 ? 0 : startIndex + 1}</strong> to{" "}
-              <strong className="text-white">{endIndex}</strong> of <strong className="text-white">{processedItems.length}</strong> items
-            </span>
+      {/* Store Prompt Modal */}
+      {isStoreModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 text-left">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold text-white">Select Current Store</h2>
+              <p className="text-xs text-slate-400">Please choose a store before opening camera.</p>
+            </div>
 
-            <div className="flex items-center space-x-1.5">
-              <label htmlFor="perPage" className="text-[10px] font-bold uppercase text-slate-500">Rows per page:</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store</label>
               <select
-                id="perPage"
-                value={itemsPerPage}
-                onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-800 text-xs font-bold text-emerald-400 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                value={tempStore}
+                onChange={(e) => setTempStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 font-semibold cursor-pointer"
               >
-                <option value={15}>15</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
+                {STORES.map((store) => (
+                  <option key={store} value={store}>
+                    {store}
+                  </option>
+                ))}
               </select>
             </div>
-          </div>
 
-          <div className="flex items-center space-x-1.5">
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={handleConfirmStore}
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+              >
+                Confirm & Open Scanner
+              </button>
+              <button
+                onClick={() => setIsStoreModalOpen(false)}
+                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera Viewport Modal */}
+      {scanning && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
+          <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
+            <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
+              <span className="text-slate-400 font-medium">Store:</span>
+              <span className="font-bold text-emerald-400">{selectedStore}</span>
+            </div>
+
+            <div className="relative aspect-square bg-black">
+              <Scanner onScan={handleScan} isPaused={isPaused} />
+
+              {loading && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
+                  Verifying & Saving...
+                </div>
+              )}
+
+              {/* Detailed Scan Results Overlay */}
+              {isPaused && (
+                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
+                  {errorMessage ? (
+                    <div className="space-y-2 my-auto">
+                      <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                        ✕
+                      </div>
+                      <h3 className="text-base font-bold text-white">Item Not Found</h3>
+                      <p className="text-xs text-red-300/80 max-w-xs">{errorMessage}</p>
+                    </div>
+                  ) : (
+                    lastScannedItem && (
+                      <div className="w-full space-y-3 my-auto text-left">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
+                            ✓ Saved to {selectedStore}
+                          </span>
+                          <span className="text-xs font-mono text-emerald-400 font-bold">
+                            {lastScannedItem.styleCode}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="text-base font-bold text-white leading-snug">
+                            {lastScannedItem.styleName}
+                          </h3>
+                          {lastScannedItem.description && lastScannedItem.description !== "N/A" && (
+                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                              {lastScannedItem.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Details Grid including SKU & Price */}
+                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              SKU
+                            </span>
+                            <span className="text-blue-400 font-mono font-bold text-sm truncate block">
+                              {lastScannedItem.sku}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Price
+                            </span>
+                            <span className="text-amber-400 font-mono font-bold text-sm truncate block">
+                              ₱{lastScannedItem.price.toFixed(2)}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Category
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.category}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Department
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.department}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Color
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.color}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Size
+                            </span>
+                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
+                              {lastScannedItem.size}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+
+                  <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
+                    <button
+                      onClick={handleScanNext}
+                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                    >
+                      Scan Next
+                    </button>
+                    <button
+                      onClick={() => setScanning(false)}
+                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+              onClick={() => setScanning(false)}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60"
             >
-              «
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              Prev
-            </button>
-            <span className="text-xs font-bold text-slate-300 px-2">
-              Page <span className="text-emerald-400">{currentPage}</span> of <span className="text-white">{totalPages}</span>
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              »
+              Close Camera View
             </button>
           </div>
         </div>
-      </section>
+      )}
+
+      <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
+        Active Session Log
+      </footer>
     </main>
   );
 }
