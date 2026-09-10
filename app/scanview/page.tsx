@@ -30,6 +30,7 @@ interface ScannedProduct {
   department: string;
   size: string;
   quantity: number;
+  rawTimestamp: string;
   timestamp: string;
 }
 
@@ -38,6 +39,11 @@ export default function ScanViewPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+
+  // Date Filter States
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
   const [isExportOpen, setIsExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +82,7 @@ export default function ScanViewPage() {
         department: item.department || "-",
         size: item.size || "-",
         quantity: item.quantity || 1,
+        rawTimestamp: item.scanned_at || "",
         timestamp: formatTimestamp(item.scanned_at),
       }));
 
@@ -104,23 +111,71 @@ export default function ScanViewPage() {
     await supabase.from("scanned_logs").delete().eq("id", id);
   };
 
-  // Filter items by search input
+  // Date Shortcut Handlers
+  const handlePresetDate = (type: "today" | "7days" | "month" | "clear") => {
+    const now = new Date();
+    const formatDate = (d: Date) => d.toISOString().split("T")[0];
+
+    if (type === "today") {
+      const todayStr = formatDate(now);
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (type === "7days") {
+      const past = new Date();
+      past.setDate(now.getDate() - 7);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(now));
+    } else if (type === "month") {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(formatDate(firstDay));
+      setEndDate(formatDate(now));
+    } else if (type === "clear") {
+      setStartDate("");
+      setEndDate("");
+    }
+  };
+
+  // Combined Search & Date Filtering Logic
   const filteredItems = scannedItems.filter((item) => {
     const q = searchQuery.toLowerCase();
-    return (
+
+    // 1. Text Search Match
+    const matchesSearch =
       item.styleCode.toLowerCase().includes(q) ||
       item.styleName.toLowerCase().includes(q) ||
       item.store.toLowerCase().includes(q) ||
       item.category.toLowerCase().includes(q) ||
-      item.department.toLowerCase().includes(q)
-    );
+      item.department.toLowerCase().includes(q);
+
+    if (!matchesSearch) return false;
+
+    // 2. Date Range Match
+    if (startDate || endDate) {
+      if (!item.rawTimestamp) return false;
+
+      const itemDate = new Date(item.rawTimestamp);
+      itemDate.setHours(0, 0, 0, 0);
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        if (itemDate < start) return false;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (itemDate > end) return false;
+      }
+    }
+
+    return true;
   });
 
   // Export Data Handler
   const handleExport = (format: "xlsx" | "xls" | "csv") => {
     if (filteredItems.length === 0) return;
 
-    // Map dataset for spreadsheet columns
     const exportData = filteredItems.map((item) => ({
       "Store Location": item.store,
       "Style Code": item.styleCode,
@@ -139,8 +194,8 @@ export default function ScanViewPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
-    const dateStr = new Date().toISOString().split("T")[0];
-    const fileName = `Scanned_Logs_${storeLabel}_${dateStr}.${format}`;
+    const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
+    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -227,7 +282,7 @@ export default function ScanViewPage() {
         </div>
       </header>
 
-      {/* Controls & Filter Bar */}
+      {/* Controls Bar: Search & Store Selection */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
         {/* Search Input */}
         <div className="sm:col-span-6 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
@@ -258,12 +313,77 @@ export default function ScanViewPage() {
           </select>
         </div>
 
-        {/* Summary Stat */}
+        {/* Total Summary */}
         <div className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between sm:justify-center space-x-2 text-center">
           <span className="text-[10px] font-bold uppercase text-slate-500 sm:hidden">Total Items:</span>
           <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
             {totalQuantity} Units ({totalLogs} Logs)
           </span>
+        </div>
+      </div>
+
+      {/* Date Filter Card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Filter by Date Range</span>
+          </span>
+
+          {/* Quick Presets */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => handlePresetDate("today")}
+              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
+            >
+              Today
+            </button>
+            <button
+              onClick={() => handlePresetDate("7days")}
+              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
+            >
+              Last 7 Days
+            </button>
+            <button
+              onClick={() => handlePresetDate("month")}
+              className="text-[10px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg transition"
+            >
+              This Month
+            </button>
+            {(startDate || endDate) && (
+              <button
+                onClick={() => handlePresetDate("clear")}
+                className="text-[10px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition"
+              >
+                Clear Date
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Date Pickers */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-800/60">
+          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+            <label className="text-[10px] font-bold uppercase text-slate-500 whitespace-nowrap">From:</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none w-full cursor-pointer scheme-dark"
+            />
+          </div>
+
+          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+            <label className="text-[10px] font-bold uppercase text-slate-500 whitespace-nowrap">To:</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none w-full cursor-pointer scheme-dark"
+            />
+          </div>
         </div>
       </div>
 
@@ -283,7 +403,7 @@ export default function ScanViewPage() {
             </div>
             <h2 className="text-base font-bold text-white">No logs found</h2>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              No scanned records match your filter criteria.
+              No scanned records match your current date range and store criteria.
             </p>
           </div>
         ) : (
