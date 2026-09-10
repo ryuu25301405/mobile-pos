@@ -50,7 +50,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Local state for items scanned during THIS active session only
+  // Local state for current active session scans
   const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
 
@@ -76,7 +76,7 @@ export default function Home() {
     setErrorMessage(null);
   };
 
-  // Handle barcode processing
+  // Handle barcode/QR processing
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -101,7 +101,7 @@ export default function Home() {
       const fetchedProduct: ProductDetails = {
         styleCode: data.style_code || cleanCode,
         styleName: data.style_name || "Unassigned Item",
-        description: data.description || "",
+        description: data.description || "N/A",
         color: data.color || "-",
         category: data.category || "-",
         department: data.department || "-",
@@ -332,11 +332,11 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Scan Feedback Overlay */}
+              {/* Detailed Scan Results Overlay */}
               {isPaused && (
-                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-4">
+                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
                   {errorMessage ? (
-                    <div className="space-y-2">
+                    <div className="space-y-2 my-auto">
                       <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
                         ✕
                       </div>
@@ -345,23 +345,73 @@ export default function Home() {
                     </div>
                   ) : (
                     lastScannedItem && (
-                      <div className="space-y-2 w-full max-w-xs">
-                        <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
-                          ✓
+                      <div className="w-full space-y-3 my-auto text-left">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
+                            ✓ Saved to {selectedStore}
+                          </span>
+                          <span className="text-xs font-mono text-emerald-400 font-bold">
+                            {lastScannedItem.styleCode}
+                          </span>
                         </div>
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase">
-                          Saved to {selectedStore}
-                        </span>
-                        <h3 className="text-lg font-bold text-white leading-tight">{lastScannedItem.styleName}</h3>
-                        <p className="text-xs font-mono text-emerald-400 font-bold">{lastScannedItem.styleCode}</p>
+
+                        <div>
+                          <h3 className="text-base font-bold text-white leading-snug">
+                            {lastScannedItem.styleName}
+                          </h3>
+                          {lastScannedItem.description && lastScannedItem.description !== "N/A" && (
+                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                              {lastScannedItem.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* All QR Code Fields Grid */}
+                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Category
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.category}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Department
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.department}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Color
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.color}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Size
+                            </span>
+                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
+                              {lastScannedItem.size}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     )
                   )}
 
-                  <div className="flex space-x-2 w-full max-w-xs pt-2">
+                  <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
                     <button
                       onClick={handleScanNext}
-                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition"
+                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
                     >
                       Scan Next
                     </button>
