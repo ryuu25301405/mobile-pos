@@ -31,6 +31,8 @@ export default function Home() {
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const [product, setProduct] = useState<ProductDetails>({
     styleCode: "",
     styleName: "",
@@ -47,11 +49,9 @@ export default function Home() {
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
+    setErrorMessage(null);
 
-    // Trigger audio beep and haptic feedback
-    triggerScanFeedback();
-
-    // Clean raw scan string (removes whitespace and line breaks)
+    // Clean raw scan string
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
     // Query Supabase for product matching style_code
@@ -64,7 +64,11 @@ export default function Home() {
     setLoading(false);
 
     if (error || !data) {
-      alert(`Style Code "${cleanCode}" not found in database.`);
+      // ❌ TRIGGER ERROR AUDIO & HAPTIC FEEDBACK
+      triggerScanFeedback("error");
+
+      setErrorMessage(`Style Code "${cleanCode}" was not found in the database.`);
+
       setProduct({
         styleCode: cleanCode,
         styleName: "",
@@ -76,6 +80,9 @@ export default function Home() {
         quantity: 1,
       });
     } else {
+      // ✅ TRIGGER SUCCESS AUDIO & HAPTIC FEEDBACK
+      triggerScanFeedback("success");
+
       const fetchedProduct: ProductDetails = {
         styleCode: data.style_code || cleanCode,
         styleName: data.style_name || "",
@@ -89,7 +96,7 @@ export default function Home() {
 
       setProduct(fetchedProduct);
 
-      // Current ISO timestamp and PST formatted view string
+      // Current timestamps
       const now = new Date();
       const currentIsoTime = now.toISOString();
       const phFormattedTimestamp = now.toLocaleString("en-PH", {
@@ -98,7 +105,7 @@ export default function Home() {
         timeStyle: "medium",
       });
 
-      // 1. Update UI state: Aggregate duplicate barcodes and sum quantity
+      // 1. Update UI state: Aggregate duplicate barcodes locally
       setScannedItems((prev) => {
         const existingIndex = prev.findIndex((item) => item.styleCode === cleanCode);
 
@@ -154,6 +161,7 @@ export default function Home() {
       size: "",
       quantity: 1,
     });
+    setErrorMessage(null);
     setIsPaused(false);
   };
 
@@ -167,7 +175,6 @@ export default function Home() {
     }
   };
 
-  // Calculate overall item quantity count
   const totalItemsCount = scannedItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
@@ -203,6 +210,22 @@ export default function Home() {
 
       {/* Main Interactive Section */}
       <section className="space-y-4 my-auto py-2">
+        {/* Visual "Not Found" Error Banner */}
+        {errorMessage && (
+          <div className="bg-red-500/15 border border-red-500/40 text-red-300 p-3.5 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center space-x-3">
+              <span className="text-lg">⚠️</span>
+              <p className="text-xs font-semibold leading-tight">{errorMessage}</p>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="text-red-400 hover:text-white text-sm font-bold p-1 ml-2"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Scanner Viewport */}
         <div className="relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700/50 p-2 shadow-2xl backdrop-blur-sm">
           {scanning ? (
@@ -211,9 +234,18 @@ export default function Home() {
               
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 p-4">
-                  <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">
-                    ✓ Saved to Supabase
-                  </div>
+                  {errorMessage ? (
+                    <div className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5">
+                      <span>⚠️</span>
+                      <span>Product Not Found</span>
+                    </div>
+                  ) : (
+                    <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5">
+                      <span>✓</span>
+                      <span>Saved to Supabase</span>
+                    </div>
+                  )}
+
                   <p className="text-xs text-slate-300 font-medium text-center">
                     Tap below to scan another item without closing camera
                   </p>
@@ -230,6 +262,7 @@ export default function Home() {
                 onClick={() => {
                   setScanning(false);
                   setIsPaused(false);
+                  setErrorMessage(null);
                 }}
                 className="absolute top-3 right-3 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md shadow-lg transition active:scale-95 text-xs font-bold px-3 z-10"
               >
@@ -241,6 +274,7 @@ export default function Home() {
               onClick={() => {
                 setScanning(true);
                 setIsPaused(false);
+                setErrorMessage(null);
               }}
               className="w-full py-4 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition flex items-center justify-center space-x-3 text-base"
             >
@@ -264,9 +298,14 @@ export default function Home() {
         <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Information</span>
-            {product.styleCode && (
+            {product.styleCode && !errorMessage && (
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded-full">
                 Saved
+              </span>
+            )}
+            {errorMessage && (
+              <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-2 py-0.5 rounded-full">
+                Not Found
               </span>
             )}
           </div>
