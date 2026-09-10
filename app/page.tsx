@@ -25,6 +25,7 @@ const STORES = [
 
 interface ProductDetails {
   styleCode: string;
+  sku?: string;
   styleName: string;
   description: string;
   color: string;
@@ -84,11 +85,12 @@ export default function Home() {
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
+    // Query products table by style_code, sku, or barcode
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .ilike("style_code", cleanCode)
-      .single();
+      .or(`style_code.ilike.${cleanCode},sku.ilike.${cleanCode},barcode.ilike.${cleanCode}`)
+      .maybeSingle();
 
     setLoading(false);
 
@@ -100,6 +102,7 @@ export default function Home() {
 
       const fetchedProduct: ProductDetails = {
         styleCode: data.style_code || cleanCode,
+        sku: data.sku || "-",
         styleName: data.style_name || "Unassigned Item",
         description: data.description || "N/A",
         color: data.color || "-",
@@ -129,11 +132,12 @@ export default function Home() {
 
       setSessionScans((prev) => [newSessionItem, ...prev]);
 
-      // Save to Supabase scanned_logs database
+      // Direct auto-save to Supabase scanned_logs database
       await supabase.from("scanned_logs").insert([
         {
           store: selectedStore,
           style_code: fetchedProduct.styleCode,
+          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
           style_name: fetchedProduct.styleName,
           description: fetchedProduct.description,
           color: fetchedProduct.color,
@@ -248,7 +252,12 @@ export default function Home() {
               >
                 <div className="space-y-0.5">
                   <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
-                  <p className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
+                    {item.sku && item.sku !== "-" && (
+                      <span className="font-mono text-blue-400 text-[10px]">({item.sku})</span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-500">
                     {item.store} • {item.timestamp}
                   </p>
@@ -350,9 +359,16 @@ export default function Home() {
                           <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
                             ✓ Saved to {selectedStore}
                           </span>
-                          <span className="text-xs font-mono text-emerald-400 font-bold">
-                            {lastScannedItem.styleCode}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-mono text-emerald-400 font-bold">
+                              {lastScannedItem.styleCode}
+                            </span>
+                            {lastScannedItem.sku && lastScannedItem.sku !== "-" && (
+                              <span className="text-xs font-mono text-blue-400 font-bold">
+                                • {lastScannedItem.sku}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         <div>
