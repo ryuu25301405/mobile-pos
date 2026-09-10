@@ -11,9 +11,12 @@ import {
   Receipt,
   Download,
   RefreshCw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
 } from "lucide-react";
 
-// Updated interface based on your database schema
 interface SalesLog {
   id: string;
   sku: string | null;
@@ -26,60 +29,84 @@ interface SalesLog {
   department: string | null;
   price: number | null;
   quantity?: number | null;
-  store?: string | null; // Matched to 'store'
-  scanned_at: string;     // Matched to 'scanned_at'
+  store?: string | null;
+  scanned_at: string;
 }
 
-// Initialized outside component body to avoid re-creation on render
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 export default function DailySalesReportPage() {
-  // Filters
+  // Filter States
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
   const [selectedStore, setSelectedStore] = useState<string>("ALL");
-  const [stores, setStores] = useState<string[]>([]);
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("ALL");
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // State Data
+  // Dropdown Option Lists
+  const [stores, setStores] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+
+  // Core Data & UI States
   const [salesData, setSalesData] = useState<SalesLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
   // ----------------------------------------------------
-  // 1. Fetch Store List
+  // 1. Fetch Dynamic Filter Dropdowns (Stores, Departments, Categories)
   // ----------------------------------------------------
   useEffect(() => {
-    async function loadStores() {
+    async function loadFilterOptions() {
       const { data, error } = await supabase
         .from("scanned_logs")
-        .select("store")
-        .not("store", "is", null);
+        .select("store, department, category");
 
       if (error) {
-        console.error("Error loading stores:", error);
+        console.error("Error loading filter options:", error);
         return;
       }
 
       if (data) {
         const uniqueStores = Array.from(
-          new Set(data.map((item: { store: string | null }) => item.store))
+          new Set(data.map((item) => item.store))
         ).filter(Boolean) as string[];
+
+        const uniqueDepts = Array.from(
+          new Set(data.map((item) => item.department))
+        ).filter(Boolean) as string[];
+
+        const uniqueCats = Array.from(
+          new Set(data.map((item) => item.category))
+        ).filter(Boolean) as string[];
+
         setStores(uniqueStores);
+        setDepartments(uniqueDepts);
+        setCategories(uniqueCats);
       }
     }
-    loadStores();
+    loadFilterOptions();
   }, []);
 
+  // Reset page to 1 when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
+
   // ----------------------------------------------------
-  // 2. Fetch Daily Sales Logs
+  // 2. Fetch Daily Sales Logs from Supabase
   // ----------------------------------------------------
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
-    // Calculate local timezone boundaries
     const [year, month, day] = selectedDate.split("-").map(Number);
     const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
@@ -94,6 +121,12 @@ export default function DailySalesReportPage() {
     if (selectedStore !== "ALL") {
       query = query.eq("store", selectedStore);
     }
+    if (selectedDepartment !== "ALL") {
+      query = query.eq("department", selectedDepartment);
+    }
+    if (selectedCategory !== "ALL") {
+      query = query.eq("category", selectedCategory);
+    }
 
     const { data, error } = await query;
 
@@ -103,9 +136,8 @@ export default function DailySalesReportPage() {
       setSalesData(data || []);
     }
     setLoading(false);
-  }, [selectedDate, selectedStore]);
+  }, [selectedDate, selectedStore, selectedDepartment, selectedCategory]);
 
-  // Initial Fetch & Realtime Subscription
   useEffect(() => {
     fetchDailySales();
 
@@ -126,37 +158,63 @@ export default function DailySalesReportPage() {
   }, [fetchDailySales]);
 
   // ----------------------------------------------------
-  // 3. Computed Aggregations
+  // 3. Client-Side Global Search Filtering
+  // ----------------------------------------------------
+  const filteredSalesData = useMemo(() => {
+    if (!searchQuery.trim()) return salesData;
+
+    const query = searchQuery.toLowerCase();
+    return salesData.filter((item) => {
+      return (
+        item.sku?.toLowerCase().includes(query) ||
+        item.style_code?.toLowerCase().includes(query) ||
+        item.description?.toLowerCase().includes(query) ||
+        item.style_name?.toLowerCase().includes(query) ||
+        item.color?.toLowerCase().includes(query) ||
+        item.size?.toLowerCase().includes(query) ||
+        item.store?.toLowerCase().includes(query) ||
+        item.department?.toLowerCase().includes(query) ||
+        item.category?.toLowerCase().includes(query)
+      );
+    });
+  }, [salesData, searchQuery]);
+
+  // ----------------------------------------------------
+  // 4. Pagination Calculation
+  // ----------------------------------------------------
+  const totalItems = filteredSalesData.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSalesData.slice(start, start + pageSize);
+  }, [filteredSalesData, currentPage, pageSize]);
+
+  // ----------------------------------------------------
+  // 5. Aggregations (Computed on Filtered Data)
   // ----------------------------------------------------
   const metrics = useMemo(() => {
-    const totalUnits = salesData.reduce(
+    const totalUnits = filteredSalesData.reduce(
       (acc, curr) => acc + (curr.quantity || 1),
       0
     );
-    const totalRevenue = salesData.reduce(
+    const totalRevenue = filteredSalesData.reduce(
       (acc, curr) => acc + Number(curr.price || 0) * (curr.quantity || 1),
       0
     );
-    const totalTransactions = salesData.length;
+    const totalTransactions = filteredSalesData.length;
     const avgOrderValue =
       totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
-    return {
-      totalUnits,
-      totalRevenue,
-      totalTransactions,
-      avgOrderValue,
-    };
-  }, [salesData]);
+    return { totalUnits, totalRevenue, totalTransactions, avgOrderValue };
+  }, [filteredSalesData]);
 
-  // Group by Top Selling Products
   const topProducts = useMemo(() => {
     const productMap: Record<
       string,
       { sku: string; name: string; qty: number; revenue: number }
     > = {};
 
-    salesData.forEach((item) => {
+    filteredSalesData.forEach((item) => {
       const key = item.sku || item.style_code || "UNKNOWN";
       const qty = item.quantity || 1;
       const revenue = Number(item.price || 0) * qty;
@@ -176,9 +234,8 @@ export default function DailySalesReportPage() {
     return Object.values(productMap)
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
-  }, [salesData]);
+  }, [filteredSalesData]);
 
-  // Group Sales by Hour (00:00 - 23:00)
   const hourlyBreakdown = useMemo(() => {
     const hours = Array.from({ length: 24 }, (_, i) => ({
       hour: `${i.toString().padStart(2, "0")}:00`,
@@ -186,7 +243,7 @@ export default function DailySalesReportPage() {
       count: 0,
     }));
 
-    salesData.forEach((item) => {
+    filteredSalesData.forEach((item) => {
       const date = new Date(item.scanned_at);
       const hourIndex = date.getHours();
       const qty = item.quantity || 1;
@@ -200,11 +257,11 @@ export default function DailySalesReportPage() {
       ...h,
       percentage: Math.min((h.revenue / maxRevenue) * 100, 100),
     }));
-  }, [salesData]);
+  }, [filteredSalesData]);
 
-  // Export to CSV Functionality
+  // Export to CSV
   const exportToCSV = () => {
-    if (salesData.length === 0) return;
+    if (filteredSalesData.length === 0) return;
 
     const headers = [
       "Time",
@@ -219,7 +276,7 @@ export default function DailySalesReportPage() {
       "Store",
     ];
 
-    const rows = salesData.map((s) => [
+    const rows = filteredSalesData.map((s) => [
       new Date(s.scanned_at).toLocaleTimeString(),
       s.sku || "",
       s.style_code || "",
@@ -247,7 +304,7 @@ export default function DailySalesReportPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
-      {/* Header & Controls */}
+      {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">
@@ -293,7 +350,7 @@ export default function DailySalesReportPage() {
             </select>
           </div>
 
-          {/* Manual Refresh Button */}
+          {/* Refresh Button */}
           <button
             onClick={fetchDailySales}
             className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 transition-colors"
@@ -307,7 +364,7 @@ export default function DailySalesReportPage() {
           {/* CSV Export */}
           <button
             onClick={exportToCSV}
-            disabled={salesData.length === 0}
+            disabled={filteredSalesData.length === 0}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
           >
             <Download className="w-4 h-4" />
@@ -318,7 +375,6 @@ export default function DailySalesReportPage() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Revenue */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -333,7 +389,6 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Units Sold */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -348,7 +403,6 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Total Scans / Items */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -363,7 +417,6 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Average Price Per Item */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -379,9 +432,8 @@ export default function DailySalesReportPage() {
         </div>
       </div>
 
-      {/* Charts & Analytics Section */}
+      {/* Hourly & Top Products Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Hourly Distribution Chart */}
         <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
           <h2 className="text-base font-semibold text-slate-200">
             Hourly Sales Volume
@@ -413,7 +465,6 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Top Performing Items */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
           <h2 className="text-base font-semibold text-slate-200">
             Top Performing Items
@@ -447,14 +498,74 @@ export default function DailySalesReportPage() {
         </div>
       </div>
 
-      {/* Itemized Transactions Table */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-200">
-            Itemized Sales Log ({salesData.length})
-          </h2>
+      {/* Itemized Table Container */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden space-y-4">
+        
+        {/* Table Filter Control Bar */}
+        <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-200">
+              Itemized Sales Log
+            </h2>
+            <span className="text-xs font-medium bg-slate-800 text-indigo-400 px-2.5 py-1 rounded-full border border-slate-700">
+              {filteredSalesData.length} {filteredSalesData.length === 1 ? "Item" : "Items"}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Global Search Input */}
+            <div className="relative min-w-[220px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search SKU, name, color..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
+
+            {/* Department Filter Dropdown */}
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL" className="bg-slate-900">
+                  All Departments
+                </option>
+                {departments.map((dept) => (
+                  <option key={dept} value={dept} className="bg-slate-900">
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Category Filter Dropdown */}
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL" className="bg-slate-900">
+                  All Categories
+                </option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat} className="bg-slate-900">
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
+        {/* Data Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-800/50 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800">
@@ -463,6 +574,7 @@ export default function DailySalesReportPage() {
                 <th className="px-4 py-3">SKU / Style</th>
                 <th className="px-4 py-3">Description</th>
                 <th className="px-4 py-3">Color / Size</th>
+                <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Store</th>
                 <th className="px-4 py-3 text-right">Price</th>
@@ -471,18 +583,18 @@ export default function DailySalesReportPage() {
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     Loading daily logs...
                   </td>
                 </tr>
-              ) : salesData.length === 0 ? (
+              ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    No transactions found for the selected date and store filter.
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    No transactions matching your search/filter criteria.
                   </td>
                 </tr>
               ) : (
-                salesData.map((log) => (
+                paginatedData.map((log) => (
                   <tr
                     key={log.id}
                     className="hover:bg-slate-800/30 transition-colors"
@@ -504,6 +616,9 @@ export default function DailySalesReportPage() {
                       {log.color || "-"} / {log.size || "-"}
                     </td>
                     <td className="px-4 py-3 text-slate-400">
+                      {log.category || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">
                       {log.department || "-"}
                     </td>
                     <td className="px-4 py-3 text-slate-400">
@@ -518,6 +633,63 @@ export default function DailySalesReportPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <span>
+              Showing{" "}
+              <strong className="text-slate-200">
+                {totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+              </strong>{" "}
+              to{" "}
+              <strong className="text-slate-200">
+                {Math.min(currentPage * pageSize, totalItems)}
+              </strong>{" "}
+              of <strong className="text-slate-200">{totalItems}</strong> entries
+            </span>
+
+            {/* Rows Per Page Dropdown */}
+            <div className="flex items-center gap-1">
+              <span>| Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 rounded text-slate-200 px-2 py-1 focus:outline-none cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1 || loading}
+              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
+              {currentPage} / {totalPages}
+            </span>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages || loading}
+              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );
