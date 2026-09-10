@@ -32,6 +32,7 @@ interface ProductDetails {
   category: string;
   department: string;
   size: string;
+  price: number;
   quantity: number;
 }
 
@@ -77,7 +78,7 @@ export default function Home() {
     setErrorMessage(null);
   };
 
-  // Fixed handleScan with reliable multi-column search
+  // Fixed handleScan with price retrieval
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -131,6 +132,7 @@ export default function Home() {
         category: data.category || "-",
         department: data.department || "-",
         size: data.size || "-",
+        price: Number(data.price) || 0,
         quantity: 1,
       };
 
@@ -166,6 +168,7 @@ export default function Home() {
           category: fetchedProduct.category,
           department: fetchedProduct.department,
           size: fetchedProduct.size,
+          price: fetchedProduct.price,
           quantity: 1,
           scanned_at: now.toISOString(),
         },
@@ -279,6 +282,9 @@ export default function Home() {
                     {item.sku && item.sku !== "-" && (
                       <span className="font-mono text-blue-400 text-xs font-semibold">SKU: {item.sku}</span>
                     )}
+                    <span className="font-mono text-amber-400 text-xs font-bold">
+                      ₱{item.price.toFixed(2)}
+                    </span>
                   </div>
                   <p className="text-[10px] text-slate-500">
                     {item.store} • {item.timestamp}
@@ -397,14 +403,23 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Details Grid including SKU */}
+                        {/* Details Grid including SKU & Price */}
                         <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 col-span-2">
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
                               SKU
                             </span>
                             <span className="text-blue-400 font-mono font-bold text-sm truncate block">
                               {lastScannedItem.sku}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Price
+                            </span>
+                            <span className="text-amber-400 font-mono font-bold text-sm truncate block">
+                              ₱{lastScannedItem.price.toFixed(2)}
                             </span>
                           </div>
 
