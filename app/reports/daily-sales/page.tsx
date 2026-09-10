@@ -15,9 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  Zap,
   Building2,
   FileText,
+  Award,
 } from "lucide-react";
 
 interface SalesLog {
@@ -66,8 +66,6 @@ export default function DailySalesReportPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  const [activeHourIndex, setActiveHourIndex] = useState<number | null>(null);
-
   // Load Dropdowns
   useEffect(() => {
     async function loadFilterOptions() {
@@ -93,7 +91,7 @@ export default function DailySalesReportPage() {
     setCurrentPage(1);
   }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
 
-  // Fetch Sales
+  // Fetch Sales Logs
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
@@ -169,7 +167,7 @@ export default function DailySalesReportPage() {
     return filteredSalesData.slice(start, start + pageSize);
   }, [filteredSalesData, currentPage, pageSize]);
 
-  // Computed Aggregations
+  // Summary Metrics
   const metrics = useMemo(() => {
     const totalUnits = filteredSalesData.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
     const totalRevenue = filteredSalesData.reduce(
@@ -182,52 +180,53 @@ export default function DailySalesReportPage() {
     return { totalUnits, totalRevenue, totalTransactions, avgOrderValue };
   }, [filteredSalesData]);
 
-  const storeBreakdown = useMemo(() => {
-    const map: Record<string, { store: string; revenue: number; items: number }> = {};
+  // Store Comparison & Performance Matrix Calculation
+  const storeMatrix = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        store: string;
+        revenue: number;
+        units: number;
+        transactions: number;
+        avgOrderValue: number;
+        revenueShare: number;
+      }
+    > = {};
 
     filteredSalesData.forEach((item) => {
-      const storeName = item.store || "Unassigned";
+      const storeName = item.store || "Unassigned Store";
       const qty = item.quantity || 1;
       const rev = Number(item.price || 0) * qty;
 
       if (!map[storeName]) {
-        map[storeName] = { store: storeName, revenue: 0, items: 0 };
+        map[storeName] = {
+          store: storeName,
+          revenue: 0,
+          units: 0,
+          transactions: 0,
+          avgOrderValue: 0,
+          revenueShare: 0,
+        };
       }
+
       map[storeName].revenue += rev;
-      map[storeName].items += qty;
+      map[storeName].units += qty;
+      map[storeName].transactions += 1;
     });
 
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [filteredSalesData]);
+    const totalRev = metrics.totalRevenue || 1;
 
-  const hourlyData = useMemo(() => {
-    const hours = Array.from({ length: 24 }, (_, i) => ({
-      hourLabel: `${i.toString().padStart(2, "0")}:00`,
-      hourNumber: i,
-      revenue: 0,
-      count: 0,
-    }));
+    return Object.values(map)
+      .map((item) => ({
+        ...item,
+        avgOrderValue: item.transactions > 0 ? item.revenue / item.transactions : 0,
+        revenueShare: Math.min((item.revenue / totalRev) * 100, 100),
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [filteredSalesData, metrics.totalRevenue]);
 
-    filteredSalesData.forEach((item) => {
-      const date = new Date(item.scanned_at);
-      const h = date.getHours();
-      const qty = item.quantity || 1;
-      hours[h].revenue += Number(item.price || 0) * qty;
-      hours[h].count += qty;
-    });
-
-    const maxRevenue = Math.max(...hours.map((h) => h.revenue), 1);
-    const peakHour = [...hours].sort((a, b) => b.revenue - a.revenue)[0];
-
-    return {
-      hours: hours.map((h) => ({
-        ...h,
-        percentage: Math.min((h.revenue / maxRevenue) * 100, 100),
-      })),
-      peakHour: peakHour && peakHour.revenue > 0 ? peakHour : null,
-    };
-  }, [filteredSalesData]);
-
+  // Top Products
   const topProducts = useMemo(() => {
     const productMap: Record<string, { sku: string; name: string; qty: number; revenue: number }> = {};
 
@@ -253,12 +252,10 @@ export default function DailySalesReportPage() {
       .slice(0, 5);
   }, [filteredSalesData]);
 
-  // Robust Native PDF Export Handler
   const exportToPDF = () => {
     window.print();
   };
 
-  // CSV Export Function
   const exportToCSV = () => {
     if (filteredSalesData.length === 0) return;
 
@@ -303,7 +300,6 @@ export default function DailySalesReportPage() {
 
   return (
     <>
-      {/* Print media styling for pixel-perfect PDF export */}
       <style jsx global>{`
         @media print {
           @page {
@@ -335,15 +331,14 @@ export default function DailySalesReportPage() {
 
       {/* Main Dashboard Layout */}
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
-        
-        {/* Header Bar */}
+        {/* Header Controls */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5 no-print">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">
               Daily Sales Report
             </h1>
             <p className="text-sm text-slate-400">
-              Real-time daily transaction analytics and register reconciliation
+              Real-time daily transaction analytics and store performance
             </p>
           </div>
 
@@ -380,7 +375,6 @@ export default function DailySalesReportPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
             </button>
 
-            {/* Export PDF Button */}
             <button
               onClick={exportToPDF}
               disabled={filteredSalesData.length === 0}
@@ -390,11 +384,10 @@ export default function DailySalesReportPage() {
               Export PDF Report
             </button>
 
-            {/* CSV Export */}
             <button
               onClick={exportToCSV}
               disabled={filteredSalesData.length === 0}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors cursor-pointer"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4" />
               Export CSV
@@ -404,43 +397,13 @@ export default function DailySalesReportPage() {
 
         {/* Printable & Screen Report Container */}
         <div ref={reportContainerRef} className="space-y-6 print-container">
-          
-          {/* Print-Only Header */}
+          {/* Print Header */}
           <div className="hidden print:block border-b border-slate-300 pb-3 mb-4">
             <h1 className="text-xl font-bold text-slate-900">DAILY SALES & PERFORMANCE REPORT</h1>
             <p className="text-xs text-slate-600">
-              Date: {selectedDate} | Store: {selectedStore} | Filtered Department: {selectedDepartment}
+              Date: {selectedDate} | Store Filter: {selectedStore} | Department Filter: {selectedDepartment}
             </p>
           </div>
-
-          {/* Peak Hour Banner */}
-          {hourlyData.peakHour && (
-            <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 print-card rounded-xl p-4 flex items-center justify-between shadow-lg">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 rounded-lg text-indigo-400 no-print">
-                  <Zap className="w-5 h-5 fill-indigo-400/20" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase font-semibold text-indigo-300 print:text-indigo-700 tracking-wider">
-                    Peak Sales Window
-                  </p>
-                  <p className="text-sm font-medium text-slate-200 print:text-slate-800">
-                    Highest activity recorded at{" "}
-                    <strong>
-                      {hourlyData.peakHour.hourLabel} - {hourlyData.peakHour.hourNumber + 1}:00
-                    </strong>
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className="text-xs text-slate-400 print:text-slate-600 block">Peak Revenue</span>
-                <span className="text-lg font-bold text-emerald-400 print:text-emerald-700">
-                  ₱{hourlyData.peakHour.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-          )}
 
           {/* Metric Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -489,81 +452,98 @@ export default function DailySalesReportPage() {
             </div>
           </div>
 
-          {/* Store Breakdown Cards */}
-          {selectedStore === "ALL" && storeBreakdown.length > 1 && (
-            <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-indigo-400 print:text-indigo-700" />
-                <h2 className="text-sm font-semibold text-slate-200 print:text-slate-900">Store Contribution Breakdown</h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {storeBreakdown.map((s) => {
-                  const pct = metrics.totalRevenue > 0 ? (s.revenue / metrics.totalRevenue) * 100 : 0;
-                  return (
-                    <div key={s.store} className="p-3 bg-slate-950/80 border border-slate-800/80 print-card rounded-lg space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-200 print:text-slate-800 truncate">{s.store}</span>
-                        <span className="text-slate-400 print:text-slate-600">{pct.toFixed(1)}%</span>
-                      </div>
-                      <div className="text-sm font-bold text-emerald-400 print:text-emerald-700">
-                        ₱{s.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden no-print">
-                        <div style={{ width: `${pct}%` }} className="bg-indigo-500 h-full rounded-full" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Graphical Representation Grid */}
+          {/* STORE COMPARISON MATRIX & TOP PERFORMING ITEMS */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Store Comparison & Performance Matrix (2 Columns) */}
             <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">Hourly Sales Volume</h2>
-                <span className="text-xs text-slate-500 print:text-slate-600">Hourly Distribution (00:00 - 23:00)</span>
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-indigo-400 print:text-indigo-700" />
+                  <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">
+                    Store Comparison & Performance Matrix
+                  </h2>
+                </div>
+                <span className="text-xs text-slate-500 print:text-slate-600">
+                  {storeMatrix.length} {storeMatrix.length === 1 ? "Location" : "Locations"} Reporting
+                </span>
               </div>
-              <div className="h-48 flex items-end gap-1.5 pt-6 pb-2 px-2 overflow-x-auto relative">
-                {hourlyData.hours.map((item, idx) => (
-                  <div
-                    key={item.hourLabel}
-                    onMouseEnter={() => setActiveHourIndex(idx)}
-                    onMouseLeave={() => setActiveHourIndex(null)}
-                    className="flex-1 flex flex-col items-center h-full justify-end group min-w-[20px] cursor-pointer"
-                  >
-                    <div className="relative w-full flex justify-center">
-                      {activeHourIndex === idx && (
-                        <div className="absolute -top-16 bg-slate-900 border border-indigo-500/40 text-slate-100 text-xs p-2 rounded shadow-xl z-30 min-w-[120px] text-center pointer-events-none no-print">
-                          <p className="font-semibold text-indigo-300">{item.hourLabel}</p>
-                          <p className="text-emerald-400 font-bold">₱{item.revenue.toLocaleString()}</p>
-                        </div>
-                      )}
-                      <div
-                        style={{ height: `${item.percentage}%` }}
-                        className={`w-full max-w-[18px] rounded-t transition-all duration-300 ${
-                          activeHourIndex === idx
-                            ? "bg-indigo-400"
-                            : item.revenue > 0
-                            ? "bg-indigo-600 print:bg-indigo-700"
-                            : "bg-slate-800/40 print:bg-slate-300"
-                        }`}
-                      />
-                    </div>
-                    <span className="text-[10px] text-slate-500 print:text-slate-700 mt-2">
-                      {item.hourLabel.split(":")[0]}h
-                    </span>
-                  </div>
-                ))}
-              </div>
+
+              {storeMatrix.length === 0 ? (
+                <p className="text-sm text-slate-500 py-12 text-center">
+                  No sales recorded for the selected date.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-800/40 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 print:bg-slate-100 print:text-slate-700">
+                      <tr>
+                        <th className="px-3 py-2.5">Rank & Store</th>
+                        <th className="px-3 py-2.5 text-right">Units</th>
+                        <th className="px-3 py-2.5 text-right">Scans</th>
+                        <th className="px-3 py-2.5 text-right">Avg Ticket</th>
+                        <th className="px-3 py-2.5 text-right">Revenue</th>
+                        <th className="px-3 py-2.5 w-32">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50 print:divide-slate-200">
+                      {storeMatrix.map((item, idx) => (
+                        <tr key={item.store} className="hover:bg-slate-800/20 transition-colors">
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              {idx === 0 ? (
+                                <Award className="w-4 h-4 text-amber-400 shrink-0" />
+                              ) : (
+                                <span className="w-4 text-[11px] font-mono text-slate-500 text-center">
+                                  #{idx + 1}
+                                </span>
+                              )}
+                              <span className="font-semibold text-slate-200 print:text-slate-900 truncate">
+                                {item.store}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-300 print:text-slate-800">
+                            {item.units.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-400 print:text-slate-600">
+                            {item.transactions.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-300 print:text-slate-800">
+                            ₱{item.avgOrderValue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-3 py-3 text-right font-bold text-emerald-400 print:text-emerald-700">
+                            ₱{item.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] text-slate-400 print:text-slate-600">
+                                <span>{item.revenueShare.toFixed(1)}%</span>
+                              </div>
+                              <div className="w-full bg-slate-800 print:bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  style={{ width: `${item.revenueShare}%` }}
+                                  className="bg-indigo-500 print:bg-indigo-600 h-full rounded-full transition-all duration-300"
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
+            {/* Top Performing Items (1 Column) */}
             <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
-              <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">Top Performing Items</h2>
+              <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">
+                Top Performing Items
+              </h2>
               <div className="space-y-3">
                 {topProducts.length === 0 ? (
-                  <p className="text-sm text-slate-500 print:text-slate-600 py-4 text-center">No transactions recorded.</p>
+                  <p className="text-sm text-slate-500 py-8 text-center">No transactions recorded.</p>
                 ) : (
                   topProducts.map((prod, idx) => (
                     <div
@@ -586,6 +566,7 @@ export default function DailySalesReportPage() {
                 )}
               </div>
             </div>
+
           </div>
         </div>
 
@@ -748,7 +729,6 @@ export default function DailySalesReportPage() {
             </div>
           </div>
         </div>
-
       </div>
     </>
   );
