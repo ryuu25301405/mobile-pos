@@ -37,7 +37,17 @@ export default function ScanViewPage() {
   const [scannedItems, setScannedItems] = useState<ScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
 
-  // 1. Fetch all previous scan logs from Supabase on page mount
+  // Helper to format timestamps consistently
+  const formatTimestamp = (isoString?: string) => {
+    const rawDate = isoString ? new Date(isoString) : new Date();
+    return rawDate.toLocaleString("en-PH", {
+      timeZone: "Asia/Manila",
+      dateStyle: "short",
+      timeStyle: "medium",
+    });
+  };
+
+  // 1. Fetch all previous scan logs from Supabase
   const fetchScannedLogs = useCallback(async () => {
     setPageLoading(true);
     const { data, error } = await supabase
@@ -45,42 +55,71 @@ export default function ScanViewPage() {
       .select("*")
       .order("scanned_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching scanned logs:", error);
-    } else if (data) {
-      // Map Supabase rows into local UI state structure
-      const formattedData: ScannedProduct[] = data.map((item: any) => {
-        const rawDate = item.scanned_at ? new Date(item.scanned_at) : new Date();
-        const formattedTimestamp = rawDate.toLocaleString("en-PH", {
-          timeZone: "Asia/Manila",
-          dateStyle: "short",
-          timeStyle: "medium",
-        });
-
-        return {
-          id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-          styleCode: item.style_code || "N/A",
-          styleName: item.style_name || "Unassigned Item",
-          description: item.description || "",
-          color: item.color || "-",
-          category: item.category || "-",
-          department: item.department || "-",
-          size: item.size || "-",
-          quantity: item.quantity || 1,
-          timestamp: formattedTimestamp,
-        };
-      });
+    if (!error && data) {
+      const formattedData: ScannedProduct[] = data.map((item: any) => ({
+        id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
+        styleCode: item.style_code || "N/A",
+        styleName: item.style_name || "Unassigned Item",
+        description: item.description || "",
+        color: item.color || "-",
+        category: item.category || "-",
+        department: item.department || "-",
+        size: item.size || "-",
+        quantity: item.quantity || 1,
+        timestamp: formatTimestamp(item.scanned_at),
+      }));
 
       setScannedItems(formattedData);
     }
     setPageLoading(false);
   }, []);
 
+  // 2. Set up Initial Fetch & Supabase Realtime Subscription
   useEffect(() => {
     fetchScannedLogs();
+
+    // Subscribe to INSERT and DELETE database changes on scanned_logs
+    const channel = supabase
+      .channel("scanned_logs_realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "scanned_logs" },
+        (payload) => {
+          const newItem = payload.new;
+          const formattedNewItem: ScannedProduct = {
+            id: String(newItem.id),
+            styleCode: newItem.style_code || "N/A",
+            styleName: newItem.style_name || "Unassigned Item",
+            description: newItem.description || "",
+            color: newItem.color || "-",
+            category: newItem.category || "-",
+            department: newItem.department || "-",
+            size: newItem.size || "-",
+            quantity: newItem.quantity || 1,
+            timestamp: formatTimestamp(newItem.scanned_at),
+          };
+
+          // Prepend new scan to top of list instantly
+          setScannedItems((prev) => [formattedNewItem, ...prev]);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "scanned_logs" },
+        (payload) => {
+          const deletedId = String(payload.old.id);
+          setScannedItems((prev) => prev.filter((item) => item.id !== deletedId));
+        }
+      )
+      .subscribe();
+
+    // Cleanup channel connection on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchScannedLogs]);
 
-  // 2. Handle scanning new items
+  // 3. Handle scanning action
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -115,32 +154,20 @@ export default function ScanViewPage() {
 
       setLastScannedItem(fetchedProduct);
 
-      const now = new Date();
-      const currentIsoTime = now.toISOString();
-
-      // Log entry into Supabase
-      const { data: insertedData, error: insertError } = await supabase
-        .from("scanned_logs")
-        .insert([
-          {
-            style_code: fetchedProduct.styleCode,
-            style_name: fetchedProduct.styleName,
-            description: fetchedProduct.description,
-            color: fetchedProduct.color,
-            category: fetchedProduct.category,
-            department: fetchedProduct.department,
-            size: fetchedProduct.size,
-            quantity: 1,
-            scanned_at: currentIsoTime,
-          },
-        ])
-        .select()
-        .single();
-
-      if (!insertError) {
-        // Refresh full list from database to ensure state sync
-        fetchScannedLogs();
-      }
+      // Insert into Supabase (The Realtime Listener above will auto-broadcast this to all screens)
+      await supabase.from("scanned_logs").insert([
+        {
+          style_code: fetchedProduct.styleCode,
+          style_name: fetchedProduct.styleName,
+          description: fetchedProduct.description,
+          color: fetchedProduct.color,
+          category: fetchedProduct.category,
+          department: fetchedProduct.department,
+          size: fetchedProduct.size,
+          quantity: 1,
+          scanned_at: new Date().toISOString(),
+        },
+      ]);
     }
   };
 
@@ -151,9 +178,7 @@ export default function ScanViewPage() {
   };
 
   const handleRemoveItem = async (id: string) => {
-    // Attempt deleting from database if ID is numeric/UUID
     await supabase.from("scanned_logs").delete().eq("id", id);
-    setScannedItems((prev) => prev.filter((item) => item.id !== id));
   };
 
   const totalUniqueItems = scannedItems.length;
@@ -165,8 +190,9 @@ export default function ScanViewPage() {
       <header className="space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              Live Terminal View
+            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center space-x-1.5 w-max">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Live Terminal View</span>
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
               Scanned Inventory History
@@ -200,14 +226,16 @@ export default function ScanViewPage() {
           </div>
           <div className="col-span-2 sm:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Database Sync</p>
-              <p className="text-xs text-emerald-400 mt-1 font-semibold">● Connected</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Database Connection</p>
+              <p className="text-xs text-emerald-400 mt-1 font-semibold flex items-center space-x-1">
+                <span>Realtime Active</span>
+              </p>
             </div>
             <button
               onClick={fetchScannedLogs}
               className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-1.5 rounded-lg transition"
             >
-              Refresh
+              Sync
             </button>
           </div>
         </div>
@@ -244,7 +272,7 @@ export default function ScanViewPage() {
                           ✓
                         </div>
                         <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase">
-                          Saved to Database
+                          Saved & Broadcasted
                         </span>
                         <h3 className="text-lg font-bold text-white leading-tight">{lastScannedItem.styleName}</h3>
                         <p className="text-xs font-mono text-emerald-400 font-bold">{lastScannedItem.styleCode}</p>
@@ -296,7 +324,7 @@ export default function ScanViewPage() {
             </div>
             <h2 className="text-base font-bold text-white">No scan history found</h2>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Tap "Scan Barcode / QR" to add items to your database logs.
+              Tap "Scan Barcode / QR" to add items. Any device scanning items will update this screen live.
             </p>
           </div>
         ) : (
@@ -314,7 +342,6 @@ export default function ScanViewPage() {
                   key={item.id}
                   className="bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-3.5 transition flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center gap-2 sm:gap-0"
                 >
-                  {/* Title & Barcode */}
                   <div className="sm:col-span-5 space-y-0.5">
                     <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
                     <p className="font-mono text-emerald-400 text-xs font-semibold">{item.styleCode}</p>
@@ -323,7 +350,6 @@ export default function ScanViewPage() {
                     )}
                   </div>
 
-                  {/* Attributes */}
                   <div className="sm:col-span-3 flex flex-wrap gap-1 text-[10px]">
                     {item.color !== "-" && (
                       <span className="bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md">
@@ -342,7 +368,6 @@ export default function ScanViewPage() {
                     )}
                   </div>
 
-                  {/* Quantity Badge */}
                   <div className="sm:col-span-2 flex sm:justify-center items-center w-full sm:w-auto mt-2 sm:mt-0 justify-between">
                     <span className="sm:hidden text-xs text-slate-500 font-bold">Quantity:</span>
                     <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-xs px-3 py-1 rounded-full">
@@ -350,7 +375,6 @@ export default function ScanViewPage() {
                     </span>
                   </div>
 
-                  {/* Timestamp & Remove */}
                   <div className="sm:col-span-2 flex items-center justify-between sm:justify-end space-x-3 w-full sm:w-auto">
                     <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
                     <button
@@ -368,9 +392,8 @@ export default function ScanViewPage() {
         )}
       </section>
 
-      {/* Footer */}
       <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Database Sync Active
+        Realtime Sync Active
       </footer>
     </main>
   );
