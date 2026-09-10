@@ -32,6 +32,7 @@ interface ScannedProduct {
   quantity: number;
   rawTimestamp: string;
   timestamp: string;
+  scanCount: number; // Number of logs grouped together
 }
 
 export default function ScanViewPage() {
@@ -71,22 +72,48 @@ export default function ScanViewPage() {
     const { data, error } = await query;
 
     if (!error && data) {
-      const formattedData: ScannedProduct[] = data.map((item: any) => ({
-        id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-        store: item.store || "Unassigned Store",
-        styleCode: item.style_code || "N/A",
-        styleName: item.style_name || "Unassigned Item",
-        description: item.description || "",
-        color: item.color || "-",
-        category: item.category || "-",
-        department: item.department || "-",
-        size: item.size || "-",
-        quantity: item.quantity || 1,
-        rawTimestamp: item.scanned_at || "",
-        timestamp: formatTimestamp(item.scanned_at),
-      }));
+      // Grouping and consolidating identical items per store
+      const groupedMap = new Map<string, ScannedProduct>();
 
-      setScannedItems(formattedData);
+      data.forEach((item: any) => {
+        const store = item.store || "Unassigned Store";
+        const styleCode = item.style_code || "N/A";
+        const color = item.color || "-";
+        const size = item.size || "-";
+
+        // Group key uniquely identifies store + product attributes
+        const groupKey = `${store}|${styleCode}|${color}|${size}`;
+        const qty = item.quantity || 1;
+
+        if (groupedMap.has(groupKey)) {
+          const existing = groupedMap.get(groupKey)!;
+          existing.quantity += qty;
+          existing.scanCount += 1;
+          // Keep the latest timestamp
+          if (new Date(item.scanned_at) > new Date(existing.rawTimestamp)) {
+            existing.rawTimestamp = item.scanned_at;
+            existing.timestamp = formatTimestamp(item.scanned_at);
+          }
+        } else {
+          groupedMap.set(groupKey, {
+            id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
+            store,
+            styleCode,
+            styleName: item.style_name || "Unassigned Item",
+            description: item.description || "",
+            color,
+            category: item.category || "-",
+            department: item.department || "-",
+            size,
+            quantity: qty,
+            rawTimestamp: item.scanned_at || "",
+            timestamp: formatTimestamp(item.scanned_at),
+            scanCount: 1,
+          });
+        }
+      });
+
+      setScannedItems(Array.from(groupedMap.values()));
     }
     setLoading(false);
   }, [selectedStoreFilter]);
@@ -106,9 +133,15 @@ export default function ScanViewPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleRemoveItem = async (id: string) => {
-    setScannedItems((prev) => prev.filter((item) => item.id !== id));
-    await supabase.from("scanned_logs").delete().eq("id", id);
+  const handleRemoveItem = async (itemToRemove: ScannedProduct) => {
+    setScannedItems((prev) => prev.filter((item) => item.id !== itemToRemove.id));
+    
+    // Delete entries matching the store and style code from DB
+    await supabase
+      .from("scanned_logs")
+      .delete()
+      .eq("store", itemToRemove.store)
+      .eq("style_code", itemToRemove.styleCode);
   };
 
   // Date Shortcut Handlers
@@ -139,7 +172,6 @@ export default function ScanViewPage() {
   const filteredItems = scannedItems.filter((item) => {
     const q = searchQuery.toLowerCase();
 
-    // 1. Text Search Match
     const matchesSearch =
       item.styleCode.toLowerCase().includes(q) ||
       item.styleName.toLowerCase().includes(q) ||
@@ -149,7 +181,6 @@ export default function ScanViewPage() {
 
     if (!matchesSearch) return false;
 
-    // 2. Date Range Match
     if (startDate || endDate) {
       if (!item.rawTimestamp) return false;
 
@@ -185,17 +216,18 @@ export default function ScanViewPage() {
       "Department": item.department,
       "Color": item.color,
       "Size": item.size,
-      "Quantity": item.quantity,
-      "Scanned At": item.timestamp,
+      "Total Quantity": item.quantity,
+      "Total Scan Logs": item.scanCount,
+      "Latest Scan At": item.timestamp,
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Consolidated Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
     const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
+    const fileName = `Consolidated_Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -208,8 +240,8 @@ export default function ScanViewPage() {
     setIsExportOpen(false);
   };
 
-  const totalLogs = filteredItems.length;
-  const totalQuantity = filteredItems.reduce((acc, item) => acc + item.quantity, 0);
+  const totalDistinctStyles = filteredItems.length;
+  const totalSummedQuantity = filteredItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 max-w-6xl mx-auto antialiased space-y-6">
@@ -220,10 +252,10 @@ export default function ScanViewPage() {
             Database View
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">
-            Scanned Logs History
+            Consolidated Scanned Logs
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Live database records from all store scanning activity
+            Summed quantities per QR style code and store location
           </p>
         </div>
 
@@ -239,7 +271,7 @@ export default function ScanViewPage() {
             <span>Refresh</span>
           </button>
 
-          {/* Export Menu Dropdown */}
+          {/* Export Dropdown */}
           <div className="relative" ref={exportRef}>
             <button
               onClick={() => setIsExportOpen(!isExportOpen)}
@@ -282,7 +314,7 @@ export default function ScanViewPage() {
         </div>
       </header>
 
-      {/* Controls Bar: Search & Store Selection */}
+      {/* Controls Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
         {/* Search Input */}
         <div className="sm:col-span-6 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center space-x-2">
@@ -315,9 +347,9 @@ export default function ScanViewPage() {
 
         {/* Total Summary */}
         <div className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between sm:justify-center space-x-2 text-center">
-          <span className="text-[10px] font-bold uppercase text-slate-500 sm:hidden">Total Items:</span>
+          <span className="text-[10px] font-bold uppercase text-slate-500 sm:hidden">Total Summed:</span>
           <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
-            {totalQuantity} Units ({totalLogs} Logs)
+            {totalSummedQuantity} Total Qty ({totalDistinctStyles} Items)
           </span>
         </div>
       </div>
@@ -332,7 +364,6 @@ export default function ScanViewPage() {
             <span>Filter by Date Range</span>
           </span>
 
-          {/* Quick Presets */}
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => handlePresetDate("today")}
@@ -363,7 +394,6 @@ export default function ScanViewPage() {
           </div>
         </div>
 
-        {/* Date Pickers */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-800/60">
           <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
             <label className="text-[10px] font-bold uppercase text-slate-500 whitespace-nowrap">From:</label>
@@ -403,7 +433,7 @@ export default function ScanViewPage() {
             </div>
             <h2 className="text-base font-bold text-white">No logs found</h2>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              No scanned records match your current date range and store criteria.
+              No scanned records match your current criteria.
             </p>
           </div>
         ) : (
@@ -412,8 +442,8 @@ export default function ScanViewPage() {
               <span className="col-span-3">Store Location</span>
               <span className="col-span-4">Product Details</span>
               <span className="col-span-2">Attributes</span>
-              <span className="col-span-1 text-center">Qty</span>
-              <span className="col-span-2 text-right">Timestamp</span>
+              <span className="col-span-1 text-center">Total Qty</span>
+              <span className="col-span-2 text-right">Latest Scan</span>
             </div>
 
             <div className="space-y-2.5 max-h-[70vh] overflow-y-auto pr-1">
@@ -422,17 +452,20 @@ export default function ScanViewPage() {
                   key={item.id}
                   className="bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition flex flex-col sm:grid sm:grid-cols-12 items-start sm:items-center gap-3 sm:gap-0"
                 >
+                  {/* Store Column */}
                   <div className="sm:col-span-3 space-y-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
                       {item.store}
                     </span>
                   </div>
 
+                  {/* Product Info Column */}
                   <div className="sm:col-span-4 space-y-0.5">
                     <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
                     <p className="font-mono text-emerald-400 text-xs font-semibold">{item.styleCode}</p>
                   </div>
 
+                  {/* Attributes Column */}
                   <div className="sm:col-span-2 flex flex-wrap gap-1 text-[10px]">
                     {item.color !== "-" && (
                       <span className="bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md">
@@ -446,19 +479,28 @@ export default function ScanViewPage() {
                     )}
                   </div>
 
+                  {/* Total Summed Quantity Column */}
                   <div className="sm:col-span-1 flex sm:justify-center items-center w-full sm:w-auto justify-between">
-                    <span className="sm:hidden text-xs text-slate-500 font-bold">Quantity:</span>
-                    <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-xs px-2.5 py-0.5 rounded-full">
-                      x{item.quantity}
-                    </span>
+                    <span className="sm:hidden text-xs text-slate-500 font-bold">Total Qty:</span>
+                    <div className="text-center">
+                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-sm px-3 py-1 rounded-full inline-block">
+                        x{item.quantity}
+                      </span>
+                      {item.scanCount > 1 && (
+                        <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
+                          ({item.scanCount} scans)
+                        </p>
+                      )}
+                    </div>
                   </div>
 
+                  {/* Timestamp & Actions */}
                   <div className="sm:col-span-2 flex items-center justify-between sm:justify-end space-x-3 w-full sm:w-auto border-t sm:border-0 border-slate-800/80 pt-2 sm:pt-0">
                     <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
                     <button
-                      onClick={() => handleRemoveItem(item.id)}
+                      onClick={() => handleRemoveItem(item)}
                       className="text-slate-600 hover:text-red-400 p-1 text-xs font-bold transition"
-                      title="Delete log"
+                      title="Delete log group"
                     >
                       ✕
                     </button>
