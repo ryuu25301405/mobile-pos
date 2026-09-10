@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import {
   Calendar as CalendarIcon,
   Store,
@@ -18,6 +20,7 @@ import {
   Zap,
   Building2,
   Printer,
+  FileText,
 } from "lucide-react";
 
 interface SalesLog {
@@ -42,7 +45,9 @@ const supabase = createClient(
 );
 
 export default function DailySalesReportPage() {
-  // Filter States
+  const reportContainerRef = useRef<HTMLDivElement>(null);
+
+  // Filters
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
@@ -51,25 +56,23 @@ export default function DailySalesReportPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Dropdown Option Lists
+  // Dropdowns
   const [stores, setStores] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
 
-  // Core Data & UI States
+  // Core Data & State
   const [salesData, setSalesData] = useState<SalesLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
-  // Pagination States
+  // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // Chart Interactive Hover State
   const [activeHourIndex, setActiveHourIndex] = useState<number | null>(null);
 
-  // ----------------------------------------------------
-  // 1. Fetch Dynamic Dropdown Filters
-  // ----------------------------------------------------
+  // Load Dropdowns
   useEffect(() => {
     async function loadFilterOptions() {
       const { data, error } = await supabase
@@ -94,9 +97,7 @@ export default function DailySalesReportPage() {
     setCurrentPage(1);
   }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
 
-  // ----------------------------------------------------
-  // 2. Fetch Sales Logs
-  // ----------------------------------------------------
+  // Fetch Sales
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
@@ -142,9 +143,7 @@ export default function DailySalesReportPage() {
     };
   }, [fetchDailySales]);
 
-  // ----------------------------------------------------
-  // 3. Global Search & Pagination Logic
-  // ----------------------------------------------------
+  // Search Filter
   const filteredSalesData = useMemo(() => {
     if (!searchQuery.trim()) return salesData;
 
@@ -166,6 +165,7 @@ export default function DailySalesReportPage() {
     );
   }, [salesData, searchQuery]);
 
+  // Pagination
   const totalItems = filteredSalesData.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
   const paginatedData = useMemo(() => {
@@ -173,9 +173,7 @@ export default function DailySalesReportPage() {
     return filteredSalesData.slice(start, start + pageSize);
   }, [filteredSalesData, currentPage, pageSize]);
 
-  // ----------------------------------------------------
-  // 4. Computed Metrics & Breakdown
-  // ----------------------------------------------------
+  // Computed Aggregations
   const metrics = useMemo(() => {
     const totalUnits = filteredSalesData.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
     const totalRevenue = filteredSalesData.reduce(
@@ -259,10 +257,35 @@ export default function DailySalesReportPage() {
       .slice(0, 5);
   }, [filteredSalesData]);
 
-  const handlePrint = () => {
-    window.print();
+  // PDF Export Function
+  const exportToPDF = async () => {
+    if (!reportContainerRef.current) return;
+    setIsExportingPDF(true);
+
+    try {
+      const element = reportContainerRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#020617", // slate-950 background consistency
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Daily_Sales_Report_${selectedDate}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
 
+  // CSV Export Function
   const exportToCSV = () => {
     if (filteredSalesData.length === 0) return;
 
@@ -325,50 +348,7 @@ export default function DailySalesReportPage() {
         }
       `}</style>
 
-      {/* Printable Z-Read Layout */}
-      <div className="print-only p-4 font-mono text-black text-xs max-w-xs mx-auto space-y-3">
-        <div className="text-center border-b border-black pb-2">
-          <h2 className="text-sm font-bold uppercase">END OF DAY Z-READ</h2>
-          <p>Store: {selectedStore}</p>
-          <p>Date: {selectedDate}</p>
-          <p>Generated: {new Date().toLocaleTimeString()}</p>
-        </div>
-
-        <div className="space-y-1 border-b border-black pb-2">
-          <div className="flex justify-between">
-            <span>GROSS SALES:</span>
-            <span>₱{metrics.totalRevenue.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>TOTAL ITEMS:</span>
-            <span>{metrics.totalUnits}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>TRANSACTIONS:</span>
-            <span>{metrics.totalTransactions}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>AVG TICKET:</span>
-            <span>₱{metrics.avgOrderValue.toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div className="border-b border-black pb-2">
-          <p className="font-bold mb-1">TOP PRODUCTS</p>
-          {topProducts.map((p) => (
-            <div key={p.sku} className="flex justify-between text-[11px]">
-              <span className="truncate max-w-[150px]">{p.name}</span>
-              <span>x{p.qty}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="text-center text-[10px] pt-2">
-          <p>*** END OF REPORT ***</p>
-        </div>
-      </div>
-
-      {/* Main Dashboard UI */}
+      {/* Main Dashboard Layout */}
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6 no-print">
         {/* Header Bar */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
@@ -414,18 +394,21 @@ export default function DailySalesReportPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
             </button>
 
+            {/* Export PDF with Charts */}
             <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium px-3.5 py-2 rounded-lg text-sm transition-colors"
+              onClick={exportToPDF}
+              disabled={isExportingPDF || filteredSalesData.length === 0}
+              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors"
             >
-              <Printer className="w-4 h-4 text-slate-400" />
-              Print Z-Read
+              <FileText className="w-4 h-4" />
+              {isExportingPDF ? "Generating PDF..." : "Export PDF Report"}
             </button>
 
+            {/* CSV Export */}
             <button
               onClick={exportToCSV}
               disabled={filteredSalesData.length === 0}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors"
             >
               <Download className="w-4 h-4" />
               Export CSV
@@ -433,177 +416,180 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Peak Hour Banner */}
-        {hourlyData.peakHour && (
-          <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 rounded-lg text-indigo-400">
-                <Zap className="w-5 h-5 fill-indigo-400/20" />
-              </div>
-              <div>
-                <p className="text-xs uppercase font-semibold text-indigo-300 tracking-wider">
-                  Peak Sales Window
-                </p>
-                <p className="text-sm font-medium text-slate-200">
-                  Highest activity recorded at{" "}
-                  <strong className="text-white">
-                    {hourlyData.peakHour.hourLabel} - {hourlyData.peakHour.hourNumber + 1}:00
-                  </strong>
-                </p>
-              </div>
-            </div>
-
-            <div className="text-right">
-              <span className="text-xs text-slate-400 block">Peak Revenue</span>
-              <span className="text-lg font-bold text-emerald-400">
-                ₱{hourlyData.peakHour.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* KPI Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Revenue</p>
-              <h3 className="text-2xl font-bold text-white mt-1">
-                ₱{metrics.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-              </h3>
-            </div>
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
-              <DollarSign className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Units Sold</p>
-              <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalUnits.toLocaleString()}</h3>
-            </div>
-            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
-              <ShoppingBag className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Scans</p>
-              <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalTransactions.toLocaleString()}</h3>
-            </div>
-            <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
-              <Receipt className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Avg Item Price</p>
-              <h3 className="text-2xl font-bold text-white mt-1">
-                ₱{metrics.avgOrderValue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-              </h3>
-            </div>
-            <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        {/* Store Breakdown Cards */}
-        {selectedStore === "ALL" && storeBreakdown.length > 1 && (
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-indigo-400" />
-              <h2 className="text-sm font-semibold text-slate-200">Store Contribution Breakdown</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {storeBreakdown.map((s) => {
-                const pct = metrics.totalRevenue > 0 ? (s.revenue / metrics.totalRevenue) * 100 : 0;
-                return (
-                  <div key={s.store} className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-lg space-y-1.5">
-                    <div className="flex justify-between text-xs">
-                      <span className="font-semibold text-slate-200 truncate">{s.store}</span>
-                      <span className="text-slate-400">{pct.toFixed(1)}%</span>
-                    </div>
-                    <div className="text-sm font-bold text-emerald-400">
-                      ₱{s.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                    </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div style={{ width: `${pct}%` }} className="bg-indigo-500 h-full rounded-full" />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Charts & Highlights Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-200">Hourly Sales Volume</h2>
-              <span className="text-xs text-slate-500">Hover bars to view hourly statistics</span>
-            </div>
-            <div className="h-48 flex items-end gap-1.5 pt-6 pb-2 px-2 overflow-x-auto relative">
-              {hourlyData.hours.map((item, idx) => (
-                <div
-                  key={item.hourLabel}
-                  onMouseEnter={() => setActiveHourIndex(idx)}
-                  onMouseLeave={() => setActiveHourIndex(null)}
-                  className="flex-1 flex flex-col items-center h-full justify-end group min-w-[20px] cursor-pointer"
-                >
-                  <div className="relative w-full flex justify-center">
-                    {activeHourIndex === idx && (
-                      <div className="absolute -top-16 bg-slate-900 border border-indigo-500/40 text-slate-100 text-xs p-2 rounded shadow-xl z-30 min-w-[120px] text-center pointer-events-none">
-                        <p className="font-semibold text-indigo-300">{item.hourLabel}</p>
-                        <p className="text-emerald-400 font-bold">₱{item.revenue.toLocaleString()}</p>
-                      </div>
-                    )}
-                    <div
-                      style={{ height: `${item.percentage}%` }}
-                      className={`w-full max-w-[18px] rounded-t transition-all duration-300 ${
-                        activeHourIndex === idx
-                          ? "bg-indigo-400"
-                          : item.revenue > 0
-                          ? "bg-indigo-600 hover:bg-indigo-500"
-                          : "bg-slate-800/40"
-                      }`}
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-500 mt-2">
-                    {item.hourLabel.split(":")[0]}h
-                  </span>
+        {/* PDF EXPORT TARGET CONTAINER */}
+        <div ref={reportContainerRef} className="space-y-6">
+          {/* Peak Hour Banner */}
+          {hourlyData.peakHour && (
+            <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 rounded-lg text-indigo-400">
+                  <Zap className="w-5 h-5 fill-indigo-400/20" />
                 </div>
-              ))}
+                <div>
+                  <p className="text-xs uppercase font-semibold text-indigo-300 tracking-wider">
+                    Peak Sales Window
+                  </p>
+                  <p className="text-sm font-medium text-slate-200">
+                    Highest activity recorded at{" "}
+                    <strong className="text-white">
+                      {hourlyData.peakHour.hourLabel} - {hourlyData.peakHour.hourNumber + 1}:00
+                    </strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-xs text-slate-400 block">Peak Revenue</span>
+                <span className="text-lg font-bold text-emerald-400">
+                  ₱{hourlyData.peakHour.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Metric Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Revenue</p>
+                <h3 className="text-2xl font-bold text-white mt-1">
+                  ₱{metrics.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                </h3>
+              </div>
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
+                <DollarSign className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Units Sold</p>
+                <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalUnits.toLocaleString()}</h3>
+              </div>
+              <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+                <ShoppingBag className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Scans</p>
+                <h3 className="text-2xl font-bold text-white mt-1">{metrics.totalTransactions.toLocaleString()}</h3>
+              </div>
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
+                <Receipt className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Avg Item Price</p>
+                <h3 className="text-2xl font-bold text-white mt-1">
+                  ₱{metrics.avgOrderValue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                </h3>
+              </div>
+              <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
+                <TrendingUp className="w-6 h-6" />
+              </div>
             </div>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-            <h2 className="text-base font-semibold text-slate-200">Top Performing Items</h2>
-            <div className="space-y-3">
-              {topProducts.length === 0 ? (
-                <p className="text-sm text-slate-500 py-4 text-center">No transactions recorded.</p>
-              ) : (
-                topProducts.map((prod, idx) => (
+          {/* Store Breakdown Cards */}
+          {selectedStore === "ALL" && storeBreakdown.length > 1 && (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-indigo-400" />
+                <h2 className="text-sm font-semibold text-slate-200">Store Contribution Breakdown</h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {storeBreakdown.map((s) => {
+                  const pct = metrics.totalRevenue > 0 ? (s.revenue / metrics.totalRevenue) * 100 : 0;
+                  return (
+                    <div key={s.store} className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-lg space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-200 truncate">{s.store}</span>
+                        <span className="text-slate-400">{pct.toFixed(1)}%</span>
+                      </div>
+                      <div className="text-sm font-bold text-emerald-400">
+                        ₱{s.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div style={{ width: `${pct}%` }} className="bg-indigo-500 h-full rounded-full" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Graphical Representation Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-200">Hourly Sales Volume</h2>
+                <span className="text-xs text-slate-500">Hourly Distribution (00:00 - 23:00)</span>
+              </div>
+              <div className="h-48 flex items-end gap-1.5 pt-6 pb-2 px-2 overflow-x-auto relative">
+                {hourlyData.hours.map((item, idx) => (
                   <div
-                    key={prod.sku}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800"
+                    key={item.hourLabel}
+                    onMouseEnter={() => setActiveHourIndex(idx)}
+                    onMouseLeave={() => setActiveHourIndex(null)}
+                    className="flex-1 flex flex-col items-center h-full justify-end group min-w-[20px] cursor-pointer"
                   >
-                    <div className="space-y-0.5 max-w-[180px]">
-                      <p className="text-xs font-semibold text-slate-200 truncate">
-                        {idx + 1}. {prod.name}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        SKU: {prod.sku} | Qty: {prod.qty}
+                    <div className="relative w-full flex justify-center">
+                      {activeHourIndex === idx && (
+                        <div className="absolute -top-16 bg-slate-900 border border-indigo-500/40 text-slate-100 text-xs p-2 rounded shadow-xl z-30 min-w-[120px] text-center pointer-events-none">
+                          <p className="font-semibold text-indigo-300">{item.hourLabel}</p>
+                          <p className="text-emerald-400 font-bold">₱{item.revenue.toLocaleString()}</p>
+                        </div>
+                      )}
+                      <div
+                        style={{ height: `${item.percentage}%` }}
+                        className={`w-full max-w-[18px] rounded-t transition-all duration-300 ${
+                          activeHourIndex === idx
+                            ? "bg-indigo-400"
+                            : item.revenue > 0
+                            ? "bg-indigo-600 hover:bg-indigo-500"
+                            : "bg-slate-800/40"
+                        }`}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-2">
+                      {item.hourLabel.split(":")[0]}h
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+              <h2 className="text-base font-semibold text-slate-200">Top Performing Items</h2>
+              <div className="space-y-3">
+                {topProducts.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-4 text-center">No transactions recorded.</p>
+                ) : (
+                  topProducts.map((prod, idx) => (
+                    <div
+                      key={prod.sku}
+                      className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800"
+                    >
+                      <div className="space-y-0.5 max-w-[180px]">
+                        <p className="text-xs font-semibold text-slate-200 truncate">
+                          {idx + 1}. {prod.name}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          SKU: {prod.sku} | Qty: {prod.qty}
+                        </p>
+                      </div>
+                      <p className="text-xs font-bold text-emerald-400">
+                        ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                       </p>
                     </div>
-                    <p className="text-xs font-bold text-emerald-400">
-                      ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
