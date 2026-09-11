@@ -42,7 +42,7 @@ interface SalesRecord {
   scanned_date: string; // YYYY-MM-DD
 }
 
-type DimensionKey = "store" | "department" | "category" | "style_code";
+type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code";
 
 interface DimensionConfig {
   key: DimensionKey;
@@ -51,8 +51,10 @@ interface DimensionConfig {
 
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
-  { key: "category", label: "Category" },
   { key: "department", label: "Department" },
+  { key: "category", label: "Category" },
+  { key: "color", label: "Color" },
+  { key: "size", label: "Size" },
   { key: "style_code", label: "Style Code" },
 ];
 
@@ -60,6 +62,8 @@ const DRILL_HIERARCHY: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
   { key: "department", label: "Department" },
   { key: "category", label: "Category" },
+  { key: "color", label: "Color" },
+  { key: "size", label: "Size" },
   { key: "style_code", label: "Style Code" },
 ];
 
@@ -76,6 +80,8 @@ export default function QlikViewAnalyticsPage() {
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
 
   // View state
@@ -91,10 +97,12 @@ export default function QlikViewAnalyticsPage() {
     { dim: DimensionConfig; value: string }[]
   >([]);
 
-  // Search States
+  // Search States for list boxes
   const [storeSearch, setStoreSearch] = useState("");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [deptSearch, setDeptSearch] = useState("");
+  const [catSearch, setCatSearch] = useState("");
+  const [colorSearch, setColorSearch] = useState("");
+  const [sizeSearch, setSizeSearch] = useState("");
   const [detailSearch, setDetailSearch] = useState("");
 
   // 1. Fetch raw transaction data
@@ -121,8 +129,8 @@ export default function QlikViewAnalyticsPage() {
           sku: row.sku || "-",
           style_name: row.style_name || "Unassigned Item",
           description: row.description || "-",
-          color: row.color || "-",
-          size: row.size || "-",
+          color: row.color && row.color !== "-" ? row.color : "Unassigned Color",
+          size: row.size && row.size !== "-" ? row.size : "Unassigned Size",
           category: row.category && row.category !== "-" ? row.category : "Unassigned Category",
           department: row.department && row.department !== "-" ? row.department : "Unassigned Dept",
           price: pr,
@@ -176,7 +184,7 @@ export default function QlikViewAnalyticsPage() {
     }
   };
 
-  // 2. Base Date Filter (applies to Universe for the selected timeframe)
+  // 2. Base Date Filter
   const dateFilteredData = useMemo(() => {
     if (!startDate && !endDate) return data;
     return data.filter((row) => {
@@ -186,76 +194,133 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [data, startDate, endDate]);
 
-  // Universe Sets for current timeframe
+  // 3. Universe Sets for current timeframe
   const universe = useMemo(() => {
     return {
       stores: Array.from(new Set(dateFilteredData.map((d) => d.store))).sort(),
-      categories: Array.from(new Set(dateFilteredData.map((d) => d.category))).sort(),
       departments: Array.from(new Set(dateFilteredData.map((d) => d.department))).sort(),
+      categories: Array.from(new Set(dateFilteredData.map((d) => d.category))).sort(),
+      colors: Array.from(new Set(dateFilteredData.map((d) => d.color))).sort(),
+      sizes: Array.from(new Set(dateFilteredData.map((d) => d.size))).sort(),
       styles: Array.from(new Set(dateFilteredData.map((d) => d.style_code))).sort(),
       totalRevenue: dateFilteredData.reduce((acc, d) => acc + d.revenue, 0),
       totalUnits: dateFilteredData.reduce((acc, d) => acc + d.quantity, 0),
     };
   }, [dateFilteredData]);
 
-  // 3. Current Selection Subset ($ State)
+  // 4. Current Selection Subset ($ State)
   const currentSubset = useMemo(() => {
     return dateFilteredData.filter((row) => {
       const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
-      const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
       const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
-      const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
-      return matchStore && matchCat && matchDept && matchStyle;
-    });
-  }, [dateFilteredData, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
-
-  // 4. Associative Possible / Excluded Sets
-  const possibleValues = useMemo(() => {
-    const storeSubset = dateFilteredData.filter((row) => {
       const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
-      const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
+      const matchColor = selectedColors.length === 0 || selectedColors.includes(row.color);
+      const matchSize = selectedSizes.length === 0 || selectedSizes.includes(row.size);
       const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
-      return matchCat && matchDept && matchStyle;
-    });
-    const possibleStores = new Set(storeSubset.map((r) => r.store));
 
-    const catSubset = dateFilteredData.filter((row) => {
-      const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
-      const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
-      const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
-      return matchStore && matchDept && matchStyle;
+      return matchStore && matchDept && matchCat && matchColor && matchSize && matchStyle;
     });
-    const possibleCats = new Set(catSubset.map((r) => r.category));
+  }, [
+    dateFilteredData,
+    selectedStores,
+    selectedDepartments,
+    selectedCategories,
+    selectedColors,
+    selectedSizes,
+    selectedStyles,
+  ]);
 
-    const deptSubset = dateFilteredData.filter((row) => {
-      const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
-      const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
-      const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
-      return matchStore && matchCat && matchStyle;
-    });
-    const possibleDepts = new Set(deptSubset.map((r) => r.department));
+  // 5. Associative Possible / Excluded Sets and Dynamic Frequencies
+  const { possibleValues, fieldFrequencies } = useMemo(() => {
+    const calcPossibleAndFreq = (
+      targetField: "store" | "department" | "category" | "color" | "size"
+    ) => {
+      const subset = dateFilteredData.filter((row) => {
+        const mStore =
+          targetField === "store" || selectedStores.length === 0 || selectedStores.includes(row.store);
+        const mDept =
+          targetField === "department" ||
+          selectedDepartments.length === 0 ||
+          selectedDepartments.includes(row.department);
+        const mCat =
+          targetField === "category" ||
+          selectedCategories.length === 0 ||
+          selectedCategories.includes(row.category);
+        const mColor =
+          targetField === "color" || selectedColors.length === 0 || selectedColors.includes(row.color);
+        const mSize =
+          targetField === "size" || selectedSizes.length === 0 || selectedSizes.includes(row.size);
+        const mStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
+
+        return mStore && mDept && mCat && mColor && mSize && mStyle;
+      });
+
+      const possibleSet = new Set<string>();
+      const freqMap: Record<string, number> = {};
+
+      subset.forEach((row) => {
+        const val = row[targetField];
+        possibleSet.add(val);
+        freqMap[val] = (freqMap[val] || 0) + row.quantity;
+      });
+
+      return { possibleSet, freqMap };
+    };
+
+    const storesData = calcPossibleAndFreq("store");
+    const deptsData = calcPossibleAndFreq("department");
+    const catsData = calcPossibleAndFreq("category");
+    const colorsData = calcPossibleAndFreq("color");
+    const sizesData = calcPossibleAndFreq("size");
 
     return {
-      stores: possibleStores,
-      categories: possibleCats,
-      departments: possibleDepts,
+      possibleValues: {
+        stores: storesData.possibleSet,
+        departments: deptsData.possibleSet,
+        categories: catsData.possibleSet,
+        colors: colorsData.possibleSet,
+        sizes: sizesData.possibleSet,
+      },
+      fieldFrequencies: {
+        stores: storesData.freqMap,
+        departments: deptsData.freqMap,
+        categories: catsData.freqMap,
+        colors: colorsData.freqMap,
+        sizes: sizesData.freqMap,
+      },
     };
-  }, [dateFilteredData, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
+  }, [
+    dateFilteredData,
+    selectedStores,
+    selectedDepartments,
+    selectedCategories,
+    selectedColors,
+    selectedSizes,
+    selectedStyles,
+  ]);
 
   const toggleSelection = (
-    field: "store" | "category" | "department" | "style_code",
+    field: "store" | "department" | "category" | "color" | "size" | "style_code",
     value: string
   ) => {
     if (field === "store") {
       setSelectedStores((prev) =>
         prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
       );
+    } else if (field === "department") {
+      setSelectedDepartments((prev) =>
+        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+      );
     } else if (field === "category") {
       setSelectedCategories((prev) =>
         prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
       );
-    } else if (field === "department") {
-      setSelectedDepartments((prev) =>
+    } else if (field === "color") {
+      setSelectedColors((prev) =>
+        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+      );
+    } else if (field === "size") {
+      setSelectedSizes((prev) =>
         prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
       );
     } else if (field === "style_code") {
@@ -267,8 +332,10 @@ export default function QlikViewAnalyticsPage() {
 
   const clearAllSelections = () => {
     setSelectedStores([]);
-    setSelectedCategories([]);
     setSelectedDepartments([]);
+    setSelectedCategories([]);
+    setSelectedColors([]);
+    setSelectedSizes([]);
     setSelectedStyles([]);
     setDrillLevel(0);
     setDrillBreadcrumbs([]);
@@ -366,6 +433,8 @@ export default function QlikViewAnalyticsPage() {
       if (currentDimension.key === "store") setSelectedStores([label]);
       if (currentDimension.key === "department") setSelectedDepartments([label]);
       if (currentDimension.key === "category") setSelectedCategories([label]);
+      if (currentDimension.key === "color") setSelectedColors([label]);
+      if (currentDimension.key === "size") setSelectedSizes([label]);
       if (currentDimension.key === "style_code") setSelectedStyles([label]);
 
       setDrillBreadcrumbs((prev) => [...prev, { dim: currentDimension, value: label }]);
@@ -384,6 +453,8 @@ export default function QlikViewAnalyticsPage() {
       if (targetDim.key === "store") setSelectedStores([]);
       if (targetDim.key === "department") setSelectedDepartments([]);
       if (targetDim.key === "category") setSelectedCategories([]);
+      if (targetDim.key === "color") setSelectedColors([]);
+      if (targetDim.key === "size") setSelectedSizes([]);
       if (targetDim.key === "style_code") setSelectedStyles([]);
 
       setDrillBreadcrumbs((prev) => prev.slice(0, targetLevel));
@@ -397,6 +468,8 @@ export default function QlikViewAnalyticsPage() {
       if (dim.key === "store") setSelectedStores([]);
       if (dim.key === "department") setSelectedDepartments([]);
       if (dim.key === "category") setSelectedCategories([]);
+      if (dim.key === "color") setSelectedColors([]);
+      if (dim.key === "size") setSelectedSizes([]);
       if (dim.key === "style_code") setSelectedStyles([]);
     }
     setDrillBreadcrumbs((prev) => prev.slice(0, targetIndex));
@@ -439,7 +512,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </header>
 
-      {/* Date Range & Quick Presets Toolbar */}
+      {/* Date Range Toolbar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-wider text-[10px] mr-1">
@@ -540,8 +613,10 @@ export default function QlikViewAnalyticsPage() {
           </span>
 
           {selectedStores.length === 0 &&
-          selectedCategories.length === 0 &&
           selectedDepartments.length === 0 &&
+          selectedCategories.length === 0 &&
+          selectedColors.length === 0 &&
+          selectedSizes.length === 0 &&
           selectedStyles.length === 0 ? (
             <span className="text-slate-500 italic text-[11px]">None (Universe State)</span>
           ) : (
@@ -579,6 +654,28 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
+              {selectedColors.map((cl) => (
+                <span
+                  key={cl}
+                  onClick={() => toggleSelection("color", cl)}
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 hover:border-rose-500/30 hover:text-rose-400 transition"
+                  title="Remove filter"
+                >
+                  Color: {cl} <X className="w-2.5 h-2.5" />
+                </span>
+              ))}
+
+              {selectedSizes.map((sz) => (
+                <span
+                  key={sz}
+                  onClick={() => toggleSelection("size", sz)}
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 hover:border-rose-500/30 hover:text-rose-400 transition"
+                  title="Remove filter"
+                >
+                  Size: {sz} <X className="w-2.5 h-2.5" />
+                </span>
+              ))}
+
               {selectedStyles.map((st) => (
                 <span
                   key={st}
@@ -594,8 +691,10 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         {(selectedStores.length > 0 ||
-          selectedCategories.length > 0 ||
           selectedDepartments.length > 0 ||
+          selectedCategories.length > 0 ||
+          selectedColors.length > 0 ||
+          selectedSizes.length > 0 ||
           selectedStyles.length > 0) && (
           <button
             onClick={clearAllSelections}
@@ -673,8 +772,8 @@ export default function QlikViewAnalyticsPage() {
 
       {/* Main Workspace Layout */}
       <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: 3 Associative List Boxes */}
-        <div className="col-span-12 md:col-span-3 space-y-3">
+        {/* Left: 5 Associative List Boxes (Store, Dept, Category, Color, Size) */}
+        <div className="col-span-12 md:col-span-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>List Boxes</span>
             <div className="flex items-center gap-1 text-[9px] lowercase text-slate-400">
@@ -700,18 +799,19 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-1 border-b border-slate-800 bg-slate-950/40">
               <input
                 type="text"
-                placeholder="Filter..."
+                placeholder="Filter stores..."
                 value={storeSearch}
                 onChange={(e) => setStoreSearch(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 text-[11px] px-2 py-0.5 rounded text-white focus:outline-none"
               />
             </div>
-            <div className="max-h-28 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
+            <div className="max-h-24 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
               {universe.stores
                 .filter((s) => s.toLowerCase().includes(storeSearch.toLowerCase()))
                 .map((store) => {
                   const isSelected = selectedStores.includes(store);
                   const isPossible = possibleValues.stores.has(store);
+                  const freq = fieldFrequencies.stores[store] || 0;
 
                   return (
                     <div
@@ -725,8 +825,11 @@ export default function QlikViewAnalyticsPage() {
                           : "bg-slate-950/80 text-slate-600 hover:text-slate-400"
                       }`}
                     >
-                      <span className="truncate">{store}</span>
-                      {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                      <span className="truncate mr-1">{store}</span>
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                        {isPossible && <span className="opacity-70">({freq})</span>}
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
                     </div>
                   );
                 })}
@@ -749,18 +852,19 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-1 border-b border-slate-800 bg-slate-950/40">
               <input
                 type="text"
-                placeholder="Filter..."
-                value={departmentSearch}
-                onChange={(e) => setDepartmentSearch(e.target.value)}
+                placeholder="Filter dept..."
+                value={deptSearch}
+                onChange={(e) => setDeptSearch(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 text-[11px] px-2 py-0.5 rounded text-white focus:outline-none"
               />
             </div>
-            <div className="max-h-28 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
+            <div className="max-h-24 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
               {universe.departments
-                .filter((d) => d.toLowerCase().includes(departmentSearch.toLowerCase()))
+                .filter((d) => d.toLowerCase().includes(deptSearch.toLowerCase()))
                 .map((dept) => {
                   const isSelected = selectedDepartments.includes(dept);
                   const isPossible = possibleValues.departments.has(dept);
+                  const freq = fieldFrequencies.departments[dept] || 0;
 
                   return (
                     <div
@@ -774,8 +878,11 @@ export default function QlikViewAnalyticsPage() {
                           : "bg-slate-950/80 text-slate-600 hover:text-slate-400"
                       }`}
                     >
-                      <span className="truncate">{dept}</span>
-                      {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                      <span className="truncate mr-1">{dept}</span>
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                        {isPossible && <span className="opacity-70">({freq})</span>}
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
                     </div>
                   );
                 })}
@@ -798,18 +905,19 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-1 border-b border-slate-800 bg-slate-950/40">
               <input
                 type="text"
-                placeholder="Filter..."
-                value={categorySearch}
-                onChange={(e) => setCategorySearch(e.target.value)}
+                placeholder="Filter cat..."
+                value={catSearch}
+                onChange={(e) => setCatSearch(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 text-[11px] px-2 py-0.5 rounded text-white focus:outline-none"
               />
             </div>
-            <div className="max-h-28 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
+            <div className="max-h-24 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
               {universe.categories
-                .filter((c) => c.toLowerCase().includes(categorySearch.toLowerCase()))
+                .filter((c) => c.toLowerCase().includes(catSearch.toLowerCase()))
                 .map((cat) => {
                   const isSelected = selectedCategories.includes(cat);
                   const isPossible = possibleValues.categories.has(cat);
+                  const freq = fieldFrequencies.categories[cat] || 0;
 
                   return (
                     <div
@@ -823,8 +931,117 @@ export default function QlikViewAnalyticsPage() {
                           : "bg-slate-950/80 text-slate-600 hover:text-slate-400"
                       }`}
                     >
-                      <span className="truncate">{cat}</span>
-                      {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                      <span className="truncate mr-1">{cat}</span>
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                        {isPossible && <span className="opacity-70">({freq})</span>}
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* COLOR LIST BOX */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
+            <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-200">Color</span>
+              {selectedColors.length > 0 && (
+                <button
+                  onClick={() => setSelectedColors([])}
+                  className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="p-1 border-b border-slate-800 bg-slate-950/40">
+              <input
+                type="text"
+                placeholder="Filter color..."
+                value={colorSearch}
+                onChange={(e) => setColorSearch(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 text-[11px] px-2 py-0.5 rounded text-white focus:outline-none"
+              />
+            </div>
+            <div className="max-h-24 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
+              {universe.colors
+                .filter((c) => c.toLowerCase().includes(colorSearch.toLowerCase()))
+                .map((col) => {
+                  const isSelected = selectedColors.includes(col);
+                  const isPossible = possibleValues.colors.has(col);
+                  const freq = fieldFrequencies.colors[col] || 0;
+
+                  return (
+                    <div
+                      key={col}
+                      onClick={() => toggleSelection("color", col)}
+                      className={`px-2.5 py-1 flex items-center justify-between cursor-pointer transition select-none ${
+                        isSelected
+                          ? "bg-emerald-600 text-white font-bold"
+                          : isPossible
+                          ? "bg-slate-900 text-slate-200 hover:bg-slate-800"
+                          : "bg-slate-950/80 text-slate-600 hover:text-slate-400"
+                      }`}
+                    >
+                      <span className="truncate mr-1">{col}</span>
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                        {isPossible && <span className="opacity-70">({freq})</span>}
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* SIZE LIST BOX */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
+            <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-200">Size</span>
+              {selectedSizes.length > 0 && (
+                <button
+                  onClick={() => setSelectedSizes([])}
+                  className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="p-1 border-b border-slate-800 bg-slate-950/40">
+              <input
+                type="text"
+                placeholder="Filter size..."
+                value={sizeSearch}
+                onChange={(e) => setSizeSearch(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 text-[11px] px-2 py-0.5 rounded text-white focus:outline-none"
+              />
+            </div>
+            <div className="max-h-24 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
+              {universe.sizes
+                .filter((s) => s.toLowerCase().includes(sizeSearch.toLowerCase()))
+                .map((sz) => {
+                  const isSelected = selectedSizes.includes(sz);
+                  const isPossible = possibleValues.sizes.has(sz);
+                  const freq = fieldFrequencies.sizes[sz] || 0;
+
+                  return (
+                    <div
+                      key={sz}
+                      onClick={() => toggleSelection("size", sz)}
+                      className={`px-2.5 py-1 flex items-center justify-between cursor-pointer transition select-none ${
+                        isSelected
+                          ? "bg-emerald-600 text-white font-bold"
+                          : isPossible
+                          ? "bg-slate-900 text-slate-200 hover:bg-slate-800"
+                          : "bg-slate-950/80 text-slate-600 hover:text-slate-400"
+                      }`}
+                    >
+                      <span className="truncate mr-1">{sz}</span>
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                        {isPossible && <span className="opacity-70">({freq})</span>}
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
                     </div>
                   );
                 })}
@@ -939,9 +1156,9 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* TABLES GRID (Side-by-Side or Focus) */}
+          {/* TABLES GRID */}
           <div className={`grid gap-3 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
-            {/* TABLE 1: DRILL-DOWN / CYCLIC SUMMARY */}
+            {/* TABLE 1: SUMMARY / DRILL / CYCLIC */}
             {(activeTab === "both" || activeTab === "summary") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
@@ -958,7 +1175,7 @@ export default function QlikViewAnalyticsPage() {
                   </span>
                 </div>
 
-                <div className="overflow-x-auto max-h-[360px]">
+                <div className="overflow-x-auto max-h-[460px]">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
@@ -978,7 +1195,7 @@ export default function QlikViewAnalyticsPage() {
                       ) : tableRows.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="p-6 text-center text-slate-500">
-                            No records in date range & active state.
+                            No records in active state.
                           </td>
                         </tr>
                       ) : (
@@ -1034,12 +1251,12 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto max-h-[360px]">
+                <div className="overflow-x-auto max-h-[460px]">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
                         <th className="px-3 py-2">Style / SKU</th>
-                        <th className="px-2 py-2">Details</th>
+                        <th className="px-2 py-2">Color / Size</th>
                         <th className="px-2 py-2 text-right">Price</th>
                         <th className="px-2 py-2 text-right">Sold</th>
                         <th className="px-3 py-2 text-right">Amount</th>
@@ -1068,7 +1285,7 @@ export default function QlikViewAnalyticsPage() {
                                 {prod.styleName}
                               </span>
                               <span className="text-[10px] text-slate-400">
-                                {prod.color} • {prod.size}
+                                {prod.color} • <strong className="text-slate-200">{prod.size}</strong>
                               </span>
                             </td>
                             <td className="px-2 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
