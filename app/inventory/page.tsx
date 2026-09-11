@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FileSpreadsheet,
-  Upload,
   CheckCircle2,
 } from "lucide-react";
 
@@ -219,29 +218,30 @@ export default function InventoryMonitoringPage() {
       const ws = wb.Sheets[wsname];
       const data: any[] = XLSX.utils.sheet_to_json(ws);
 
-      const parsed: BulkImportItem[] = data.map((row) => {
-        // Flexible column mapping (supports various casing in Excel)
-        const store =
-          row["Store"] || row["store"] || row["Store Location"] || bulkDefaultStore;
-        const style =
-          row["Style Code"] ||
-          row["style_code"] ||
-          row["Style"] ||
-          row["style"] ||
-          "";
-        const sku =
-          row["SKU"] || row["sku"] || row["Barcode"] || row["barcode"] || "";
-        const qty = Number(
-          row["Quantity"] || row["quantity"] || row["Qty"] || row["qty"] || 0
-        );
+      const parsed: BulkImportItem[] = data
+        .map((row) => {
+          const store =
+            row["Store"] || row["store"] || row["Store Location"] || bulkDefaultStore;
+          const style =
+            row["Style Code"] ||
+            row["style_code"] ||
+            row["Style"] ||
+            row["style"] ||
+            "";
+          const sku =
+            row["SKU"] || row["sku"] || row["Barcode"] || row["barcode"] || "";
+          const qty = Number(
+            row["Quantity"] || row["quantity"] || row["Qty"] || row["qty"] || 0
+          );
 
-        return {
-          store: String(store).trim(),
-          style_code: String(style).trim(),
-          sku: String(sku).trim(),
-          quantity: Math.max(0, qty),
-        };
-      }).filter((item) => item.quantity > 0 && (item.style_code || item.sku));
+          return {
+            store: String(store).trim(),
+            style_code: String(style).trim(),
+            sku: String(sku).trim(),
+            quantity: Math.max(0, qty),
+          };
+        })
+        .filter((item) => item.quantity > 0 && (item.style_code || item.sku));
 
       setBulkPreview(parsed);
     };
@@ -348,7 +348,6 @@ export default function InventoryMonitoringPage() {
             <span>Sales Report</span>
           </Link>
 
-          {/* Bulk Import Trigger */}
           <button
             onClick={() => setIsBulkOpen(true)}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-indigo-600/10"
@@ -357,7 +356,6 @@ export default function InventoryMonitoringPage() {
             <span>Bulk Delivery (Excel)</span>
           </button>
 
-          {/* Single Item Trigger */}
           <button
             onClick={() => setIsRestockOpen(true)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-emerald-600/10"
@@ -462,33 +460,51 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Table Section with Pagination */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+      {/* Table Section with High-Visibility Header Division and Pagination */}
+      <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-800/40 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-900 border-y-2 border-slate-700 text-slate-200 uppercase tracking-wider text-[11px] font-bold">
               <tr>
-                <th className="px-4 py-3">Store Location</th>
-                <th className="px-4 py-3">Style Code</th>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-right">Delivered / In</th>
-                <th className="px-4 py-3 text-right text-rose-400">Total Out (Sold)</th>
-                <th className="px-4 py-3 text-right text-emerald-400">Available Stock</th>
-                <th className="px-4 py-3 text-right">Safety Level</th>
-                <th className="px-4 py-3 text-right">Last Received</th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80">
+                  Store Location
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80">
+                  Style Code
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80">
+                  SKU
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80 text-center">
+                  Status
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80 text-right bg-slate-800/30">
+                  Delivered / In
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80 text-right text-rose-400 bg-rose-950/20">
+                  Total Out (Sold)
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80 text-right text-emerald-400 bg-emerald-950/20">
+                  Available Stock
+                </th>
+                <th className="px-4 py-3.5 border-r border-slate-700/80 text-right">
+                  Safety Level
+                </th>
+                <th className="px-4 py-3.5 text-right">
+                  Last Received
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-800/70">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                     Loading inventory data...
                   </td>
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                     No items found matching the selected filters.
                   </td>
                 </tr>
@@ -498,7 +514,10 @@ export default function InventoryMonitoringPage() {
                   const isLow = item.current_stock > 0 && item.current_stock <= item.safety_stock;
 
                   return (
-                    <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                    <tr
+                      key={item.id}
+                      className="hover:bg-slate-800/40 transition-colors divide-x divide-slate-800/50"
+                    >
                       <td className="px-4 py-3 font-medium text-slate-300 whitespace-nowrap">
                         {item.store}
                       </td>
@@ -510,26 +529,26 @@ export default function InventoryMonitoringPage() {
                       </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         {isOut ? (
-                          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
                             Out of Stock
                           </span>
                         ) : isLow ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
                             Low Stock
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
                             In Stock
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right font-mono text-slate-200 whitespace-nowrap bg-slate-900/20">
                         {item.initial_stock}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-rose-400 whitespace-nowrap">
+                      <td className="px-4 py-3 text-right font-mono font-bold text-rose-400 whitespace-nowrap bg-rose-950/10">
                         {item.total_out > 0 ? `-${item.total_out}` : "0"}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <td className="px-4 py-3 text-right whitespace-nowrap bg-emerald-950/10">
                         <span
                           className={`font-bold font-mono text-sm ${
                             isOut
@@ -545,7 +564,7 @@ export default function InventoryMonitoringPage() {
                       <td className="px-4 py-3 text-right text-slate-400 font-mono">
                         {item.safety_stock}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                      <td className="px-4 py-3 text-right text-slate-400 whitespace-nowrap font-mono text-[11px]">
                         {item.last_replenished_at
                           ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
                           : "N/A"}
@@ -559,7 +578,7 @@ export default function InventoryMonitoringPage() {
         </div>
 
         {/* Pagination Controls */}
-        <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-900/80">
+        <div className="p-4 border-t-2 border-slate-700/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/80">
           <div className="flex items-center gap-3">
             <span>
               Showing <strong className="text-slate-200">{totalItems === 0 ? 0 : startIndex + 1}</strong> to{" "}
@@ -572,7 +591,7 @@ export default function InventoryMonitoringPage() {
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="bg-slate-950 border border-slate-800 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
+                className="bg-slate-900 border border-slate-700 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
               >
                 <option value={10}>10</option>
                 <option value={25}>25</option>
@@ -586,7 +605,7 @@ export default function InventoryMonitoringPage() {
             <button
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               disabled={currentPage === 1 || loading}
-              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
+              className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
               title="Previous Page"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -599,7 +618,7 @@ export default function InventoryMonitoringPage() {
             <button
               onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               disabled={currentPage === totalPages || loading}
-              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
+              className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
               title="Next Page"
             >
               <ChevronRight className="w-4 h-4" />
@@ -631,7 +650,9 @@ export default function InventoryMonitoringPage() {
             <div className="space-y-3 text-xs">
               <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-400 space-y-1">
                 <p className="font-semibold text-slate-200">Supported Columns in Excel / CSV:</p>
-                <p>• <code className="text-indigo-300">Style Code</code> (or Style) • <code className="text-indigo-300">SKU</code> (or Barcode) • <code className="text-indigo-300">Quantity</code> • <code className="text-indigo-300">Store</code> (optional)</p>
+                <p>
+                  • <code className="text-indigo-300">Style Code</code> (or Style) • <code className="text-indigo-300">SKU</code> (or Barcode) • <code className="text-indigo-300">Quantity</code> • <code className="text-indigo-300">Store</code> (optional)
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
