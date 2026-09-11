@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import {
   Boxes,
   Store,
@@ -13,6 +13,8 @@ import {
   RefreshCw,
   ScanBarcode,
   BarChart3,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -24,16 +26,8 @@ interface StoreInventoryItem {
   current_stock: number;
   safety_stock: number;
   last_replenished_at: string;
-  description?: string;
-  category?: string;
-  department?: string;
-  price?: number;
+  total_out: number; // Scanned quantity sold out
 }
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const STORES = [
   "All Stores",
@@ -66,30 +60,104 @@ export default function InventoryMonitoringPage() {
   const fetchInventory = useCallback(async () => {
     setLoading(true);
 
-    let query = supabase.from("store_inventory").select("*").order("current_stock", { ascending: true });
+    try {
+      // 1. Fetch Store Inventory (Current balances)
+      let invQuery = supabase
+        .from("store_inventory")
+        .select("*")
+        .order("current_stock", { ascending: true });
 
-    if (selectedStore !== "All Stores") {
-      query = query.eq("store", selectedStore);
+      if (selectedStore !== "All Stores") {
+        invQuery = invQuery.eq("store", selectedStore);
+      }
+
+      // 2. Fetch Scanned Logs (Total sales / units out)
+      let salesQuery = supabase
+        .from("scanned_logs")
+        .select("store, style_code, sku, quantity");
+
+      if (selectedStore !== "All Stores") {
+        salesQuery = salesQuery.eq("store", selectedStore);
+      }
+
+      const [invRes, salesRes] = await Promise.all([invQuery, salesQuery]);
+
+      if (invRes.error) throw invRes.error;
+      if (salesRes.error) throw salesRes.error;
+
+      const rawInventory = invRes.data || [];
+      const salesLogs = salesRes.data || [];
+
+      // Build quick map for aggregate total out per (store, code)
+      const salesOutMap = new Map<string, number>();
+
+      salesLogs.forEach((log) => {
+        const qty = Number(log.quantity) || 1;
+        const store = log.store || "Unassigned Store";
+        const style = log.style_code ? log.style_code.trim().toLowerCase() : null;
+        const sku = log.sku ? log.sku.trim().toLowerCase() : null;
+
+        if (style) {
+          const key = `${store}:::${style}`;
+          salesOutMap.set(key, (salesOutMap.get(key) || 0) + qty);
+        }
+        if (sku) {
+          const key = `${store}:::${sku}`;
+          salesOutMap.set(key, (salesOutMap.get(key) || 0) + qty);
+        }
+      });
+
+      // Merge Total Out into each Inventory Item
+      const enriched: StoreInventoryItem[] = rawInventory.map((row: any) => {
+        const styleKey = row.style_code
+          ? `${row.store}:::${row.style_code.trim().toLowerCase()}`
+          : null;
+        const skuKey = row.sku ? `${row.store}:::${row.sku.trim().toLowerCase()}` : null;
+
+        // Take the matched out count
+        const totalOut =
+          (styleKey ? salesOutMap.get(styleKey) : undefined) ??
+          (skuKey ? salesOutMap.get(skuKey) : undefined) ??
+          0;
+
+        return {
+          id: row.id,
+          store: row.store,
+          style_code: row.style_code || "-",
+          sku: row.sku || null,
+          initial_stock: row.initial_stock ?? 0,
+          current_stock: row.current_stock ?? 0,
+          safety_stock: row.safety_stock ?? 5,
+          last_replenished_at: row.last_replenished_at,
+          total_out: totalOut,
+        };
+      });
+
+      setItems(enriched);
+    } catch (err) {
+      console.error("Error fetching inventory & sales out:", err);
+    } finally {
+      setLoading(false);
     }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Error fetching store inventory:", error);
-    } else if (data) {
-      setItems(data as StoreInventoryItem[]);
-    }
-    setLoading(false);
   }, [selectedStore]);
 
+  // Effect 1: HTTP fetch on store filter changes
   useEffect(() => {
     fetchInventory();
+  }, [fetchInventory]);
 
+  // Effect 2: Realtime WebSocket (Mounted ONCE with explicit removeChannel teardown)
+  useEffect(() => {
     const channel = supabase
-      .channel("store_inventory_changes")
+      .channel("store_inventory_feed")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "store_inventory" },
+        () => fetchInventory()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "scanned_logs" },
         () => fetchInventory()
       )
       .subscribe();
@@ -99,7 +167,6 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
-  // Handle Receiving Stock (+ Stock In)
   const handleStockIn = async (e: React.FormEvent) => {
     e.preventDefault();
     const styleCode = restockStyleCode.trim();
@@ -118,6 +185,7 @@ export default function InventoryMonitoringPage() {
         await supabase
           .from("store_inventory")
           .update({
+            initial_stock: existing.initial_stock + restockQty,
             current_stock: existing.current_stock + restockQty,
             sku: restockSku.trim() || undefined,
             last_replenished_at: new Date().toISOString(),
@@ -150,7 +218,6 @@ export default function InventoryMonitoringPage() {
       setRestockSku("");
       fetchInventory();
     } catch (err) {
-      console.error("Restock failed:", err);
       alert("Failed to save incoming delivery.");
     } finally {
       setRestockSubmitting(false);
@@ -178,14 +245,17 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus]);
 
+  // Overall Inventory Stats
   const stats = useMemo(() => {
-    const totalUnits = items.reduce((acc, curr) => acc + curr.current_stock, 0);
+    const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
+    const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
+    const totalAvailable = items.reduce((acc, curr) => acc + curr.current_stock, 0);
     const lowStockCount = items.filter(
       (i) => i.current_stock > 0 && i.current_stock <= i.safety_stock
     ).length;
     const outOfStockCount = items.filter((i) => i.current_stock <= 0).length;
 
-    return { totalUnits, lowStockCount, outOfStockCount };
+    return { totalIn, totalOut, totalAvailable, lowStockCount, outOfStockCount };
   }, [items]);
 
   return (
@@ -197,11 +267,9 @@ export default function InventoryMonitoringPage() {
             <Boxes className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">
-              Store Inventory Monitoring
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white">Store Inventory Monitoring</h1>
             <p className="text-xs text-slate-400">
-              Live branch stock by Style Code, low-stock warnings, and delivery intake
+              Track Inflow (Delivered), Outflow (Scanned Out), and Current Stock per branch
             </p>
           </div>
         </div>
@@ -233,18 +301,31 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* KPI Cards: Total In, Total Out, Available, and Warnings */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Out */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Available Stock</p>
-            <h3 className="text-2xl font-bold text-white mt-1">{stats.totalUnits.toLocaleString()} units</h3>
+            <p className="text-xs font-medium uppercase tracking-wider text-rose-400">Total Scanned Out</p>
+            <h3 className="text-2xl font-bold text-white mt-1">{stats.totalOut.toLocaleString()} <span className="text-xs text-rose-400 font-semibold">sold</span></h3>
           </div>
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl">
+            <ArrowUpRight className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Current Available */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Available Balance</p>
+            <h3 className="text-2xl font-bold text-white mt-1">{stats.totalAvailable.toLocaleString()} <span className="text-xs text-emerald-400 font-semibold">units</span></h3>
+          </div>
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
             <Boxes className="w-5 h-5" />
           </div>
         </div>
 
+        {/* Low Stock Alerts Filter */}
         <div
           onClick={() => setFilterStockStatus(filterStockStatus === "LOW" ? "ALL" : "LOW")}
           className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
@@ -260,6 +341,7 @@ export default function InventoryMonitoringPage() {
           </div>
         </div>
 
+        {/* Out of Stock Filter */}
         <div
           onClick={() => setFilterStockStatus(filterStockStatus === "OUT" ? "ALL" : "OUT")}
           className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
@@ -267,10 +349,10 @@ export default function InventoryMonitoringPage() {
           }`}
         >
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-rose-400">Out of Stock</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Depleted Items</p>
             <h3 className="text-2xl font-bold text-white mt-1">{stats.outOfStockCount} items</h3>
           </div>
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl">
+          <div className="p-3 bg-slate-800 border border-slate-700 text-slate-400 rounded-xl">
             <XCircle className="w-5 h-5" />
           </div>
         </div>
@@ -313,7 +395,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Table by Style Code & Store */}
+      {/* Table: Includes Delivered, Total Out, and Balance */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -323,21 +405,23 @@ export default function InventoryMonitoringPage() {
                 <th className="px-4 py-3">Style Code</th>
                 <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-right">Available Stock</th>
+                <th className="px-4 py-3 text-right">Delivered / In</th>
+                <th className="px-4 py-3 text-right text-rose-400">Total Out (Sold)</th>
+                <th className="px-4 py-3 text-right text-emerald-400">Available Stock</th>
                 <th className="px-4 py-3 text-right">Safety Level</th>
-                <th className="px-4 py-3 text-right">Last Received / Synced</th>
+                <th className="px-4 py-3 text-right">Last Received</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    Loading inventory balances...
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    Loading inventory and sales out counts...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                     No items found matching the selected filters.
                   </td>
                 </tr>
@@ -348,7 +432,7 @@ export default function InventoryMonitoringPage() {
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 font-medium text-emerald-400 whitespace-nowrap">
+                      <td className="px-4 py-3 font-medium text-slate-300 whitespace-nowrap">
                         {item.store}
                       </td>
                       <td className="px-4 py-3 font-semibold text-white whitespace-nowrap">
@@ -372,18 +456,40 @@ export default function InventoryMonitoringPage() {
                           </span>
                         )}
                       </td>
+                      
+                      {/* Delivered / In */}
+                      <td className="px-4 py-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                        {item.initial_stock}
+                      </td>
+
+                      {/* Total Out (Scanned) */}
+                      <td className="px-4 py-3 text-right font-mono font-bold text-rose-400 whitespace-nowrap">
+                        {item.total_out > 0 ? `-${item.total_out}` : "0"}
+                      </td>
+
+                      {/* Available Balance */}
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <span className={`font-bold font-mono text-sm ${
-                          isOut ? "text-rose-400" : isLow ? "text-amber-400" : "text-emerald-400"
-                        }`}>
+                        <span
+                          className={`font-bold font-mono text-sm ${
+                            isOut
+                              ? "text-rose-400"
+                              : isLow
+                              ? "text-amber-400"
+                              : "text-emerald-400"
+                          }`}
+                        >
                           {item.current_stock}
                         </span>
                       </td>
+
                       <td className="px-4 py-3 text-right text-slate-400 font-mono">
                         {item.safety_stock}
                       </td>
+
                       <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap font-mono text-[11px]">
-                        {item.last_replenished_at ? new Date(item.last_replenished_at).toLocaleString("en-PH") : "N/A"}
+                        {item.last_replenished_at
+                          ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
+                          : "N/A"}
                       </td>
                     </tr>
                   );
@@ -400,7 +506,12 @@ export default function InventoryMonitoringPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-md w-full space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm">Receive Delivery / Initialize Stock</h3>
-              <button onClick={() => setIsRestockOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">✕</button>
+              <button
+                onClick={() => setIsRestockOpen(false)}
+                className="text-slate-500 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleStockIn} className="space-y-3.5 text-xs">
