@@ -42,6 +42,12 @@ interface SessionScannedProduct extends ProductDetails {
   timestamp: string;
 }
 
+interface StockAlertInfo {
+  type: "out" | "low" | "normal";
+  remainingStock: number;
+  safetyStock: number;
+}
+
 export default function Home() {
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [tempStore, setTempStore] = useState<string>("");
@@ -56,6 +62,9 @@ export default function Home() {
   const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
 
+  // Real-time stock status of the item just scanned
+  const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
+
   // Open scanner handler
   const handleOpenScanner = () => {
     if (!selectedStore) {
@@ -66,6 +75,7 @@ export default function Home() {
     setScanning(true);
     setIsPaused(false);
     setErrorMessage(null);
+    setStockAlert(null);
   };
 
   // Confirm store selection from popup modal
@@ -76,13 +86,15 @@ export default function Home() {
     setScanning(true);
     setIsPaused(false);
     setErrorMessage(null);
+    setStockAlert(null);
   };
 
-  // Fixed handleScan with price retrieval
+  // Fixed handleScan with price retrieval & real-time low-stock checking
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
     setErrorMessage(null);
+    setStockAlert(null);
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
@@ -115,70 +127,119 @@ export default function Home() {
       error = res.error;
     }
 
-    setLoading(false);
-
     if (error || !data) {
+      setLoading(false);
       triggerScanFeedback("error");
       setErrorMessage(`Code "${cleanCode}" not found in database.`);
-    } else {
-      triggerScanFeedback("success");
+      return;
+    }
 
-      const fetchedProduct: ProductDetails = {
-        styleCode: data.style_code || cleanCode,
-        sku: data.sku || "-",
-        styleName: data.style_name || "Unassigned Item",
-        description: data.description || "N/A",
-        color: data.color || "-",
-        category: data.category || "-",
-        department: data.department || "-",
-        size: data.size || "-",
-        price: Number(data.price) || 0,
-        quantity: 1,
-      };
+    triggerScanFeedback("success");
 
-      setLastScannedItem(fetchedProduct);
+    const fetchedProduct: ProductDetails = {
+      styleCode: data.style_code || cleanCode,
+      sku: data.sku || "-",
+      styleName: data.style_name || "Unassigned Item",
+      description: data.description || "N/A",
+      color: data.color || "-",
+      category: data.category || "-",
+      department: data.department || "-",
+      size: data.size || "-",
+      price: Number(data.price) || 0,
+      quantity: 1,
+    };
 
-      const now = new Date();
-      const formattedTimestamp = now.toLocaleTimeString("en-PH", {
-        timeZone: "Asia/Manila",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
+    setLastScannedItem(fetchedProduct);
 
-      // Add to session list view instantly
-      const newSessionItem: SessionScannedProduct = {
-        ...fetchedProduct,
-        id: `${cleanCode}-${Date.now()}`,
+    const now = new Date();
+    const formattedTimestamp = now.toLocaleTimeString("en-PH", {
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    // Add to session list view instantly
+    const newSessionItem: SessionScannedProduct = {
+      ...fetchedProduct,
+      id: `${cleanCode}-${Date.now()}`,
+      store: selectedStore,
+      timestamp: formattedTimestamp,
+    };
+
+    setSessionScans((prev) => [newSessionItem, ...prev]);
+
+    // Save scan entry to Supabase (this triggers automatic stock deduction)
+    await supabase.from("scanned_logs").insert([
+      {
         store: selectedStore,
-        timestamp: formattedTimestamp,
-      };
+        style_code: fetchedProduct.styleCode,
+        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+        style_name: fetchedProduct.styleName,
+        description: fetchedProduct.description,
+        color: fetchedProduct.color,
+        category: fetchedProduct.category,
+        department: fetchedProduct.department,
+        size: fetchedProduct.size,
+        price: fetchedProduct.price,
+        quantity: 1,
+        scanned_at: now.toISOString(),
+      },
+    ]);
 
-      setSessionScans((prev) => [newSessionItem, ...prev]);
+    // Check store_inventory for remaining stock balance
+    try {
+      const cleanStyle = fetchedProduct.styleCode?.trim() || "";
+      const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-      // Direct auto-save to Supabase scanned_logs database
-      await supabase.from("scanned_logs").insert([
-        {
-          store: selectedStore,
-          style_code: fetchedProduct.styleCode,
-          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-          style_name: fetchedProduct.styleName,
-          description: fetchedProduct.description,
-          color: fetchedProduct.color,
-          category: fetchedProduct.category,
-          department: fetchedProduct.department,
-          size: fetchedProduct.size,
-          price: fetchedProduct.price,
-          quantity: 1,
-          scanned_at: now.toISOString(),
-        },
-      ]);
+      let invQuery = supabase
+        .from("store_inventory")
+        .select("current_stock, safety_stock")
+        .eq("store", selectedStore);
+
+      if (cleanStyle) {
+        invQuery = invQuery.eq("style_code", cleanStyle);
+      } else if (cleanSku) {
+        invQuery = invQuery.eq("sku", cleanSku);
+      }
+
+      const { data: invData } = await invQuery.maybeSingle();
+
+      if (invData) {
+        const remaining = Number(invData.current_stock);
+        const safetyThreshold = Number(invData.safety_stock ?? 5);
+
+        if (remaining <= 0) {
+          setStockAlert({
+            type: "out",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
+        } else if (remaining <= safetyThreshold) {
+          setStockAlert({
+            type: "low",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
+        } else {
+          setStockAlert({
+            type: "normal",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Could not check real-time stock:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleScanNext = () => {
     setErrorMessage(null);
     setLastScannedItem(null);
+    setStockAlert(null);
     setIsPaused(false);
   };
 
@@ -365,7 +426,7 @@ export default function Home() {
 
               {loading && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
-                  Verifying & Saving...
+                  Verifying & Checking Stock...
                 </div>
               )}
 
@@ -392,6 +453,39 @@ export default function Home() {
                           </span>
                         </div>
 
+                        {/* Real-time Inventory Alert Warning Box */}
+                        {stockAlert && stockAlert.type === "out" && (
+                          <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
+                            <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
+                              ⚠
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-black uppercase text-rose-400 tracking-wider">
+                                Depleted / Out of Stock
+                              </p>
+                              <p className="text-slate-200 text-[11px]">
+                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>! Replenishment required.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {stockAlert && stockAlert.type === "low" && (
+                          <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
+                            <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
+                              ⚠
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-black uppercase text-amber-300 tracking-wider">
+                                Low Stock Alert
+                              </p>
+                              <p className="text-slate-200 text-[11px]">
+                                Only <strong className="text-amber-300 font-bold">{stockAlert.remainingStock} units</strong> left on shelf (Safety Level: {stockAlert.safetyStock} pcs).
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         <div>
                           <h3 className="text-base font-bold text-white leading-snug">
                             {lastScannedItem.styleName}
@@ -403,7 +497,7 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Details Grid including SKU & Price */}
+                        {/* Details Grid */}
                         <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
@@ -429,24 +523,6 @@ export default function Home() {
                             </span>
                             <span className="text-slate-200 font-semibold truncate block">
                               {lastScannedItem.category}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Department
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.department}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Color
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.color}
                             </span>
                           </div>
 
