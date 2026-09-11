@@ -17,6 +17,7 @@ import {
   ShoppingBag,
   CornerLeftUp,
   ChevronRight,
+  Package,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -26,11 +27,16 @@ interface SalesRecord {
   store: string;
   style_code: string;
   sku: string;
+  style_name: string;
+  description: string;
+  color: string;
+  size: string;
   category: string;
   department: string;
   price: number;
   quantity: number;
   revenue: number;
+  scanned_at: string;
 }
 
 type DimensionKey = "store" | "department" | "category" | "style_code";
@@ -40,7 +46,6 @@ interface DimensionConfig {
   label: string;
 }
 
-// Cyclic available options
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
   { key: "category", label: "Category" },
@@ -48,7 +53,6 @@ const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "style_code", label: "Style Code" },
 ];
 
-// Hierarchical Drill-Down Tree
 const DRILL_HIERARCHY: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
   { key: "department", label: "Department" },
@@ -67,11 +71,11 @@ export default function QlikViewAnalyticsPage() {
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
 
   // Table Mode: 'cyclic' or 'drilldown'
-  const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
+  const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("cyclic");
   const [cyclicIndex, setCyclicIndex] = useState<number>(0);
   const [drillLevel, setDrillLevel] = useState<number>(0);
 
-  // Breadcrumb tracking for hierarchical drilldown
+  // Breadcrumbs for hierarchical drilldown
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
   >([]);
@@ -81,12 +85,17 @@ export default function QlikViewAnalyticsPage() {
   const [categorySearch, setCategorySearch] = useState("");
   const [departmentSearch, setDepartmentSearch] = useState("");
 
+  // Product detail table search
+  const [detailSearch, setDetailSearch] = useState("");
+
   // 1. Fetch raw transaction data
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data: logs, error } = await supabase
       .from("scanned_logs")
-      .select("id, store, style_code, sku, category, department, price, quantity")
+      .select(
+        "id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at"
+      )
       .order("scanned_at", { ascending: false });
 
     if (!error && logs) {
@@ -98,11 +107,16 @@ export default function QlikViewAnalyticsPage() {
           store: row.store || "Unassigned Store",
           style_code: row.style_code || "Unknown Style",
           sku: row.sku || "-",
+          style_name: row.style_name || "Unassigned Item",
+          description: row.description || "-",
+          color: row.color || "-",
+          size: row.size || "-",
           category: row.category && row.category !== "-" ? row.category : "Unassigned Category",
           department: row.department && row.department !== "-" ? row.department : "Unassigned Dept",
           price: pr,
           quantity: qty,
           revenue: pr * qty,
+          scanned_at: row.scanned_at,
         };
       });
       setData(parsed);
@@ -236,22 +250,68 @@ export default function QlikViewAnalyticsPage() {
     return Object.values(map).sort((a, b) => b.revenue - a.revenue);
   }, [currentSubset, currentDimension]);
 
-  // Handle Interactive Cross-Filtering & Hierarchical Drill-Down
+  // 7. Granular Product Details (Aggregated by Product Variant in the filtered state)
+  const filteredProducts = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        key: string;
+        styleCode: string;
+        sku: string;
+        styleName: string;
+        color: string;
+        size: string;
+        category: string;
+        department: string;
+        price: number;
+        units: number;
+        revenue: number;
+      }
+    > = {};
+
+    currentSubset.forEach((item) => {
+      const prodKey = `${item.style_code}-${item.sku}-${item.size}-${item.color}`;
+      if (!map[prodKey]) {
+        map[prodKey] = {
+          key: prodKey,
+          styleCode: item.style_code,
+          sku: item.sku,
+          styleName: item.style_name,
+          color: item.color,
+          size: item.size,
+          category: item.category,
+          department: item.department,
+          price: item.price,
+          units: 0,
+          revenue: 0,
+        };
+      }
+      map[prodKey].units += item.quantity;
+      map[prodKey].revenue += item.revenue;
+    });
+
+    const list = Object.values(map).sort((a, b) => b.revenue - a.revenue);
+
+    if (!detailSearch.trim()) return list;
+    const q = detailSearch.toLowerCase();
+    return list.filter(
+      (p) =>
+        p.styleCode.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        p.styleName.toLowerCase().includes(q) ||
+        p.color.toLowerCase().includes(q) ||
+        p.size.toLowerCase().includes(q)
+    );
+  }, [currentSubset, detailSearch]);
+
   const handleRowClick = (label: string) => {
     if (tableMode === "cyclic") {
-      // In cyclic mode: Standard cross-filtering on current dimension
       toggleSelection(currentDimension.key, label);
     } else {
-      // In drilldown mode: Filter current dimension AND step down hierarchy
-      if (currentDimension.key === "store") {
-        setSelectedStores([label]);
-      } else if (currentDimension.key === "department") {
-        setSelectedDepartments([label]);
-      } else if (currentDimension.key === "category") {
-        setSelectedCategories([label]);
-      } else if (currentDimension.key === "style_code") {
-        setSelectedStyles([label]);
-      }
+      if (currentDimension.key === "store") setSelectedStores([label]);
+      if (currentDimension.key === "department") setSelectedDepartments([label]);
+      if (currentDimension.key === "category") setSelectedCategories([label]);
+      if (currentDimension.key === "style_code") setSelectedStyles([label]);
 
       setDrillBreadcrumbs((prev) => [...prev, { dim: currentDimension, value: label }]);
 
@@ -261,7 +321,6 @@ export default function QlikViewAnalyticsPage() {
     }
   };
 
-  // Step back up one level in hierarchy
   const handleDrillUp = () => {
     if (drillLevel > 0) {
       const targetLevel = drillLevel - 1;
@@ -277,7 +336,6 @@ export default function QlikViewAnalyticsPage() {
     }
   };
 
-  // Step directly to a specific breadcrumb level
   const handleBreadcrumbClick = (targetIndex: number) => {
     for (let i = targetIndex; i < DRILL_HIERARCHY.length; i++) {
       const dim = DRILL_HIERARCHY[i];
@@ -670,7 +728,7 @@ export default function QlikViewAnalyticsPage() {
                   </button>
                 </div>
 
-                {/* Cyclic Button (shown only when in cyclic mode) */}
+                {/* Cyclic Button */}
                 {tableMode === "cyclic" && (
                   <button
                     onClick={() => setCyclicIndex((prev) => (prev + 1) % CYCLIC_DIMENSIONS.length)}
@@ -681,7 +739,7 @@ export default function QlikViewAnalyticsPage() {
                   </button>
                 )}
 
-                {/* Drill Up Button (shown only when drilled in) */}
+                {/* Drill Up Button */}
                 {tableMode === "drilldown" && drillLevel > 0 && (
                   <button
                     onClick={handleDrillUp}
@@ -730,7 +788,7 @@ export default function QlikViewAnalyticsPage() {
             )}
 
             {/* Straight Table View */}
-            <div className="overflow-x-auto max-h-[500px]">
+            <div className="overflow-x-auto max-h-[380px]">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                   <tr>
@@ -814,6 +872,110 @@ export default function QlikViewAnalyticsPage() {
               </table>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* NEW: Granular Product Details Table (Driven by Active Selections) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl space-y-0">
+        <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg">
+              <Package className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm">
+                Itemized Product Sales Breakdown
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Displaying specific items matching your active selections ({filteredProducts.length} variants found)
+              </p>
+            </div>
+          </div>
+
+          <div className="w-full sm:w-64">
+            <input
+              type="text"
+              placeholder="Search Style, SKU, Color, Size..."
+              value={detailSearch}
+              onChange={(e) => setDetailSearch(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 text-xs px-3 py-1.5 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto max-h-[420px]">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+              <tr>
+                <th className="px-4 py-3">Style Code</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">Product Name</th>
+                <th className="px-4 py-3 text-center">Color</th>
+                <th className="px-4 py-3 text-center">Size</th>
+                <th className="px-4 py-3 text-right">Unit Price</th>
+                <th className="px-4 py-3 text-right">Qty Sold</th>
+                <th className="px-4 py-3 text-right">Total Revenue</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-8 text-center text-slate-500">
+                    No individual product records match this filter combination.
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map((prod) => (
+                  <tr
+                    key={prod.key}
+                    className="hover:bg-slate-800/30 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-mono font-bold text-emerald-400 whitespace-nowrap">
+                      {prod.styleCode}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-blue-400 whitespace-nowrap">
+                      {prod.sku}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-white max-w-xs truncate">
+                      {prod.styleName}
+                    </td>
+                    <td className="px-4 py-3 text-center text-slate-300 whitespace-nowrap">
+                      {prod.color}
+                    </td>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <span className="bg-slate-800 border border-slate-700 text-slate-300 font-bold px-2 py-0.5 rounded text-[11px]">
+                        {prod.size}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-300 font-mono whitespace-nowrap">
+                      ₱{prod.price.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-slate-200 whitespace-nowrap">
+                      {prod.units}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
+                      ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {filteredProducts.length > 0 && (
+              <tfoot className="bg-slate-950 text-slate-300 font-bold border-t border-slate-800">
+                <tr>
+                  <td colSpan={6} className="px-4 py-3 text-right uppercase tracking-wider text-[11px] text-slate-400">
+                    Selection Total:
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-white">
+                    {metrics.units} pcs
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-emerald-400 text-sm">
+                    ₱{metrics.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
       </div>
     </div>
