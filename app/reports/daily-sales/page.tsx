@@ -21,6 +21,7 @@ import {
   Edit2,
   Check,
   X,
+  Loader2,
 } from "lucide-react";
 
 interface SalesLog {
@@ -145,7 +146,7 @@ export default function DailySalesReportPage() {
     };
   }, [fetchDailySales]);
 
-  // Handle Inline Quantity Update
+  // Inline Quantity Edit Handling
   const startEditing = (log: SalesLog) => {
     setEditingId(log.id);
     setEditQty(log.quantity ?? 1);
@@ -159,24 +160,37 @@ export default function DailySalesReportPage() {
     if (editQty < 1) return;
     setUpdatingId(id);
 
-    // Optimistic UI Update: immediately adjust state so all calculations update
-    setSalesData((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, quantity: editQty } : item))
-    );
+    try {
+      // 1. Explicitly persist to Supabase and retrieve confirmed updated row
+      const { data, error } = await supabase
+        .from("scanned_logs")
+        .update({ quantity: editQty })
+        .eq("id", id)
+        .select();
 
-    // Update in Supabase
-    const { error } = await supabase
-      .from("scanned_logs")
-      .update({ quantity: editQty })
-      .eq("id", id);
+      if (error) {
+        console.error("Supabase update error:", error);
+        alert(`Failed to save quantity: ${error.message}`);
+        return;
+      }
 
-    if (error) {
-      console.error("Failed to update quantity:", error);
-      fetchDailySales(); // Revert on failure
+      if (!data || data.length === 0) {
+        console.warn("No rows updated. Verify Supabase RLS policies for UPDATE permission.");
+        alert("The update was rejected by Supabase. Please ensure your RLS UPDATE policy is configured.");
+        return;
+      }
+
+      // 2. Reflect change in UI only upon database confirmation
+      setSalesData((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, quantity: editQty } : item))
+      );
+      setEditingId(null);
+    } catch (err) {
+      console.error("Unexpected error saving quantity:", err);
+      alert("Unexpected error updating quantity.");
+    } finally {
+      setUpdatingId(null);
     }
-
-    setUpdatingId(null);
-    setEditingId(null);
   };
 
   // Search Filter
@@ -209,7 +223,7 @@ export default function DailySalesReportPage() {
     return filteredSalesData.slice(start, start + pageSize);
   }, [filteredSalesData, currentPage, pageSize]);
 
-  // Summary Metrics (Automatically recalculates with editQty changes)
+  // Aggregated Metrics
   const metrics = useMemo(() => {
     const totalUnits = filteredSalesData.reduce((acc, curr) => acc + (curr.quantity ?? 1), 0);
     const totalRevenue = filteredSalesData.reduce(
@@ -222,7 +236,7 @@ export default function DailySalesReportPage() {
     return { totalUnits, totalRevenue, totalTransactions, avgOrderValue };
   }, [filteredSalesData]);
 
-  // Store Matrix (Recalculates based on modified quantity)
+  // Store Performance Matrix
   const storeMatrix = useMemo(() => {
     const map: Record<
       string,
@@ -268,7 +282,7 @@ export default function DailySalesReportPage() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [filteredSalesData, metrics.totalRevenue]);
 
-  // Top Products (Recalculates based on modified quantity)
+  // Top Products
   const topProducts = useMemo(() => {
     const productMap: Record<string, { sku: string; name: string; qty: number; revenue: number }> = {};
 
@@ -379,7 +393,6 @@ export default function DailySalesReportPage() {
         }
       `}</style>
 
-      {/* Main Dashboard Layout */}
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
         {/* Header Controls */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5 no-print">
@@ -419,7 +432,7 @@ export default function DailySalesReportPage() {
 
             <button
               onClick={fetchDailySales}
-              className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 transition-colors"
+              className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 transition-colors cursor-pointer"
               title="Refresh Data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
@@ -502,7 +515,7 @@ export default function DailySalesReportPage() {
             </div>
           </div>
 
-          {/* STORE COMPARISON MATRIX & TOP PERFORMING ITEMS */}
+          {/* Store Comparison Matrix & Top Products */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
@@ -584,7 +597,6 @@ export default function DailySalesReportPage() {
               )}
             </div>
 
-            {/* Top Performing Items */}
             <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">
                 Top Performing Items
@@ -617,7 +629,7 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Itemized Table with Quantity Edit and Row Totals */}
+        {/* Itemized Table with Quantity Adjustment */}
         <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl overflow-hidden space-y-4">
           <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
             <div className="flex items-center gap-2">
@@ -669,7 +681,6 @@ export default function DailySalesReportPage() {
             </div>
           </div>
 
-          {/* Data Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs print-table">
               <thead className="bg-slate-800/50 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 print:bg-slate-100 print:text-slate-700">
@@ -706,6 +717,7 @@ export default function DailySalesReportPage() {
                     const unitPrice = Number(log.price || 0);
                     const rowTotal = currentQty * unitPrice;
                     const isEditing = editingId === log.id;
+                    const isUpdating = updatingId === log.id;
 
                     return (
                       <tr key={log.id} className="hover:bg-slate-800/30 transition-colors">
@@ -729,16 +741,21 @@ export default function DailySalesReportPage() {
                         <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.department || "-"}</td>
                         <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.store || "N/A"}</td>
                         
-                        {/* Qty Column with Inline Editor */}
+                        {/* Qty Column */}
                         <td className="px-4 py-3 text-center font-medium text-slate-200 print:text-slate-900">
                           {isEditing ? (
                             <div className="flex items-center justify-center gap-1">
                               <input
                                 type="number"
                                 min={1}
+                                disabled={isUpdating}
                                 value={editQty}
                                 onChange={(e) => setEditQty(Math.max(1, Number(e.target.value)))}
-                                className="w-14 bg-slate-950 border border-indigo-500 rounded px-1.5 py-0.5 text-center text-xs text-white focus:outline-none"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveQuantity(log.id);
+                                  if (e.key === "Escape") cancelEditing();
+                                }}
+                                className="w-14 bg-slate-950 border border-indigo-500 rounded px-1.5 py-0.5 text-center text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
                                 autoFocus
                               />
                             </div>
@@ -754,26 +771,31 @@ export default function DailySalesReportPage() {
                           ₱{unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                         </td>
 
-                        {/* Row Total Amount */}
+                        {/* Row Total */}
                         <td className="px-4 py-3 text-right font-semibold text-emerald-400 print:text-emerald-700 whitespace-nowrap">
                           ₱{rowTotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                         </td>
 
-                        {/* Actions: Edit / Save / Cancel */}
+                        {/* Actions */}
                         <td className="px-4 py-3 text-center no-print whitespace-nowrap">
                           {isEditing ? (
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => saveQuantity(log.id)}
-                                disabled={updatingId === log.id}
-                                className="p-1 rounded bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 transition-colors"
+                                disabled={isUpdating}
+                                className="p-1 rounded bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 disabled:opacity-50 transition-colors cursor-pointer"
                                 title="Save Qty"
                               >
-                                <Check className="w-3.5 h-3.5" />
+                                {isUpdating ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5" />
+                                )}
                               </button>
                               <button
                                 onClick={cancelEditing}
-                                className="p-1 rounded bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 transition-colors"
+                                disabled={isUpdating}
+                                className="p-1 rounded bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 disabled:opacity-50 transition-colors cursor-pointer"
                                 title="Cancel"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -782,7 +804,7 @@ export default function DailySalesReportPage() {
                           ) : (
                             <button
                               onClick={() => startEditing(log)}
-                              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition-colors"
+                              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition-colors cursor-pointer"
                               title="Edit Quantity"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -825,7 +847,7 @@ export default function DailySalesReportPage() {
               <button
                 onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                 disabled={currentPage === 1 || loading}
-                className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -837,7 +859,7 @@ export default function DailySalesReportPage() {
               <button
                 onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                 disabled={currentPage === totalPages || loading}
-                className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
