@@ -14,6 +14,8 @@ import {
   ScanBarcode,
   BarChart3,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -48,6 +50,10 @@ export default function InventoryMonitoringPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterStockStatus, setFilterStockStatus] = useState<"ALL" | "LOW" | "OUT">("ALL");
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
   // Restock Modal State
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
   const [restockStyleCode, setRestockStyleCode] = useState<string>("");
@@ -55,6 +61,11 @@ export default function InventoryMonitoringPage() {
   const [restockStore, setRestockStore] = useState<string>(STORES[1]);
   const [restockQty, setRestockQty] = useState<number>(10);
   const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
+
+  // Reset pagination back to page 1 whenever filters or items per page change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStore, searchQuery, filterStockStatus, pageSize]);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -73,7 +84,6 @@ export default function InventoryMonitoringPage() {
       if (error) throw error;
 
       if (data) {
-        // Direct mathematical derivation: total_out = initial_stock - current_stock
         const enriched: StoreInventoryItem[] = data.map((row: any) => {
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
@@ -178,6 +188,7 @@ export default function InventoryMonitoringPage() {
     }
   };
 
+  // Filtered List
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const q = searchQuery.toLowerCase();
@@ -199,6 +210,15 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus]);
 
+  // Pagination Calculations
+  const totalItems = filteredItems.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedItems = useMemo(() => {
+    return filteredItems.slice(startIndex, startIndex + pageSize);
+  }, [filteredItems, startIndex, pageSize]);
+
+  // Overall Inventory Stats
   const stats = useMemo(() => {
     const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
     const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
@@ -348,7 +368,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table Section with Pagination */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -369,17 +389,17 @@ export default function InventoryMonitoringPage() {
               {loading ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                    Loading inventory and sales out counts...
+                    Loading inventory data...
                   </td>
                 </tr>
-              ) : filteredItems.length === 0 ? (
+              ) : paginatedItems.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                     No items found matching the selected filters.
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                paginatedItems.map((item) => {
                   const isOut = item.current_stock <= 0;
                   const isLow = item.current_stock > 0 && item.current_stock <= item.safety_stock;
 
@@ -442,6 +462,55 @@ export default function InventoryMonitoringPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Bar */}
+        <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-900/80">
+          <div className="flex items-center gap-3">
+            <span>
+              Showing <strong className="text-slate-200">{totalItems === 0 ? 0 : startIndex + 1}</strong> to{" "}
+              <strong className="text-slate-200">{Math.min(startIndex + pageSize, totalItems)}</strong> of{" "}
+              <strong className="text-slate-200">{totalItems}</strong> entries
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <span>| Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1 || loading}
+              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
+              {currentPage} / {totalPages}
+            </span>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages || loading}
+              className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer text-slate-200"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
