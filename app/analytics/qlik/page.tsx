@@ -19,8 +19,7 @@ import {
   ChevronRight,
   Package,
   Search,
-  Maximize2,
-  Minimize2,
+  Calendar,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +39,7 @@ interface SalesRecord {
   quantity: number;
   revenue: number;
   scanned_at: string;
+  scanned_date: string; // YYYY-MM-DD
 }
 
 type DimensionKey = "store" | "department" | "category" | "style_code";
@@ -67,13 +67,18 @@ export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Active Selections (Green values)
+  // Date Range State
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [datePreset, setDatePreset] = useState<string>("all");
+
+  // Active Field Selections (Green values)
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
 
-  // View state: 'split' shows side-by-side; tabs allow focusing
+  // View state
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
 
   // Mode: 'cyclic' or 'drilldown'
@@ -86,7 +91,7 @@ export default function QlikViewAnalyticsPage() {
     { dim: DimensionConfig; value: string }[]
   >([]);
 
-  // List Box Search States
+  // Search States
   const [storeSearch, setStoreSearch] = useState("");
   const [categorySearch, setCategorySearch] = useState("");
   const [departmentSearch, setDepartmentSearch] = useState("");
@@ -106,6 +111,9 @@ export default function QlikViewAnalyticsPage() {
       const parsed: SalesRecord[] = logs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
         const pr = Number(row.price) || 0;
+        const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
+        const dateStr = dt.toISOString().split("T")[0];
+
         return {
           id: String(row.id),
           store: row.store || "Unassigned Store",
@@ -121,6 +129,7 @@ export default function QlikViewAnalyticsPage() {
           quantity: qty,
           revenue: pr * qty,
           scanned_at: row.scanned_at,
+          scanned_date: dateStr,
         };
       });
       setData(parsed);
@@ -132,32 +141,77 @@ export default function QlikViewAnalyticsPage() {
     fetchData();
   }, [fetchData]);
 
-  // 2. Universe Sets
+  // Date Preset Handler
+  const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "30days" | "all") => {
+    setDatePreset(preset);
+    const today = new Date();
+    const formatDate = (d: Date) => d.toISOString().split("T")[0];
+
+    if (preset === "all") {
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+
+    if (preset === "today") {
+      const s = formatDate(today);
+      setStartDate(s);
+      setEndDate(s);
+    } else if (preset === "yesterday") {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const s = formatDate(y);
+      setStartDate(s);
+      setEndDate(s);
+    } else if (preset === "7days") {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 6);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(today));
+    } else if (preset === "30days") {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 29);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(today));
+    }
+  };
+
+  // 2. Base Date Filter (applies to Universe for the selected timeframe)
+  const dateFilteredData = useMemo(() => {
+    if (!startDate && !endDate) return data;
+    return data.filter((row) => {
+      if (startDate && row.scanned_date < startDate) return false;
+      if (endDate && row.scanned_date > endDate) return false;
+      return true;
+    });
+  }, [data, startDate, endDate]);
+
+  // Universe Sets for current timeframe
   const universe = useMemo(() => {
     return {
-      stores: Array.from(new Set(data.map((d) => d.store))).sort(),
-      categories: Array.from(new Set(data.map((d) => d.category))).sort(),
-      departments: Array.from(new Set(data.map((d) => d.department))).sort(),
-      styles: Array.from(new Set(data.map((d) => d.style_code))).sort(),
-      totalRevenue: data.reduce((acc, d) => acc + d.revenue, 0),
-      totalUnits: data.reduce((acc, d) => acc + d.quantity, 0),
+      stores: Array.from(new Set(dateFilteredData.map((d) => d.store))).sort(),
+      categories: Array.from(new Set(dateFilteredData.map((d) => d.category))).sort(),
+      departments: Array.from(new Set(dateFilteredData.map((d) => d.department))).sort(),
+      styles: Array.from(new Set(dateFilteredData.map((d) => d.style_code))).sort(),
+      totalRevenue: dateFilteredData.reduce((acc, d) => acc + d.revenue, 0),
+      totalUnits: dateFilteredData.reduce((acc, d) => acc + d.quantity, 0),
     };
-  }, [data]);
+  }, [dateFilteredData]);
 
-  // 3. Current Selection Subset
+  // 3. Current Selection Subset ($ State)
   const currentSubset = useMemo(() => {
-    return data.filter((row) => {
+    return dateFilteredData.filter((row) => {
       const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
       const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
       const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
       const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
       return matchStore && matchCat && matchDept && matchStyle;
     });
-  }, [data, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
+  }, [dateFilteredData, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
 
   // 4. Associative Possible / Excluded Sets
   const possibleValues = useMemo(() => {
-    const storeSubset = data.filter((row) => {
+    const storeSubset = dateFilteredData.filter((row) => {
       const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
       const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
       const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
@@ -165,7 +219,7 @@ export default function QlikViewAnalyticsPage() {
     });
     const possibleStores = new Set(storeSubset.map((r) => r.store));
 
-    const catSubset = data.filter((row) => {
+    const catSubset = dateFilteredData.filter((row) => {
       const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
       const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
       const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
@@ -173,7 +227,7 @@ export default function QlikViewAnalyticsPage() {
     });
     const possibleCats = new Set(catSubset.map((r) => r.category));
 
-    const deptSubset = data.filter((row) => {
+    const deptSubset = dateFilteredData.filter((row) => {
       const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
       const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
       const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
@@ -186,7 +240,7 @@ export default function QlikViewAnalyticsPage() {
       categories: possibleCats,
       departments: possibleDepts,
     };
-  }, [data, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
+  }, [dateFilteredData, selectedStores, selectedCategories, selectedDepartments, selectedStyles]);
 
   const toggleSelection = (
     field: "store" | "category" | "department" | "style_code",
@@ -385,6 +439,98 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </header>
 
+      {/* Date Range & Quick Presets Toolbar */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-wider text-[10px] mr-1">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Date Range:</span>
+          </div>
+
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+            <button
+              onClick={() => applyDatePreset("all")}
+              className={`px-2 py-1 rounded transition cursor-pointer ${
+                datePreset === "all" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              All Time
+            </button>
+            <button
+              onClick={() => applyDatePreset("today")}
+              className={`px-2 py-1 rounded transition cursor-pointer ${
+                datePreset === "today" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => applyDatePreset("yesterday")}
+              className={`px-2 py-1 rounded transition cursor-pointer ${
+                datePreset === "yesterday" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Yesterday
+            </button>
+            <button
+              onClick={() => applyDatePreset("7days")}
+              className={`px-2 py-1 rounded transition cursor-pointer ${
+                datePreset === "7days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Last 7 Days
+            </button>
+            <button
+              onClick={() => applyDatePreset("30days")}
+              className={`px-2 py-1 rounded transition cursor-pointer ${
+                datePreset === "30days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Last 30 Days
+            </button>
+          </div>
+        </div>
+
+        {/* Custom Start & End Date Inputs */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+            <span className="text-[10px] uppercase text-slate-500 font-bold">From</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+            <span className="text-[10px] uppercase text-slate-500 font-bold">To</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+            />
+          </div>
+
+          {(startDate || endDate) && (
+            <button
+              onClick={() => applyDatePreset("all")}
+              className="text-[11px] text-slate-400 hover:text-rose-400 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg cursor-pointer"
+              title="Reset date filter"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Current Selections Bar */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -461,7 +607,7 @@ export default function QlikViewAnalyticsPage() {
         )}
       </div>
 
-      {/* KPI Cards (Compact) */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
@@ -525,9 +671,9 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* Main Workspace Layout: List Boxes (Left) + Drill-down & Details Tables (Right) */}
+      {/* Main Workspace Layout */}
       <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: 3 Associative List Boxes (Compact) */}
+        {/* Left: 3 Associative List Boxes */}
         <div className="col-span-12 md:col-span-3 space-y-3">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>List Boxes</span>
@@ -686,12 +832,11 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        {/* Right: Consolidated Drill-Down & Product Details Container */}
+        {/* Right: Consolidated Drill-Down & Product Details */}
         <div className="col-span-12 md:col-span-9 space-y-3">
-          {/* Header Toolbar: Tab / Mode Switcher */}
+          {/* Header Toolbar */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2">
-              {/* Table Mode */}
               <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-semibold">
                 <button
                   onClick={() => setTableMode("drilldown")}
@@ -737,7 +882,7 @@ export default function QlikViewAnalyticsPage() {
               )}
             </div>
 
-            {/* Layout Focus Selector: Both / Dimension Only / Products Only */}
+            {/* Split View / Focus Selector */}
             <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
               <button
                 onClick={() => setActiveTab("both")}
@@ -794,7 +939,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* SECTION: TWO TABLES SIDE-BY-SIDE OR STACKED */}
+          {/* TABLES GRID (Side-by-Side or Focus) */}
           <div className={`grid gap-3 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
             {/* TABLE 1: DRILL-DOWN / CYCLIC SUMMARY */}
             {(activeTab === "both" || activeTab === "summary") && (
@@ -833,7 +978,7 @@ export default function QlikViewAnalyticsPage() {
                       ) : tableRows.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="p-6 text-center text-slate-500">
-                            No records in state.
+                            No records in date range & active state.
                           </td>
                         </tr>
                       ) : (
@@ -865,7 +1010,7 @@ export default function QlikViewAnalyticsPage() {
               </div>
             )}
 
-            {/* TABLE 2: ITEMIZED PRODUCT DETAILS (Directly Adjacent or Full) */}
+            {/* TABLE 2: ITEMIZED PRODUCT DETAILS */}
             {(activeTab === "both" || activeTab === "details") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-2">
