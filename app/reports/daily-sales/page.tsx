@@ -18,6 +18,9 @@ import {
   Building2,
   FileText,
   Award,
+  Edit2,
+  Check,
+  X,
 } from "lucide-react";
 
 interface SalesLog {
@@ -44,7 +47,7 @@ const supabase = createClient(
 export default function DailySalesReportPage() {
   const reportContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filters
+  // Filter States
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
@@ -53,7 +56,7 @@ export default function DailySalesReportPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Dropdowns
+  // Dropdown Option Lists
   const [stores, setStores] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -62,7 +65,12 @@ export default function DailySalesReportPage() {
   const [salesData, setSalesData] = useState<SalesLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Pagination
+  // Inline Editing States
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState<number>(1);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Pagination States
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
@@ -137,6 +145,40 @@ export default function DailySalesReportPage() {
     };
   }, [fetchDailySales]);
 
+  // Handle Inline Quantity Update
+  const startEditing = (log: SalesLog) => {
+    setEditingId(log.id);
+    setEditQty(log.quantity ?? 1);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+  };
+
+  const saveQuantity = async (id: string) => {
+    if (editQty < 1) return;
+    setUpdatingId(id);
+
+    // Optimistic UI Update: immediately adjust state so all calculations update
+    setSalesData((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, quantity: editQty } : item))
+    );
+
+    // Update in Supabase
+    const { error } = await supabase
+      .from("scanned_logs")
+      .update({ quantity: editQty })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Failed to update quantity:", error);
+      fetchDailySales(); // Revert on failure
+    }
+
+    setUpdatingId(null);
+    setEditingId(null);
+  };
+
   // Search Filter
   const filteredSalesData = useMemo(() => {
     if (!searchQuery.trim()) return salesData;
@@ -167,11 +209,11 @@ export default function DailySalesReportPage() {
     return filteredSalesData.slice(start, start + pageSize);
   }, [filteredSalesData, currentPage, pageSize]);
 
-  // Summary Metrics
+  // Summary Metrics (Automatically recalculates with editQty changes)
   const metrics = useMemo(() => {
-    const totalUnits = filteredSalesData.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
+    const totalUnits = filteredSalesData.reduce((acc, curr) => acc + (curr.quantity ?? 1), 0);
     const totalRevenue = filteredSalesData.reduce(
-      (acc, curr) => acc + Number(curr.price || 0) * (curr.quantity || 1),
+      (acc, curr) => acc + Number(curr.price || 0) * (curr.quantity ?? 1),
       0
     );
     const totalTransactions = filteredSalesData.length;
@@ -180,7 +222,7 @@ export default function DailySalesReportPage() {
     return { totalUnits, totalRevenue, totalTransactions, avgOrderValue };
   }, [filteredSalesData]);
 
-  // Store Comparison & Performance Matrix Calculation
+  // Store Matrix (Recalculates based on modified quantity)
   const storeMatrix = useMemo(() => {
     const map: Record<
       string,
@@ -196,7 +238,7 @@ export default function DailySalesReportPage() {
 
     filteredSalesData.forEach((item) => {
       const storeName = item.store || "Unassigned Store";
-      const qty = item.quantity || 1;
+      const qty = item.quantity ?? 1;
       const rev = Number(item.price || 0) * qty;
 
       if (!map[storeName]) {
@@ -226,13 +268,13 @@ export default function DailySalesReportPage() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [filteredSalesData, metrics.totalRevenue]);
 
-  // Top Products
+  // Top Products (Recalculates based on modified quantity)
   const topProducts = useMemo(() => {
     const productMap: Record<string, { sku: string; name: string; qty: number; revenue: number }> = {};
 
     filteredSalesData.forEach((item) => {
       const key = item.sku || item.style_code || "UNKNOWN";
-      const qty = item.quantity || 1;
+      const qty = item.quantity ?? 1;
       const revenue = Number(item.price || 0) * qty;
 
       if (!productMap[key]) {
@@ -268,22 +310,30 @@ export default function DailySalesReportPage() {
       "Size",
       "Category",
       "Department",
-      "Price",
       "Store",
+      "Quantity",
+      "Unit Price",
+      "Total Amount",
     ];
 
-    const rows = filteredSalesData.map((s) => [
-      new Date(s.scanned_at).toLocaleTimeString(),
-      s.sku || "",
-      s.style_code || "",
-      `"${s.description || ""}"`,
-      s.color || "",
-      s.size || "",
-      s.category || "",
-      s.department || "",
-      s.price || 0,
-      s.store || "N/A",
-    ]);
+    const rows = filteredSalesData.map((s) => {
+      const qty = s.quantity ?? 1;
+      const price = Number(s.price || 0);
+      return [
+        new Date(s.scanned_at).toLocaleTimeString(),
+        s.sku || "",
+        s.style_code || "",
+        `"${s.description || ""}"`,
+        s.color || "",
+        s.size || "",
+        s.category || "",
+        s.department || "",
+        s.store || "N/A",
+        qty,
+        price,
+        qty * price,
+      ];
+    });
 
     const csvContent =
       "data:text/csv;charset=utf-8," +
@@ -338,7 +388,7 @@ export default function DailySalesReportPage() {
               Daily Sales Report
             </h1>
             <p className="text-sm text-slate-400">
-              Real-time daily transaction analytics and store performance
+              Real-time daily transaction analytics, adjustments, and performance
             </p>
           </div>
 
@@ -454,8 +504,6 @@ export default function DailySalesReportPage() {
 
           {/* STORE COMPARISON MATRIX & TOP PERFORMING ITEMS */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Store Comparison & Performance Matrix (2 Columns) */}
             <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -536,7 +584,7 @@ export default function DailySalesReportPage() {
               )}
             </div>
 
-            {/* Top Performing Items (1 Column) */}
+            {/* Top Performing Items */}
             <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl p-5 space-y-4">
               <h2 className="text-base font-semibold text-slate-200 print:text-slate-900">
                 Top Performing Items
@@ -566,11 +614,10 @@ export default function DailySalesReportPage() {
                 )}
               </div>
             </div>
-
           </div>
         </div>
 
-        {/* Itemized Table Container */}
+        {/* Itemized Table with Quantity Edit and Row Totals */}
         <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl overflow-hidden space-y-4">
           <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
             <div className="flex items-center gap-2">
@@ -634,49 +681,117 @@ export default function DailySalesReportPage() {
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Department</th>
                   <th className="px-4 py-3">Store</th>
-                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-center">Qty</th>
+                  <th className="px-4 py-3 text-right">Unit Price</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-center no-print">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 print:divide-slate-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                       Loading daily logs...
                     </td>
                   </tr>
                 ) : paginatedData.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                       No transactions matching your search/filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  paginatedData.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">
-                        {new Date(log.scanned_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-200 print:text-slate-900">
-                        {log.sku || log.style_code || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300 print:text-slate-800">
-                        {log.description || log.style_name || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">
-                        {log.color || "-"} / {log.size || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.category || "-"}</td>
-                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.department || "-"}</td>
-                      <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.store || "N/A"}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-emerald-400 print:text-emerald-700">
-                        ₱{Number(log.price || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  ))
+                  paginatedData.map((log) => {
+                    const currentQty = log.quantity ?? 1;
+                    const unitPrice = Number(log.price || 0);
+                    const rowTotal = currentQty * unitPrice;
+                    const isEditing = editingId === log.id;
+
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3 text-slate-400 print:text-slate-600 whitespace-nowrap">
+                          {new Date(log.scanned_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-200 print:text-slate-900">
+                          {log.sku || log.style_code || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 print:text-slate-800">
+                          {log.description || log.style_name || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-400 print:text-slate-600 whitespace-nowrap">
+                          {log.color || "-"} / {log.size || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.category || "-"}</td>
+                        <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.department || "-"}</td>
+                        <td className="px-4 py-3 text-slate-400 print:text-slate-600">{log.store || "N/A"}</td>
+                        
+                        {/* Qty Column with Inline Editor */}
+                        <td className="px-4 py-3 text-center font-medium text-slate-200 print:text-slate-900">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min={1}
+                                value={editQty}
+                                onChange={(e) => setEditQty(Math.max(1, Number(e.target.value)))}
+                                className="w-14 bg-slate-950 border border-indigo-500 rounded px-1.5 py-0.5 text-center text-xs text-white focus:outline-none"
+                                autoFocus
+                              />
+                            </div>
+                          ) : (
+                            <span className="inline-block px-2 py-0.5 bg-slate-800 print:bg-slate-100 rounded text-slate-200 print:text-slate-800">
+                              {currentQty}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Unit Price */}
+                        <td className="px-4 py-3 text-right text-slate-400 print:text-slate-600 whitespace-nowrap">
+                          ₱{unitPrice.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                        </td>
+
+                        {/* Row Total Amount */}
+                        <td className="px-4 py-3 text-right font-semibold text-emerald-400 print:text-emerald-700 whitespace-nowrap">
+                          ₱{rowTotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                        </td>
+
+                        {/* Actions: Edit / Save / Cancel */}
+                        <td className="px-4 py-3 text-center no-print whitespace-nowrap">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => saveQuantity(log.id)}
+                                disabled={updatingId === log.id}
+                                className="p-1 rounded bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 transition-colors"
+                                title="Save Qty"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                className="p-1 rounded bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 transition-colors"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => startEditing(log)}
+                              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition-colors"
+                              title="Edit Quantity"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
