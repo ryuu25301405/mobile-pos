@@ -161,7 +161,6 @@ export default function DailySalesReportPage() {
     setUpdatingId(id);
 
     try {
-      // 1. Explicitly persist to Supabase and retrieve confirmed updated row
       const { data, error } = await supabase
         .from("scanned_logs")
         .update({ quantity: editQty })
@@ -180,7 +179,6 @@ export default function DailySalesReportPage() {
         return;
       }
 
-      // 2. Reflect change in UI only upon database confirmation
       setSalesData((prev) =>
         prev.map((item) => (item.id === id ? { ...item, quantity: editQty } : item))
       );
@@ -629,7 +627,7 @@ export default function DailySalesReportPage() {
           </div>
         </div>
 
-        {/* Itemized Table with Quantity Adjustment */}
+        {/* Itemized Table with Separated SKU and Style Code Columns */}
         <div className="bg-slate-900/60 border border-slate-800 print-card rounded-xl overflow-hidden space-y-4">
           <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
             <div className="flex items-center gap-2">
@@ -686,7 +684,8 @@ export default function DailySalesReportPage() {
               <thead className="bg-slate-800/50 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 print:bg-slate-100 print:text-slate-700">
                 <tr>
                   <th className="px-4 py-3">Time</th>
-                  <th className="px-4 py-3">SKU / Style</th>
+                  <th className="px-4 py-3">SKU</th>
+                  <th className="px-4 py-3">Style Code</th>
                   <th className="px-4 py-3">Description</th>
                   <th className="px-4 py-3">Color / Size</th>
                   <th className="px-4 py-3">Category</th>
@@ -701,13 +700,13 @@ export default function DailySalesReportPage() {
               <tbody className="divide-y divide-slate-800/60 print:divide-slate-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
                       Loading daily logs...
                     </td>
                   </tr>
                 ) : paginatedData.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
                       No transactions matching your search/filter criteria.
                     </td>
                   </tr>
@@ -728,8 +727,13 @@ export default function DailySalesReportPage() {
                             second: "2-digit",
                           })}
                         </td>
-                        <td className="px-4 py-3 font-medium text-slate-200 print:text-slate-900">
-                          {log.sku || log.style_code || "-"}
+                        {/* Separate SKU Column */}
+                        <td className="px-4 py-3 font-medium text-slate-200 print:text-slate-900 whitespace-nowrap">
+                          {log.sku || "-"}
+                        </td>
+                        {/* Separate Style Code Column */}
+                        <td className="px-4 py-3 font-medium text-slate-300 print:text-slate-800 whitespace-nowrap">
+                          {log.style_code || "-"}
                         </td>
                         <td className="px-4 py-3 text-slate-300 print:text-slate-800">
                           {log.description || log.style_name || "-"}
