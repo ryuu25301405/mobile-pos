@@ -25,8 +25,7 @@ import {
   GitCompare,
   ArrowUpRight,
   ArrowDownRight,
-  PieChart as PieIcon,
-  Table as TableIcon,
+  BarChart2,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -122,8 +121,6 @@ const EMPTY_SELECTIONS: StateSelection = {
   styles: [],
 };
 
-const CHART_COLORS = ["#10b981", "#6366f1", "#38bdf8", "#f59e0b", "#ec4899", "#64748b"];
-
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,9 +144,6 @@ export default function QlikViewAnalyticsPage() {
   const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
   const [cyclicIndex, setCyclicIndex] = useState<number>(0);
   const [drillLevel, setDrillLevel] = useState<number>(0);
-
-  // Nested Details View Mode: 'table' | 'visual'
-  const [productViewMode, setProductViewMode] = useState<"table" | "visual">("table");
 
   // Main analytics panel focus
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
@@ -497,39 +491,6 @@ export default function QlikViewAnalyticsPage() {
     );
   }, [currentSubset, detailSearch]);
 
-  // Compute Compact Donut / Slice Segments for Nested Visual
-  const visualChartSegments = useMemo(() => {
-    if (filteredProducts.length === 0) return [];
-    const total = filteredProducts.reduce((sum, p) => sum + p.revenue, 0);
-    if (total <= 0) return [];
-
-    const topItems = filteredProducts.slice(0, 4);
-    const others = filteredProducts.slice(4);
-    const othersRevenue = others.reduce((sum, p) => sum + p.revenue, 0);
-
-    const segments = topItems.map((p, idx) => ({
-      label: p.styleCode,
-      subLabel: `${p.color} (${p.size})`,
-      revenue: p.revenue,
-      units: p.units,
-      pct: (p.revenue / total) * 100,
-      color: CHART_COLORS[idx % CHART_COLORS.length],
-    }));
-
-    if (othersRevenue > 0) {
-      segments.push({
-        label: "Other Items",
-        subLabel: `${others.length} variants`,
-        revenue: othersRevenue,
-        units: others.reduce((sum, p) => sum + p.units, 0),
-        pct: (othersRevenue / total) * 100,
-        color: CHART_COLORS[4],
-      });
-    }
-
-    return segments;
-  }, [filteredProducts]);
-
   const handleRowClick = (label: string) => {
     if (tableMode === "cyclic") {
       toggleSelection(currentDimension.key, label);
@@ -611,6 +572,13 @@ export default function QlikViewAnalyticsPage() {
 
     XLSX.writeFile(workbook, filename, { bookType: format });
   };
+
+  // Top products for compact nested mini-chart
+  const topProductsForMiniChart = useMemo(() => {
+    const list = filteredProducts.slice(0, 6);
+    const maxRev = Math.max(...list.map((p) => p.revenue), 1);
+    return { list, maxRev };
+  }, [filteredProducts]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-4">
@@ -1020,9 +988,9 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* Main Workspace: 5 Associative List Boxes + Tables */}
+      {/* Main Workspace */}
       <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: List Boxes */}
+        {/* Left: 5 Associative List Boxes */}
         <div className="col-span-12 md:col-span-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>List Boxes {isComparativeMode && `(${activeEditingState})`}</span>
@@ -1506,44 +1474,16 @@ export default function QlikViewAnalyticsPage() {
               </div>
             )}
 
-            {/* TABLE 2: ITEMIZED PRODUCT DETAILS WITH EMBEDDED MICRO-VISUALS */}
+            {/* TABLE 2: ITEMIZED PRODUCT DETAILS WITH EMBEDDED NESTED MINI-CHART */}
             {(activeTab === "both" || activeTab === "details") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <Package className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-xs font-bold text-white">Itemized Products</span>
-                      <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-mono">
-                        {filteredProducts.length}
-                      </span>
-                    </div>
-
-                    {/* View Switcher: Table vs Visual Breakdown */}
-                    <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-[10px]">
-                      <button
-                        onClick={() => setProductViewMode("table")}
-                        className={`px-1.5 py-0.5 rounded transition ${
-                          productViewMode === "table"
-                            ? "bg-slate-800 text-white font-bold"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                        title="View list table"
-                      >
-                        <TableIcon className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => setProductViewMode("visual")}
-                        className={`px-1.5 py-0.5 rounded transition ${
-                          productViewMode === "visual"
-                            ? "bg-emerald-600 text-white font-bold"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                        title="View visual share chart"
-                      >
-                        <PieIcon className="w-3 h-3" />
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-xs font-bold text-white">Itemized Products</span>
+                    <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-mono">
+                      {filteredProducts.length}
+                    </span>
                   </div>
 
                   <div className="relative w-32 sm:w-40">
@@ -1558,151 +1498,125 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
 
-                {/* VISUAL CHART MODE (Nested & Compact) */}
-                {productViewMode === "visual" ? (
-                  <div className="p-4 space-y-4 max-h-[460px] overflow-y-auto">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <span className="text-[11px] font-bold text-slate-300">
-                        Product Revenue Distribution
-                      </span>
-                      <span className="text-[10px] text-emerald-400 font-mono">
-                        ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })} total
+                {/* Main Table */}
+                <div className="overflow-x-auto max-h-[300px]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                      <tr>
+                        <th className="px-3 py-2">Style / SKU</th>
+                        <th className="px-2 py-2">Color / Size</th>
+                        <th className="px-2 py-2 text-right">Price</th>
+                        <th className="px-2 py-2 text-right">Sold</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                      {filteredProducts.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-500">
+                            No product records in selection.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredProducts.map((prod) => (
+                          <tr key={prod.key} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-3 py-2 font-mono whitespace-nowrap">
+                              <span className="font-bold text-emerald-400 block text-[11px]">
+                                {prod.styleCode}
+                              </span>
+                              <span className="text-blue-400 text-[10px] block">
+                                {prod.sku !== "-" ? prod.sku : ""}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 max-w-[130px] truncate">
+                              <span className="text-white block truncate text-[11px]" title={prod.styleName}>
+                                {prod.styleName}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {prod.color} • <strong className="text-slate-200">{prod.size}</strong>
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
+                              ₱{prod.price.toFixed(0)}
+                            </td>
+                            <td className="px-2 py-2 text-right font-mono font-bold text-white whitespace-nowrap">
+                              {prod.units}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
+                              ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {filteredProducts.length > 0 && (
+                      <tfoot className="bg-slate-950 text-slate-300 font-bold border-t border-slate-800 text-[11px]">
+                        <tr>
+                          <td colSpan={3} className="px-3 py-1.5 text-right uppercase text-[10px] text-slate-500">
+                            Total:
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-white">
+                            {metricsA.units}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
+                            ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+
+                {/* NESTED VISUAL MINI-CHART: Directly underneath the product table */}
+                {topProductsForMiniChart.list.length > 0 && (
+                  <div className="p-3 bg-slate-950/70 border-t border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Top Product Revenue Distribution</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {topProductsForMiniChart.list.length} variants
                       </span>
                     </div>
 
-                    {visualChartSegments.length === 0 ? (
-                      <div className="p-8 text-center text-slate-500 text-xs">
-                        No product items in selection to display visually.
-                      </div>
-                    ) : (
-                      <>
-                        {/* Compact Multi-Segment Horizontal Distribution Strip */}
-                        <div className="space-y-1.5">
-                          <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden flex border border-slate-800">
-                            {visualChartSegments.map((seg, idx) => (
-                              <div
-                                key={idx}
-                                style={{
-                                  width: `${seg.pct}%`,
-                                  backgroundColor: seg.color,
-                                }}
-                                className="h-full hover:opacity-80 transition-all cursor-pointer"
-                                title={`${seg.label}: ₱${seg.revenue.toLocaleString()} (${seg.pct.toFixed(1)}%)`}
-                              />
-                            ))}
-                          </div>
-
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                            <span>0%</span>
-                            <span>Contribution Share</span>
-                            <span>100%</span>
-                          </div>
-                        </div>
-
-                        {/* Visual Breakdown Legends */}
-                        <div className="space-y-2 pt-1">
-                          {visualChartSegments.map((seg, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs"
-                            >
-                              <div className="flex items-center gap-2 truncate pr-2">
-                                <div
-                                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: seg.color }}
-                                />
-                                <div className="truncate">
-                                  <p className="font-bold text-white text-[11px] truncate">
-                                    {seg.label}
-                                  </p>
-                                  <p className="text-[10px] text-slate-400">
-                                    {seg.subLabel} • {seg.units} pcs
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="text-right shrink-0 font-mono">
-                                <span className="font-bold text-emerald-400 text-[11px] block">
-                                  ₱{seg.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {seg.pct.toFixed(1)}%
-                                </span>
-                              </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {topProductsForMiniChart.list.map((item, idx) => {
+                        const pct = Math.min(
+                          100,
+                          Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100)
+                        );
+                        return (
+                          <div
+                            key={item.key}
+                            onClick={() => toggleSelection("style_code", item.styleCode)}
+                            className="bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-2 rounded-lg cursor-pointer transition flex flex-col justify-between space-y-1.5"
+                            title={`Click to filter by ${item.styleCode}`}
+                          >
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-mono font-bold text-slate-200 truncate mr-1">
+                                {item.styleCode}
+                              </span>
+                              <span className="font-mono text-emerald-400 font-semibold shrink-0">
+                                ₱{item.revenue.toLocaleString()}
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  /* STANDARD TABLE MODE */
-                  <div className="overflow-x-auto max-h-[460px]">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
-                        <tr>
-                          <th className="px-3 py-2">Style / SKU</th>
-                          <th className="px-2 py-2">Color / Size</th>
-                          <th className="px-2 py-2 text-right">Price</th>
-                          <th className="px-2 py-2 text-right">Sold</th>
-                          <th className="px-3 py-2 text-right">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 text-[11px]">
-                        {filteredProducts.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="p-6 text-center text-slate-500">
-                              No product records in selection.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredProducts.map((prod) => (
-                            <tr key={prod.key} className="hover:bg-slate-800/30 transition-colors">
-                              <td className="px-3 py-2 font-mono whitespace-nowrap">
-                                <span className="font-bold text-emerald-400 block text-[11px]">
-                                  {prod.styleCode}
-                                </span>
-                                <span className="text-blue-400 text-[10px] block">
-                                  {prod.sku !== "-" ? prod.sku : ""}
-                                </span>
-                              </td>
-                              <td className="px-2 py-2 max-w-[130px] truncate">
-                                <span className="text-white block truncate text-[11px]" title={prod.styleName}>
-                                  {prod.styleName}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {prod.color} • <strong className="text-slate-200">{prod.size}</strong>
-                                </span>
-                              </td>
-                              <td className="px-2 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
-                                ₱{prod.price.toFixed(0)}
-                              </td>
-                              <td className="px-2 py-2 text-right font-mono font-bold text-white whitespace-nowrap">
-                                {prod.units}
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
-                                ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                      {filteredProducts.length > 0 && (
-                        <tfoot className="bg-slate-950 text-slate-300 font-bold border-t border-slate-800 text-[11px]">
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right uppercase text-[10px] text-slate-500">
-                              Total:
-                            </td>
-                            <td className="px-2 py-1.5 text-right font-mono text-white">
-                              {metricsA.units}
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
-                              ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      )}
-                    </table>
+
+                            {/* Mini bar graph */}
+                            <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${pct}%` }}
+                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full"
+                              />
+                            </div>
+
+                            <span className="text-[9px] text-slate-500 truncate block">
+                              {item.color} • {item.size} ({item.units} pcs)
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
