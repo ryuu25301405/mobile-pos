@@ -9,11 +9,8 @@ import {
   Search,
   PlusCircle,
   AlertTriangle,
-  CheckCircle2,
   XCircle,
   RefreshCw,
-  ArrowUpDown,
-  Building2,
   ScanBarcode,
   BarChart3,
 } from "lucide-react";
@@ -21,12 +18,12 @@ import {
 interface StoreInventoryItem {
   id: string;
   store: string;
-  sku: string;
+  style_code: string;
+  sku: string | null;
   initial_stock: number;
   current_stock: number;
   safety_stock: number;
   last_replenished_at: string;
-  style_code?: string;
   description?: string;
   category?: string;
   department?: string;
@@ -60,6 +57,7 @@ export default function InventoryMonitoringPage() {
 
   // Restock Modal State
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
+  const [restockStyleCode, setRestockStyleCode] = useState<string>("");
   const [restockSku, setRestockSku] = useState<string>("");
   const [restockStore, setRestockStore] = useState<string>(STORES[1]);
   const [restockQty, setRestockQty] = useState<number>(10);
@@ -68,16 +66,7 @@ export default function InventoryMonitoringPage() {
   const fetchInventory = useCallback(async () => {
     setLoading(true);
 
-    let query = supabase.from("store_inventory").select(`
-      *,
-      inventory:sku (
-        style_code,
-        description,
-        category,
-        department,
-        price
-      )
-    `);
+    let query = supabase.from("store_inventory").select("*").order("current_stock", { ascending: true });
 
     if (selectedStore !== "All Stores") {
       query = query.eq("store", selectedStore);
@@ -88,21 +77,7 @@ export default function InventoryMonitoringPage() {
     if (error) {
       console.error("Error fetching store inventory:", error);
     } else if (data) {
-      const flattened: StoreInventoryItem[] = data.map((row: any) => ({
-        id: row.id,
-        store: row.store,
-        sku: row.sku,
-        initial_stock: row.initial_stock,
-        current_stock: row.current_stock,
-        safety_stock: row.safety_stock ?? 5,
-        last_replenished_at: row.last_replenished_at,
-        style_code: row.inventory?.style_code || "-",
-        description: row.inventory?.description || "Master item details pending",
-        category: row.inventory?.category || "-",
-        department: row.inventory?.department || "-",
-        price: row.inventory?.price || 0,
-      }));
-      setItems(flattened);
+      setItems(data as StoreInventoryItem[]);
     }
     setLoading(false);
   }, [selectedStore]);
@@ -127,33 +102,33 @@ export default function InventoryMonitoringPage() {
   // Handle Receiving Stock (+ Stock In)
   const handleStockIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!restockSku.trim() || restockQty <= 0) return;
+    const styleCode = restockStyleCode.trim();
+    if (!styleCode || restockQty <= 0) return;
 
     setRestockSubmitting(true);
     try {
-      // 1. Check if record exists
       const { data: existing } = await supabase
         .from("store_inventory")
         .select("id, current_stock, initial_stock")
         .eq("store", restockStore)
-        .eq("sku", restockSku.trim())
+        .eq("style_code", styleCode)
         .maybeSingle();
 
       if (existing) {
-        // Increment existing balance
         await supabase
           .from("store_inventory")
           .update({
             current_stock: existing.current_stock + restockQty,
+            sku: restockSku.trim() || undefined,
             last_replenished_at: new Date().toISOString(),
           })
           .eq("id", existing.id);
       } else {
-        // Create initial store stock balance
         await supabase.from("store_inventory").insert([
           {
             store: restockStore,
-            sku: restockSku.trim(),
+            style_code: styleCode,
+            sku: restockSku.trim() || null,
             initial_stock: restockQty,
             current_stock: restockQty,
             safety_stock: 5,
@@ -161,17 +136,17 @@ export default function InventoryMonitoringPage() {
         ]);
       }
 
-      // 2. Audit in ledger
       await supabase.from("inventory_movements").insert([
         {
           store: restockStore,
-          sku: restockSku.trim(),
+          sku: styleCode,
           type: "DELIVERY",
           quantity: restockQty,
         },
       ]);
 
       setIsRestockOpen(false);
+      setRestockStyleCode("");
       setRestockSku("");
       fetchInventory();
     } catch (err) {
@@ -182,14 +157,12 @@ export default function InventoryMonitoringPage() {
     }
   };
 
-  // Filtered & Evaluated Items
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
-        item.sku.toLowerCase().includes(q) ||
         item.style_code?.toLowerCase().includes(q) ||
-        item.description?.toLowerCase().includes(q) ||
+        item.sku?.toLowerCase().includes(q) ||
         item.store.toLowerCase().includes(q);
 
       if (!matchesSearch) return false;
@@ -205,7 +178,6 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus]);
 
-  // Overall Inventory Stats
   const stats = useMemo(() => {
     const totalUnits = items.reduce((acc, curr) => acc + curr.current_stock, 0);
     const lowStockCount = items.filter(
@@ -229,7 +201,7 @@ export default function InventoryMonitoringPage() {
               Store Inventory Monitoring
             </h1>
             <p className="text-xs text-slate-400">
-              Real-time branch stock levels, low-stock warnings, and delivery intake
+              Live branch stock by Style Code, low-stock warnings, and delivery intake
             </p>
           </div>
         </div>
@@ -265,7 +237,7 @@ export default function InventoryMonitoringPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Current Stock Balance</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Available Stock</p>
             <h3 className="text-2xl font-bold text-white mt-1">{stats.totalUnits.toLocaleString()} units</h3>
           </div>
           <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
@@ -310,7 +282,7 @@ export default function InventoryMonitoringPage() {
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search SKU, Style, Description..."
+            placeholder="Search Style Code, SKU, Store..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
@@ -333,7 +305,7 @@ export default function InventoryMonitoringPage() {
 
           <button
             onClick={fetchInventory}
-            className="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300"
+            className="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 cursor-pointer"
             title="Refresh Stock"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} />
@@ -341,32 +313,31 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Inventory Table */}
+      {/* Table by Style Code & Store */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-800/40 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800">
               <tr>
                 <th className="px-4 py-3">Store Location</th>
-                <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3">Style Code</th>
-                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-right">Available Stock</th>
                 <th className="px-4 py-3 text-right">Safety Level</th>
-                <th className="px-4 py-3 text-right">Last Received</th>
+                <th className="px-4 py-3 text-right">Last Received / Synced</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    Loading store inventory data...
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    Loading inventory balances...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     No items found matching the selected filters.
                   </td>
                 </tr>
@@ -377,17 +348,14 @@ export default function InventoryMonitoringPage() {
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 font-medium text-slate-300 whitespace-nowrap">
+                      <td className="px-4 py-3 font-medium text-emerald-400 whitespace-nowrap">
                         {item.store}
                       </td>
                       <td className="px-4 py-3 font-semibold text-white whitespace-nowrap">
-                        {item.sku}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                         {item.style_code}
                       </td>
-                      <td className="px-4 py-3 text-slate-300 max-w-[200px] truncate">
-                        {item.description}
+                      <td className="px-4 py-3 text-blue-400 font-mono whitespace-nowrap">
+                        {item.sku || "-"}
                       </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         {isOut ? (
@@ -414,8 +382,8 @@ export default function InventoryMonitoringPage() {
                       <td className="px-4 py-3 text-right text-slate-400 font-mono">
                         {item.safety_stock}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">
-                        {new Date(item.last_replenished_at).toLocaleDateString()}
+                      <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                        {item.last_replenished_at ? new Date(item.last_replenished_at).toLocaleString("en-PH") : "N/A"}
                       </td>
                     </tr>
                   );
@@ -431,13 +399,13 @@ export default function InventoryMonitoringPage() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-md w-full space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white text-sm">Receive Stock / New Delivery</h3>
-              <button onClick={() => setIsRestockOpen(false)} className="text-slate-500 hover:text-white">✕</button>
+              <h3 className="font-bold text-white text-sm">Receive Delivery / Initialize Stock</h3>
+              <button onClick={() => setIsRestockOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleStockIn} className="space-y-3.5 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1">Destination Branch</label>
+                <label className="text-slate-400 block mb-1">Store / Branch</label>
                 <select
                   value={restockStore}
                   onChange={(e) => setRestockStore(e.target.value)}
@@ -450,11 +418,22 @@ export default function InventoryMonitoringPage() {
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Product SKU / Barcode</label>
+                <label className="text-slate-400 block mb-1">Style Code (Primary Identifier)</label>
                 <input
                   type="text"
                   required
-                  placeholder="Scan or enter SKU..."
+                  placeholder="e.g. HUGA SL BRIEF 2XL ASTD"
+                  value={restockStyleCode}
+                  onChange={(e) => setRestockStyleCode(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">SKU (Optional / Barcode)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 3076566299"
                   value={restockSku}
                   onChange={(e) => setRestockSku(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white focus:outline-none"
@@ -477,16 +456,16 @@ export default function InventoryMonitoringPage() {
                 <button
                   type="button"
                   onClick={() => setIsRestockOpen(false)}
-                  className="bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={restockSubmitting}
-                  className="bg-emerald-500 text-slate-950 font-bold px-4 py-1.5 rounded-lg disabled:opacity-50"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer"
                 >
-                  {restockSubmitting ? "Receiving..." : "Confirm Intake"}
+                  {restockSubmitting ? "Saving..." : "Confirm Intake"}
                 </button>
               </div>
             </form>
