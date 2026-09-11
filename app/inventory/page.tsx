@@ -60,87 +60,42 @@ export default function InventoryMonitoringPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch Store Inventory
-      let invQuery = supabase
+      let query = supabase
         .from("store_inventory")
         .select("*")
         .order("current_stock", { ascending: true });
 
       if (selectedStore !== "All Stores") {
-        invQuery = invQuery.eq("store", selectedStore);
+        query = query.eq("store", selectedStore);
       }
 
-      // 2. Fetch Scanned Logs
-      let salesQuery = supabase
-        .from("scanned_logs")
-        .select("store, style_code, sku, quantity");
+      const { data, error } = await query;
+      if (error) throw error;
 
-      if (selectedStore !== "All Stores") {
-        salesQuery = salesQuery.eq("store", selectedStore);
+      if (data) {
+        // Direct mathematical derivation: total_out = initial_stock - current_stock
+        const enriched: StoreInventoryItem[] = data.map((row: any) => {
+          const initial = Number(row.initial_stock) || 0;
+          const current = Number(row.current_stock) || 0;
+          const calculatedOut = Math.max(0, initial - current);
+
+          return {
+            id: row.id,
+            store: row.store,
+            style_code: row.style_code || "-",
+            sku: row.sku || null,
+            initial_stock: initial,
+            current_stock: current,
+            safety_stock: row.safety_stock ?? 5,
+            last_replenished_at: row.last_replenished_at,
+            total_out: calculatedOut,
+          };
+        });
+
+        setItems(enriched);
       }
-
-      const [invRes, salesRes] = await Promise.all([invQuery, salesQuery]);
-
-      if (invRes.error) throw invRes.error;
-      if (salesRes.error) throw salesRes.error;
-
-      const rawInventory = invRes.data || [];
-      const salesLogs = salesRes.data || [];
-
-      const clean = (val: string | null | undefined) => (val ? val.trim().toLowerCase() : "");
-
-      // 3. Match Total Out per variant strictly
-      const enriched: StoreInventoryItem[] = rawInventory.map((row: any) => {
-        const rowStore = clean(row.store);
-        const rowStyle = clean(row.style_code);
-        const rowSku = clean(row.sku);
-
-        const totalOut = salesLogs.reduce((acc, log) => {
-          const logStore = clean(log.store);
-          if (logStore !== rowStore) return acc;
-
-          const logStyle = clean(log.style_code);
-          const logSku = clean(log.sku);
-          const qty = Number(log.quantity) || 1;
-
-          // Strict matching rule:
-          // If both identifiers exist on both sides, BOTH must match
-          if (rowStyle && rowSku && logStyle && logSku) {
-            if (rowStyle === logStyle && rowSku === logSku) {
-              return acc + qty;
-            }
-            return acc;
-          }
-
-          // Fallback: match by style_code if SKU is absent on either record
-          if (rowStyle && logStyle && rowStyle === logStyle) {
-            return acc + qty;
-          }
-
-          // Fallback: match by sku if style_code is absent on either record
-          if (rowSku && logSku && rowSku === logSku) {
-            return acc + qty;
-          }
-
-          return acc;
-        }, 0);
-
-        return {
-          id: row.id,
-          store: row.store,
-          style_code: row.style_code || "-",
-          sku: row.sku || null,
-          initial_stock: row.initial_stock ?? 0,
-          current_stock: row.current_stock ?? 0,
-          safety_stock: row.safety_stock ?? 5,
-          last_replenished_at: row.last_replenished_at,
-          total_out: totalOut,
-        };
-      });
-
-      setItems(enriched);
     } catch (err) {
-      console.error("Error fetching inventory & sales out:", err);
+      console.error("Error fetching inventory:", err);
     } finally {
       setLoading(false);
     }
@@ -157,11 +112,6 @@ export default function InventoryMonitoringPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "store_inventory" },
-        () => fetchInventory()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "scanned_logs" },
         () => fetchInventory()
       )
       .subscribe();
