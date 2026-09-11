@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import { Boxes } from "lucide-react";
 
 export const dynamic = 'force-dynamic';
 
@@ -367,6 +368,14 @@ export default function ScanViewPage() {
             </svg>
             <span>Daily Sales Report</span>
           </Link>
+
+          <Link
+  href="/inventory"
+  className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
+>
+  <Boxes className="h-4 w-4 text-indigo-400" />
+  <span>Live Inventory</span>
+</Link>
 
           <button
             onClick={fetchScannedLogs}
