@@ -25,6 +25,8 @@ import {
   GitCompare,
   ArrowUpRight,
   ArrowDownRight,
+  PieChart as PieIcon,
+  BarChart2,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -139,8 +141,9 @@ export default function QlikViewAnalyticsPage() {
   const [endDate, setEndDate] = useState<string>("");
   const [datePreset, setDatePreset] = useState<string>("all");
 
-  // View state
+  // View state: 'both' | 'summary' | 'details'
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
+  const [showChart, setShowChart] = useState<boolean>(true);
 
   // Mode: 'cyclic' or 'drilldown'
   const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
@@ -152,7 +155,7 @@ export default function QlikViewAnalyticsPage() {
     { dim: DimensionConfig; value: string }[]
   >([]);
 
-  // Search States for list boxes
+  // Search States
   const [storeSearch, setStoreSearch] = useState("");
   const [deptSearch, setDeptSearch] = useState("");
   const [catSearch, setCatSearch] = useState("");
@@ -300,7 +303,7 @@ export default function QlikViewAnalyticsPage() {
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
   const subsetB = useMemo(() => evaluateSubset(stateB), [evaluateSubset, stateB]);
 
-  // Associative Green / White / Gray calculations for active state
+  // Associative Green / White / Gray calculations
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (
       targetField: "store" | "department" | "category" | "color" | "size"
@@ -390,7 +393,7 @@ export default function QlikViewAnalyticsPage() {
     setDrillBreadcrumbs([]);
   };
 
-  // Metrics helper
+  // Metrics calculation
   const calcMetrics = (subset: SalesRecord[]) => {
     const revenue = subset.reduce((acc, curr) => acc + curr.revenue, 0);
     const units = subset.reduce((acc, curr) => acc + curr.quantity, 0);
@@ -443,6 +446,22 @@ export default function QlikViewAnalyticsPage() {
       return b.revenue - a.revenue;
     });
   }, [currentSubset, currentDimension, activeMeasure]);
+
+  // Chart Data: Top 8 items for clean representation
+  const chartData = useMemo(() => {
+    const topItems = tableRows.slice(0, 8);
+    const maxVal = Math.max(
+      ...topItems.map((r) => {
+        if (activeMeasure.key === "units") return r.units;
+        if (activeMeasure.key === "transactions") return r.count;
+        if (activeMeasure.key === "aur") return r.aur;
+        return r.revenue;
+      }),
+      1
+    );
+
+    return { items: topItems, maxVal };
+  }, [tableRows, activeMeasure]);
 
   // Granular Product Details
   const filteredProducts = useMemo(() => {
@@ -551,7 +570,6 @@ export default function QlikViewAnalyticsPage() {
     setDrillLevel(targetIndex);
   };
 
-  // Export to Excel / CSV with active selections stamped
   const exportToSpreadsheet = (format: "xlsx" | "csv") => {
     if (filteredProducts.length === 0) {
       alert("No data available to export under active selections.");
@@ -591,15 +609,28 @@ export default function QlikViewAnalyticsPage() {
               QlikView Engine Active
             </span>
             <span className="text-[11px] text-slate-500 font-mono">
-              Associative + Alternate States Engine
+              Associative Visual Analytics
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-            Associative Sales & Comparative Terminal
+            Associative Sales & Graphical Terminal
           </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Toggle Visual Graph */}
+          <button
+            onClick={() => setShowChart(!showChart)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+              showChart
+                ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/20"
+                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            <span>{showChart ? "Hide Visuals" : "Show Visuals"}</span>
+          </button>
+
           {/* Comparative Mode Toggle */}
           <button
             onClick={() => setIsComparativeMode(!isComparativeMode)}
@@ -610,10 +641,10 @@ export default function QlikViewAnalyticsPage() {
             }`}
           >
             <GitCompare className="w-3.5 h-3.5" />
-            <span>{isComparativeMode ? "Comparative Mode: ON" : "Alternate States (A/B)"}</span>
+            <span>{isComparativeMode ? "Comparative: ON" : "Alternate States (A/B)"}</span>
           </button>
 
-          {/* Export Dropdown */}
+          {/* Export */}
           <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
             <button
               onClick={() => exportToSpreadsheet("xlsx")}
@@ -742,7 +773,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* Alternate States Selector Bar (Active when Comparative Mode is Enabled) */}
+      {/* Alternate States Selector Bar */}
       {isComparativeMode && (
         <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
@@ -775,7 +806,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           </div>
 
-          {/* Variance KPIs: State A vs State B */}
+          {/* Variance KPIs */}
           <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Δ Revenue:</span>
@@ -912,7 +943,7 @@ export default function QlikViewAnalyticsPage() {
         )}
       </div>
 
-      {/* KPI Cards (Displays State A or Comparative Comparison) */}
+      {/* KPI Ribbon */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
@@ -989,9 +1020,79 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* Main Workspace Layout */}
+      {/* NEW: VISUAL DATA REPRESENTATION SECTION (Interactive SVG Chart) */}
+      {showChart && chartData.items.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-xs sm:text-sm">
+                  Associative Distribution: {currentDimension.label}
+                </h3>
+                <p className="text-[10px] text-slate-400">
+                  Ranking by <strong className="text-emerald-400">{activeMeasure.label}</strong> (Click bars to drill/filter)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[10px] text-slate-500 font-mono">
+                Top {chartData.items.length} contributors
+              </span>
+            </div>
+          </div>
+
+          {/* SVG Visual Horizontal Bar Graph */}
+          <div className="space-y-2 pt-1">
+            {chartData.items.map((item, idx) => {
+              const val =
+                activeMeasure.key === "units"
+                  ? item.units
+                  : activeMeasure.key === "transactions"
+                  ? item.count
+                  : activeMeasure.key === "aur"
+                  ? item.aur
+                  : item.revenue;
+
+              const percentOfMax = Math.min(100, Math.max(4, (val / chartData.maxVal) * 100));
+              const displayVal = activeMeasure.format(val);
+
+              return (
+                <div
+                  key={item.label}
+                  onClick={() => handleRowClick(item.label)}
+                  className="group cursor-pointer space-y-1"
+                  title={`Click to filter / drill into ${item.label}`}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium group-hover:text-emerald-400 transition truncate max-w-[200px] sm:max-w-xs text-[11px]">
+                      {idx + 1}. {item.label}
+                    </span>
+                    <span className="font-mono font-bold text-emerald-400 text-[11px]">
+                      {displayVal}
+                    </span>
+                  </div>
+
+                  {/* Responsive Progress Bar */}
+                  <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/80">
+                    <div
+                      style={{ width: `${percentOfMax}%` }}
+                      className="h-full bg-gradient-to-r from-indigo-500 via-emerald-500 to-emerald-400 rounded-full transition-all duration-500 group-hover:brightness-125"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Main Workspace: 5 Associative List Boxes + Tables */}
       <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: 5 Associative List Boxes */}
+        {/* Left: List Boxes */}
         <div className="col-span-12 md:col-span-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>List Boxes {isComparativeMode && `(${activeEditingState})`}</span>
