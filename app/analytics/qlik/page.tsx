@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 import {
   Filter,
   RotateCcw,
@@ -20,6 +21,10 @@ import {
   Package,
   Search,
   Calendar,
+  Download,
+  GitCompare,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -43,11 +48,41 @@ interface SalesRecord {
 }
 
 type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code";
+type MeasureKey = "revenue" | "units" | "aur" | "transactions";
 
 interface DimensionConfig {
   key: DimensionKey;
   label: string;
 }
+
+interface MeasureConfig {
+  key: MeasureKey;
+  label: string;
+  format: (val: number) => string;
+}
+
+const MEASURES: MeasureConfig[] = [
+  {
+    key: "revenue",
+    label: "Revenue (₱)",
+    format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
+  },
+  {
+    key: "units",
+    label: "Units Sold",
+    format: (v) => `${v.toLocaleString()} pcs`,
+  },
+  {
+    key: "aur",
+    label: "Avg Unit Retail (AUR)",
+    format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
+  },
+  {
+    key: "transactions",
+    label: "Transaction Count",
+    format: (v) => `${v.toLocaleString()} logs`,
+  },
+];
 
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
@@ -67,22 +102,42 @@ const DRILL_HIERARCHY: DimensionConfig[] = [
   { key: "style_code", label: "Style Code" },
 ];
 
+interface StateSelection {
+  stores: string[];
+  departments: string[];
+  categories: string[];
+  colors: string[];
+  sizes: string[];
+  styles: string[];
+}
+
+const EMPTY_SELECTIONS: StateSelection = {
+  stores: [],
+  departments: [],
+  categories: [],
+  colors: [],
+  sizes: [],
+  styles: [],
+};
+
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Alternate States Configuration
+  const [isComparativeMode, setIsComparativeMode] = useState<boolean>(false);
+  const [activeEditingState, setActiveEditingState] = useState<"A" | "B">("A");
+
+  const [stateA, setStateA] = useState<StateSelection>(EMPTY_SELECTIONS);
+  const [stateB, setStateB] = useState<StateSelection>(EMPTY_SELECTIONS);
+
+  // Multi-Metric Measure Switcher
+  const [activeMeasureIndex, setActiveMeasureIndex] = useState<number>(0);
 
   // Date Range State
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [datePreset, setDatePreset] = useState<string>("all");
-
-  // Active Field Selections (Green values)
-  const [selectedStores, setSelectedStores] = useState<string[]>([]);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
 
   // View state
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
@@ -184,7 +239,7 @@ export default function QlikViewAnalyticsPage() {
     }
   };
 
-  // 2. Base Date Filter
+  // Base Date Filter
   const dateFilteredData = useMemo(() => {
     if (!startDate && !endDate) return data;
     return data.filter((row) => {
@@ -194,7 +249,7 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [data, startDate, endDate]);
 
-  // 3. Universe Sets for current timeframe
+  // Universe Sets for current timeframe
   const universe = useMemo(() => {
     return {
       stores: Array.from(new Set(dateFilteredData.map((d) => d.store))).sort(),
@@ -208,49 +263,71 @@ export default function QlikViewAnalyticsPage() {
     };
   }, [dateFilteredData]);
 
-  // 4. Current Selection Subset ($ State)
-  const currentSubset = useMemo(() => {
-    return dateFilteredData.filter((row) => {
-      const matchStore = selectedStores.length === 0 || selectedStores.includes(row.store);
-      const matchDept = selectedDepartments.length === 0 || selectedDepartments.includes(row.department);
-      const matchCat = selectedCategories.length === 0 || selectedCategories.includes(row.category);
-      const matchColor = selectedColors.length === 0 || selectedColors.includes(row.color);
-      const matchSize = selectedSizes.length === 0 || selectedSizes.includes(row.size);
-      const matchStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
+  // Current Active Selection State
+  const activeSelection = isComparativeMode
+    ? activeEditingState === "A"
+      ? stateA
+      : stateB
+    : stateA;
 
-      return matchStore && matchDept && matchCat && matchColor && matchSize && matchStyle;
-    });
-  }, [
-    dateFilteredData,
-    selectedStores,
-    selectedDepartments,
-    selectedCategories,
-    selectedColors,
-    selectedSizes,
-    selectedStyles,
-  ]);
+  const setActiveSelection = (fn: (prev: StateSelection) => StateSelection) => {
+    if (!isComparativeMode || activeEditingState === "A") {
+      setStateA(fn);
+    } else {
+      setStateB(fn);
+    }
+  };
 
-  // 5. Associative Possible / Excluded Sets and Dynamic Frequencies
+  // Subset evaluation helper
+  const evaluateSubset = useCallback(
+    (selection: StateSelection) => {
+      return dateFilteredData.filter((row) => {
+        const matchStore = selection.stores.length === 0 || selection.stores.includes(row.store);
+        const matchDept =
+          selection.departments.length === 0 || selection.departments.includes(row.department);
+        const matchCat =
+          selection.categories.length === 0 || selection.categories.includes(row.category);
+        const matchColor = selection.colors.length === 0 || selection.colors.includes(row.color);
+        const matchSize = selection.sizes.length === 0 || selection.sizes.includes(row.size);
+        const matchStyle = selection.styles.length === 0 || selection.styles.includes(row.style_code);
+
+        return matchStore && matchDept && matchCat && matchColor && matchSize && matchStyle;
+      });
+    },
+    [dateFilteredData]
+  );
+
+  const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
+  const subsetB = useMemo(() => evaluateSubset(stateB), [evaluateSubset, stateB]);
+
+  // Associative Green / White / Gray calculations for active state
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (
       targetField: "store" | "department" | "category" | "color" | "size"
     ) => {
       const subset = dateFilteredData.filter((row) => {
         const mStore =
-          targetField === "store" || selectedStores.length === 0 || selectedStores.includes(row.store);
+          targetField === "store" ||
+          activeSelection.stores.length === 0 ||
+          activeSelection.stores.includes(row.store);
         const mDept =
           targetField === "department" ||
-          selectedDepartments.length === 0 ||
-          selectedDepartments.includes(row.department);
+          activeSelection.departments.length === 0 ||
+          activeSelection.departments.includes(row.department);
         const mCat =
           targetField === "category" ||
-          selectedCategories.length === 0 ||
-          selectedCategories.includes(row.category);
+          activeSelection.categories.length === 0 ||
+          activeSelection.categories.includes(row.category);
         const mColor =
-          targetField === "color" || selectedColors.length === 0 || selectedColors.includes(row.color);
+          targetField === "color" ||
+          activeSelection.colors.length === 0 ||
+          activeSelection.colors.includes(row.color);
         const mSize =
-          targetField === "size" || selectedSizes.length === 0 || selectedSizes.includes(row.size);
-        const mStyle = selectedStyles.length === 0 || selectedStyles.includes(row.style_code);
+          targetField === "size" ||
+          activeSelection.sizes.length === 0 ||
+          activeSelection.sizes.includes(row.size);
+        const mStyle =
+          activeSelection.styles.length === 0 || activeSelection.styles.includes(row.style_code);
 
         return mStore && mDept && mCat && mColor && mSize && mStyle;
       });
@@ -267,87 +344,70 @@ export default function QlikViewAnalyticsPage() {
       return { possibleSet, freqMap };
     };
 
-    const storesData = calcPossibleAndFreq("store");
-    const deptsData = calcPossibleAndFreq("department");
-    const catsData = calcPossibleAndFreq("category");
-    const colorsData = calcPossibleAndFreq("color");
-    const sizesData = calcPossibleAndFreq("size");
-
     return {
       possibleValues: {
-        stores: storesData.possibleSet,
-        departments: deptsData.possibleSet,
-        categories: catsData.possibleSet,
-        colors: colorsData.possibleSet,
-        sizes: sizesData.possibleSet,
+        stores: calcPossibleAndFreq("store").possibleSet,
+        departments: calcPossibleAndFreq("department").possibleSet,
+        categories: calcPossibleAndFreq("category").possibleSet,
+        colors: calcPossibleAndFreq("color").possibleSet,
+        sizes: calcPossibleAndFreq("size").possibleSet,
       },
       fieldFrequencies: {
-        stores: storesData.freqMap,
-        departments: deptsData.freqMap,
-        categories: catsData.freqMap,
-        colors: colorsData.freqMap,
-        sizes: sizesData.freqMap,
+        stores: calcPossibleAndFreq("store").freqMap,
+        departments: calcPossibleAndFreq("department").freqMap,
+        categories: calcPossibleAndFreq("category").freqMap,
+        colors: calcPossibleAndFreq("color").freqMap,
+        sizes: calcPossibleAndFreq("size").freqMap,
       },
     };
-  }, [
-    dateFilteredData,
-    selectedStores,
-    selectedDepartments,
-    selectedCategories,
-    selectedColors,
-    selectedSizes,
-    selectedStyles,
-  ]);
+  }, [dateFilteredData, activeSelection]);
 
   const toggleSelection = (
     field: "store" | "department" | "category" | "color" | "size" | "style_code",
     value: string
   ) => {
-    if (field === "store") {
-      setSelectedStores((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (field === "department") {
-      setSelectedDepartments((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (field === "category") {
-      setSelectedCategories((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (field === "color") {
-      setSelectedColors((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (field === "size") {
-      setSelectedSizes((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (field === "style_code") {
-      setSelectedStyles((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    }
+    setActiveSelection((prev) => {
+      const fieldKeyMap: Record<string, keyof StateSelection> = {
+        store: "stores",
+        department: "departments",
+        category: "categories",
+        color: "colors",
+        size: "sizes",
+        style_code: "styles",
+      };
+      const key = fieldKeyMap[field];
+      const exists = prev[key].includes(value);
+      return {
+        ...prev,
+        [key]: exists ? prev[key].filter((v) => v !== value) : [...prev[key], value],
+      };
+    });
   };
 
-  const clearAllSelections = () => {
-    setSelectedStores([]);
-    setSelectedDepartments([]);
-    setSelectedCategories([]);
-    setSelectedColors([]);
-    setSelectedSizes([]);
-    setSelectedStyles([]);
+  const clearCurrentStateSelections = () => {
+    setActiveSelection(() => EMPTY_SELECTIONS);
     setDrillLevel(0);
     setDrillBreadcrumbs([]);
   };
 
-  const metrics = useMemo(() => {
-    const revenue = currentSubset.reduce((acc, curr) => acc + curr.revenue, 0);
-    const units = currentSubset.reduce((acc, curr) => acc + curr.quantity, 0);
-    const transactions = currentSubset.length;
+  // Metrics helper
+  const calcMetrics = (subset: SalesRecord[]) => {
+    const revenue = subset.reduce((acc, curr) => acc + curr.revenue, 0);
+    const units = subset.reduce((acc, curr) => acc + curr.quantity, 0);
+    const transactions = subset.length;
+    const aur = units > 0 ? revenue / units : 0;
     const shareOfTotal = universe.totalRevenue > 0 ? (revenue / universe.totalRevenue) * 100 : 0;
-    return { revenue, units, transactions, shareOfTotal };
-  }, [currentSubset, universe.totalRevenue]);
+    return { revenue, units, transactions, aur, shareOfTotal };
+  };
+
+  const metricsA = useMemo(() => calcMetrics(currentSubset), [currentSubset, universe.totalRevenue]);
+  const metricsB = useMemo(() => calcMetrics(subsetB), [subsetB, universe.totalRevenue]);
+
+  const activeMeasure = MEASURES[activeMeasureIndex];
+
+  const cycleMeasure = () => {
+    setActiveMeasureIndex((prev) => (prev + 1) % MEASURES.length);
+  };
 
   const currentDimension = useMemo(() => {
     return tableMode === "drilldown"
@@ -357,20 +417,32 @@ export default function QlikViewAnalyticsPage() {
 
   // Aggregated Rows for Drill/Cyclic
   const tableRows = useMemo(() => {
-    const map: Record<string, { label: string; revenue: number; units: number; count: number }> = {};
+    const map: Record<
+      string,
+      { label: string; revenue: number; units: number; count: number; aur: number }
+    > = {};
 
     currentSubset.forEach((item) => {
       const keyVal = item[currentDimension.key] || "Unknown";
       if (!map[keyVal]) {
-        map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0 };
+        map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0, aur: 0 };
       }
       map[keyVal].revenue += item.revenue;
       map[keyVal].units += item.quantity;
       map[keyVal].count += 1;
     });
 
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [currentSubset, currentDimension]);
+    Object.values(map).forEach((r) => {
+      r.aur = r.units > 0 ? r.revenue / r.units : 0;
+    });
+
+    return Object.values(map).sort((a, b) => {
+      if (activeMeasure.key === "units") return b.units - a.units;
+      if (activeMeasure.key === "transactions") return b.count - a.count;
+      if (activeMeasure.key === "aur") return b.aur - a.aur;
+      return b.revenue - a.revenue;
+    });
+  }, [currentSubset, currentDimension, activeMeasure]);
 
   // Granular Product Details
   const filteredProducts = useMemo(() => {
@@ -430,15 +502,8 @@ export default function QlikViewAnalyticsPage() {
     if (tableMode === "cyclic") {
       toggleSelection(currentDimension.key, label);
     } else {
-      if (currentDimension.key === "store") setSelectedStores([label]);
-      if (currentDimension.key === "department") setSelectedDepartments([label]);
-      if (currentDimension.key === "category") setSelectedCategories([label]);
-      if (currentDimension.key === "color") setSelectedColors([label]);
-      if (currentDimension.key === "size") setSelectedSizes([label]);
-      if (currentDimension.key === "style_code") setSelectedStyles([label]);
-
+      toggleSelection(currentDimension.key, label);
       setDrillBreadcrumbs((prev) => [...prev, { dim: currentDimension, value: label }]);
-
       if (drillLevel < DRILL_HIERARCHY.length - 1) {
         setDrillLevel((prev) => prev + 1);
       }
@@ -450,12 +515,17 @@ export default function QlikViewAnalyticsPage() {
       const targetLevel = drillLevel - 1;
       const targetDim = DRILL_HIERARCHY[targetLevel];
 
-      if (targetDim.key === "store") setSelectedStores([]);
-      if (targetDim.key === "department") setSelectedDepartments([]);
-      if (targetDim.key === "category") setSelectedCategories([]);
-      if (targetDim.key === "color") setSelectedColors([]);
-      if (targetDim.key === "size") setSelectedSizes([]);
-      if (targetDim.key === "style_code") setSelectedStyles([]);
+      setActiveSelection((prev) => {
+        const fieldKeyMap: Record<string, keyof StateSelection> = {
+          store: "stores",
+          department: "departments",
+          category: "categories",
+          color: "colors",
+          size: "sizes",
+          style_code: "styles",
+        };
+        return { ...prev, [fieldKeyMap[targetDim.key]]: [] };
+      });
 
       setDrillBreadcrumbs((prev) => prev.slice(0, targetLevel));
       setDrillLevel(targetLevel);
@@ -465,20 +535,55 @@ export default function QlikViewAnalyticsPage() {
   const handleBreadcrumbClick = (targetIndex: number) => {
     for (let i = targetIndex; i < DRILL_HIERARCHY.length; i++) {
       const dim = DRILL_HIERARCHY[i];
-      if (dim.key === "store") setSelectedStores([]);
-      if (dim.key === "department") setSelectedDepartments([]);
-      if (dim.key === "category") setSelectedCategories([]);
-      if (dim.key === "color") setSelectedColors([]);
-      if (dim.key === "size") setSelectedSizes([]);
-      if (dim.key === "style_code") setSelectedStyles([]);
+      setActiveSelection((prev) => {
+        const fieldKeyMap: Record<string, keyof StateSelection> = {
+          store: "stores",
+          department: "departments",
+          category: "categories",
+          color: "colors",
+          size: "sizes",
+          style_code: "styles",
+        };
+        return { ...prev, [fieldKeyMap[dim.key]]: [] };
+      });
     }
     setDrillBreadcrumbs((prev) => prev.slice(0, targetIndex));
     setDrillLevel(targetIndex);
   };
 
+  // Export to Excel / CSV with active selections stamped
+  const exportToSpreadsheet = (format: "xlsx" | "csv") => {
+    if (filteredProducts.length === 0) {
+      alert("No data available to export under active selections.");
+      return;
+    }
+
+    const rows = filteredProducts.map((p) => ({
+      "Style Code": p.styleCode,
+      SKU: p.sku,
+      "Product Name": p.styleName,
+      Department: p.department,
+      Category: p.category,
+      Color: p.color,
+      Size: p.size,
+      "Unit Price": p.price,
+      "Units Sold": p.units,
+      "Total Revenue": p.revenue,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "QlikView_Export");
+
+    const stateTag = isComparativeMode ? `State_${activeEditingState}` : "Selection";
+    const filename = `Qlik_Export_${stateTag}_${new Date().toISOString().split("T")[0]}.${format}`;
+
+    XLSX.writeFile(workbook, filename, { bookType: format });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-4">
-      {/* Header */}
+      {/* Top Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3.5 gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -486,15 +591,48 @@ export default function QlikViewAnalyticsPage() {
               QlikView Engine Active
             </span>
             <span className="text-[11px] text-slate-500 font-mono">
-              Associative In-Memory Client
+              Associative + Alternate States Engine
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-            Associative Sales & Drill-Down Analyzer
+            Associative Sales & Comparative Terminal
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Comparative Mode Toggle */}
+          <button
+            onClick={() => setIsComparativeMode(!isComparativeMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+              isComparativeMode
+                ? "bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/20"
+                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+            }`}
+          >
+            <GitCompare className="w-3.5 h-3.5" />
+            <span>{isComparativeMode ? "Comparative Mode: ON" : "Alternate States (A/B)"}</span>
+          </button>
+
+          {/* Export Dropdown */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+            <button
+              onClick={() => exportToSpreadsheet("xlsx")}
+              className="flex items-center gap-1 text-emerald-400 hover:text-white px-2.5 py-1 rounded transition font-semibold cursor-pointer"
+              title="Export filtered items to Excel"
+            >
+              <Download className="w-3 h-3" />
+              <span>Excel</span>
+            </button>
+            <span className="text-slate-700">|</span>
+            <button
+              onClick={() => exportToSpreadsheet("csv")}
+              className="text-slate-400 hover:text-white px-2 py-1 rounded transition font-semibold cursor-pointer"
+              title="Export filtered items to CSV"
+            >
+              CSV
+            </button>
+          </div>
+
           <Link
             href="/inventory"
             className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
@@ -604,24 +742,92 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
+      {/* Alternate States Selector Bar (Active when Comparative Mode is Enabled) */}
+      {isComparativeMode && (
+        <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-purple-300 flex items-center gap-1.5">
+              <GitCompare className="w-4 h-4 text-purple-400" />
+              Active Target State:
+            </span>
+
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+              <button
+                onClick={() => setActiveEditingState("A")}
+                className={`px-3 py-1 rounded-md font-bold transition cursor-pointer ${
+                  activeEditingState === "A"
+                    ? "bg-emerald-500 text-slate-950"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                State A (Baseline)
+              </button>
+              <button
+                onClick={() => setActiveEditingState("B")}
+                className={`px-3 py-1 rounded-md font-bold transition cursor-pointer ${
+                  activeEditingState === "B"
+                    ? "bg-purple-500 text-white"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                State B (Comparison)
+              </button>
+            </div>
+          </div>
+
+          {/* Variance KPIs: State A vs State B */}
+          <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Δ Revenue:</span>
+              <span
+                className={`font-bold flex items-center ${
+                  metricsA.revenue >= metricsB.revenue ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {metricsA.revenue >= metricsB.revenue ? (
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                ) : (
+                  <ArrowDownRight className="w-3.5 h-3.5" />
+                )}
+                ₱{Math.abs(metricsA.revenue - metricsB.revenue).toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Δ Units:</span>
+              <span
+                className={`font-bold ${
+                  metricsA.units >= metricsB.units ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {metricsA.units - metricsB.units > 0 ? "+" : ""}
+                {metricsA.units - metricsB.units} pcs
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current Selections Bar */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1">
             <Filter className="w-3 h-3 text-emerald-400" />
-            Active Selections:
+            {isComparativeMode ? `State ${activeEditingState} Selections:` : "Active Selections:"}
           </span>
 
-          {selectedStores.length === 0 &&
-          selectedDepartments.length === 0 &&
-          selectedCategories.length === 0 &&
-          selectedColors.length === 0 &&
-          selectedSizes.length === 0 &&
-          selectedStyles.length === 0 ? (
+          {activeSelection.stores.length === 0 &&
+          activeSelection.departments.length === 0 &&
+          activeSelection.categories.length === 0 &&
+          activeSelection.colors.length === 0 &&
+          activeSelection.sizes.length === 0 &&
+          activeSelection.styles.length === 0 ? (
             <span className="text-slate-500 italic text-[11px]">None (Universe State)</span>
           ) : (
             <>
-              {selectedStores.map((s) => (
+              {activeSelection.stores.map((s) => (
                 <span
                   key={s}
                   onClick={() => toggleSelection("store", s)}
@@ -632,7 +838,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
-              {selectedDepartments.map((d) => (
+              {activeSelection.departments.map((d) => (
                 <span
                   key={d}
                   onClick={() => toggleSelection("department", d)}
@@ -643,7 +849,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
-              {selectedCategories.map((c) => (
+              {activeSelection.categories.map((c) => (
                 <span
                   key={c}
                   onClick={() => toggleSelection("category", c)}
@@ -654,7 +860,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
-              {selectedColors.map((cl) => (
+              {activeSelection.colors.map((cl) => (
                 <span
                   key={cl}
                   onClick={() => toggleSelection("color", cl)}
@@ -665,7 +871,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
-              {selectedSizes.map((sz) => (
+              {activeSelection.sizes.map((sz) => (
                 <span
                   key={sz}
                   onClick={() => toggleSelection("size", sz)}
@@ -676,7 +882,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
               ))}
 
-              {selectedStyles.map((st) => (
+              {activeSelection.styles.map((st) => (
                 <span
                   key={st}
                   onClick={() => toggleSelection("style_code", st)}
@@ -690,32 +896,34 @@ export default function QlikViewAnalyticsPage() {
           )}
         </div>
 
-        {(selectedStores.length > 0 ||
-          selectedDepartments.length > 0 ||
-          selectedCategories.length > 0 ||
-          selectedColors.length > 0 ||
-          selectedSizes.length > 0 ||
-          selectedStyles.length > 0) && (
+        {(activeSelection.stores.length > 0 ||
+          activeSelection.departments.length > 0 ||
+          activeSelection.categories.length > 0 ||
+          activeSelection.colors.length > 0 ||
+          activeSelection.sizes.length > 0 ||
+          activeSelection.styles.length > 0) && (
           <button
-            onClick={clearAllSelections}
+            onClick={clearCurrentStateSelections}
             className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>Clear All</span>
+            <span>Clear State</span>
           </button>
         )}
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards (Displays State A or Comparative Comparison) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
+            </p>
             <h3 className="text-xl font-black text-white mt-0.5">
-              ₱{metrics.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+              ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </h3>
             <p className="text-[10px] text-emerald-400 font-mono">
-              {metrics.shareOfTotal.toFixed(1)}% of total (₱{universe.totalRevenue.toLocaleString()})
+              {metricsA.shareOfTotal.toFixed(1)}% of universe
             </p>
           </div>
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg">
@@ -725,12 +933,18 @@ export default function QlikViewAnalyticsPage() {
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units in Selection</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State B Revenue" : "Units Sold"}
+            </p>
             <h3 className="text-xl font-black text-white mt-0.5">
-              {metrics.units.toLocaleString()} <span className="text-xs text-slate-400 font-normal">pcs</span>
+              {isComparativeMode
+                ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                : `${metricsA.units.toLocaleString()} pcs`}
             </h3>
             <p className="text-[10px] text-indigo-400 font-mono">
-              out of {universe.totalUnits.toLocaleString()} total units
+              {isComparativeMode
+                ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
+                : `out of ${universe.totalUnits.toLocaleString()} total units`}
             </p>
           </div>
           <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
@@ -740,11 +954,17 @@ export default function QlikViewAnalyticsPage() {
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Transactions</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State A Units" : "Transactions"}
+            </p>
             <h3 className="text-xl font-black text-white mt-0.5">
-              {metrics.transactions.toLocaleString()} <span className="text-xs text-slate-400 font-normal">logs</span>
+              {isComparativeMode
+                ? `${metricsA.units.toLocaleString()} pcs`
+                : `${metricsA.transactions.toLocaleString()} logs`}
             </h3>
-            <p className="text-[10px] text-blue-400 font-mono">matching state</p>
+            <p className="text-[10px] text-blue-400 font-mono">
+              {isComparativeMode ? `State B: ${metricsB.units} pcs` : "matching state"}
+            </p>
           </div>
           <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg">
             <TrendingUp className="w-4 h-4" />
@@ -753,16 +973,15 @@ export default function QlikViewAnalyticsPage() {
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Avg Ticket</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Average Unit Retail (AUR)
+            </p>
             <h3 className="text-xl font-black text-white mt-0.5">
-              ₱
-              {metrics.transactions > 0
-                ? (metrics.revenue / metrics.transactions).toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                  })
-                : "0.00"}
+              ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-[10px] text-purple-400 font-mono">per transaction</p>
+            <p className="text-[10px] text-purple-400 font-mono">
+              {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail"}
+            </p>
           </div>
           <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg">
             <Layers className="w-4 h-4" />
@@ -772,10 +991,10 @@ export default function QlikViewAnalyticsPage() {
 
       {/* Main Workspace Layout */}
       <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: 5 Associative List Boxes (Store, Dept, Category, Color, Size) */}
+        {/* Left: 5 Associative List Boxes */}
         <div className="col-span-12 md:col-span-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
-            <span>List Boxes</span>
+            <span>List Boxes {isComparativeMode && `(${activeEditingState})`}</span>
             <div className="flex items-center gap-1 text-[9px] lowercase text-slate-400">
               <span className="w-2 h-2 rounded bg-emerald-600 inline-block"></span> sel
               <span className="w-2 h-2 rounded bg-slate-800 border border-slate-700 inline-block ml-1"></span> opt
@@ -787,9 +1006,9 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
             <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-200">Store</span>
-              {selectedStores.length > 0 && (
+              {activeSelection.stores.length > 0 && (
                 <button
-                  onClick={() => setSelectedStores([])}
+                  onClick={() => setActiveSelection((prev) => ({ ...prev, stores: [] }))}
                   className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
                 >
                   Clear
@@ -809,7 +1028,7 @@ export default function QlikViewAnalyticsPage() {
               {universe.stores
                 .filter((s) => s.toLowerCase().includes(storeSearch.toLowerCase()))
                 .map((store) => {
-                  const isSelected = selectedStores.includes(store);
+                  const isSelected = activeSelection.stores.includes(store);
                   const isPossible = possibleValues.stores.has(store);
                   const freq = fieldFrequencies.stores[store] || 0;
 
@@ -840,9 +1059,9 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
             <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-200">Department</span>
-              {selectedDepartments.length > 0 && (
+              {activeSelection.departments.length > 0 && (
                 <button
-                  onClick={() => setSelectedDepartments([])}
+                  onClick={() => setActiveSelection((prev) => ({ ...prev, departments: [] }))}
                   className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
                 >
                   Clear
@@ -862,7 +1081,7 @@ export default function QlikViewAnalyticsPage() {
               {universe.departments
                 .filter((d) => d.toLowerCase().includes(deptSearch.toLowerCase()))
                 .map((dept) => {
-                  const isSelected = selectedDepartments.includes(dept);
+                  const isSelected = activeSelection.departments.includes(dept);
                   const isPossible = possibleValues.departments.has(dept);
                   const freq = fieldFrequencies.departments[dept] || 0;
 
@@ -893,9 +1112,9 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
             <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-200">Category</span>
-              {selectedCategories.length > 0 && (
+              {activeSelection.categories.length > 0 && (
                 <button
-                  onClick={() => setSelectedCategories([])}
+                  onClick={() => setActiveSelection((prev) => ({ ...prev, categories: [] }))}
                   className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
                 >
                   Clear
@@ -915,7 +1134,7 @@ export default function QlikViewAnalyticsPage() {
               {universe.categories
                 .filter((c) => c.toLowerCase().includes(catSearch.toLowerCase()))
                 .map((cat) => {
-                  const isSelected = selectedCategories.includes(cat);
+                  const isSelected = activeSelection.categories.includes(cat);
                   const isPossible = possibleValues.categories.has(cat);
                   const freq = fieldFrequencies.categories[cat] || 0;
 
@@ -946,9 +1165,9 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
             <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-200">Color</span>
-              {selectedColors.length > 0 && (
+              {activeSelection.colors.length > 0 && (
                 <button
-                  onClick={() => setSelectedColors([])}
+                  onClick={() => setActiveSelection((prev) => ({ ...prev, colors: [] }))}
                   className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
                 >
                   Clear
@@ -968,7 +1187,7 @@ export default function QlikViewAnalyticsPage() {
               {universe.colors
                 .filter((c) => c.toLowerCase().includes(colorSearch.toLowerCase()))
                 .map((col) => {
-                  const isSelected = selectedColors.includes(col);
+                  const isSelected = activeSelection.colors.includes(col);
                   const isPossible = possibleValues.colors.has(col);
                   const freq = fieldFrequencies.colors[col] || 0;
 
@@ -999,9 +1218,9 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
             <div className="bg-slate-950 px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-200">Size</span>
-              {selectedSizes.length > 0 && (
+              {activeSelection.sizes.length > 0 && (
                 <button
-                  onClick={() => setSelectedSizes([])}
+                  onClick={() => setActiveSelection((prev) => ({ ...prev, sizes: [] }))}
                   className="text-[10px] text-slate-500 hover:text-rose-400 cursor-pointer"
                 >
                   Clear
@@ -1021,7 +1240,7 @@ export default function QlikViewAnalyticsPage() {
               {universe.sizes
                 .filter((s) => s.toLowerCase().includes(sizeSearch.toLowerCase()))
                 .map((sz) => {
-                  const isSelected = selectedSizes.includes(sz);
+                  const isSelected = activeSelection.sizes.includes(sz);
                   const isPossible = possibleValues.sizes.has(sz);
                   const freq = fieldFrequencies.sizes[sz] || 0;
 
@@ -1053,7 +1272,7 @@ export default function QlikViewAnalyticsPage() {
         <div className="col-span-12 md:col-span-9 space-y-3">
           {/* Header Toolbar */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-semibold">
                 <button
                   onClick={() => setTableMode("drilldown")}
@@ -1086,6 +1305,16 @@ export default function QlikViewAnalyticsPage() {
                   <span>Cycle: {currentDimension.label}</span>
                 </button>
               )}
+
+              {/* Multi-Metric Measure Switcher */}
+              <button
+                onClick={cycleMeasure}
+                className="flex items-center gap-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer"
+                title="Click to cycle active measure"
+              >
+                <Layers className="w-3 h-3 text-emerald-400" />
+                <span>Measure: {activeMeasure.label} ⟳</span>
+              </button>
 
               {tableMode === "drilldown" && drillLevel > 0 && (
                 <button
@@ -1170,8 +1399,8 @@ export default function QlikViewAnalyticsPage() {
                       </span>
                     )}
                   </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {tableRows.length} items
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    Sorted by {activeMeasure.label}
                   </span>
                 </div>
 
@@ -1182,7 +1411,15 @@ export default function QlikViewAnalyticsPage() {
                         <th className="px-3 py-2">{currentDimension.label}</th>
                         <th className="px-2 py-2 text-right">Logs</th>
                         <th className="px-2 py-2 text-right">Units</th>
-                        <th className="px-3 py-2 text-right">Revenue</th>
+                        <th className="px-3 py-2 text-right">
+                          <span
+                            onClick={cycleMeasure}
+                            className="cursor-pointer hover:text-emerald-400 underline decoration-dotted"
+                            title="Click to cycle active measure"
+                          >
+                            {activeMeasure.label} ⟳
+                          </span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 text-[11px]">
@@ -1199,27 +1436,38 @@ export default function QlikViewAnalyticsPage() {
                           </td>
                         </tr>
                       ) : (
-                        tableRows.map((row) => (
-                          <tr
-                            key={row.label}
-                            className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
-                            onClick={() => handleRowClick(row.label)}
-                            title={`Filter / Drill into ${row.label}`}
-                          >
-                            <td className="px-3 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
-                              {row.label}
-                            </td>
-                            <td className="px-2 py-2 text-right text-slate-400 font-mono">
-                              {row.count}
-                            </td>
-                            <td className="px-2 py-2 text-right text-slate-300 font-mono">
-                              {row.units}
-                            </td>
-                            <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
-                              ₱{row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        ))
+                        tableRows.map((row) => {
+                          const displayVal =
+                            activeMeasure.key === "units"
+                              ? `${row.units.toLocaleString()} pcs`
+                              : activeMeasure.key === "transactions"
+                              ? `${row.count.toLocaleString()} logs`
+                              : activeMeasure.key === "aur"
+                              ? `₱${row.aur.toFixed(2)}`
+                              : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                          return (
+                            <tr
+                              key={row.label}
+                              className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                              onClick={() => handleRowClick(row.label)}
+                              title={`Filter / Drill into ${row.label}`}
+                            >
+                              <td className="px-3 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
+                                {row.label}
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-400 font-mono">
+                                {row.count}
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-300 font-mono">
+                                {row.units}
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
+                                {displayVal}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1308,10 +1556,10 @@ export default function QlikViewAnalyticsPage() {
                             Total:
                           </td>
                           <td className="px-2 py-1.5 text-right font-mono text-white">
-                            {metrics.units}
+                            {metricsA.units}
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
-                            ₱{metrics.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                           </td>
                         </tr>
                       </tfoot>
