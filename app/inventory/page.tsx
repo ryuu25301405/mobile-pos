@@ -14,7 +14,6 @@ import {
   ScanBarcode,
   BarChart3,
   ArrowUpRight,
-  ArrowDownLeft,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -26,7 +25,7 @@ interface StoreInventoryItem {
   current_stock: number;
   safety_stock: number;
   last_replenished_at: string;
-  total_out: number; // Scanned quantity sold out
+  total_out: number;
 }
 
 const STORES = [
@@ -61,7 +60,7 @@ export default function InventoryMonitoringPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch Store Inventory (Current balances)
+      // 1. Fetch Store Inventory
       let invQuery = supabase
         .from("store_inventory")
         .select("*")
@@ -71,7 +70,7 @@ export default function InventoryMonitoringPage() {
         invQuery = invQuery.eq("store", selectedStore);
       }
 
-      // 2. Fetch Scanned Logs (Total sales / units out)
+      // 2. Fetch Scanned Logs
       let salesQuery = supabase
         .from("scanned_logs")
         .select("store, style_code, sku, quantity");
@@ -88,37 +87,43 @@ export default function InventoryMonitoringPage() {
       const rawInventory = invRes.data || [];
       const salesLogs = salesRes.data || [];
 
-      // Build quick map for aggregate total out per (store, code)
-      const salesOutMap = new Map<string, number>();
+      const clean = (val: string | null | undefined) => (val ? val.trim().toLowerCase() : "");
 
-      salesLogs.forEach((log) => {
-        const qty = Number(log.quantity) || 1;
-        const store = log.store || "Unassigned Store";
-        const style = log.style_code ? log.style_code.trim().toLowerCase() : null;
-        const sku = log.sku ? log.sku.trim().toLowerCase() : null;
-
-        if (style) {
-          const key = `${store}:::${style}`;
-          salesOutMap.set(key, (salesOutMap.get(key) || 0) + qty);
-        }
-        if (sku) {
-          const key = `${store}:::${sku}`;
-          salesOutMap.set(key, (salesOutMap.get(key) || 0) + qty);
-        }
-      });
-
-      // Merge Total Out into each Inventory Item
+      // 3. Match Total Out per variant strictly
       const enriched: StoreInventoryItem[] = rawInventory.map((row: any) => {
-        const styleKey = row.style_code
-          ? `${row.store}:::${row.style_code.trim().toLowerCase()}`
-          : null;
-        const skuKey = row.sku ? `${row.store}:::${row.sku.trim().toLowerCase()}` : null;
+        const rowStore = clean(row.store);
+        const rowStyle = clean(row.style_code);
+        const rowSku = clean(row.sku);
 
-        // Take the matched out count
-        const totalOut =
-          (styleKey ? salesOutMap.get(styleKey) : undefined) ??
-          (skuKey ? salesOutMap.get(skuKey) : undefined) ??
-          0;
+        const totalOut = salesLogs.reduce((acc, log) => {
+          const logStore = clean(log.store);
+          if (logStore !== rowStore) return acc;
+
+          const logStyle = clean(log.style_code);
+          const logSku = clean(log.sku);
+          const qty = Number(log.quantity) || 1;
+
+          // Strict matching rule:
+          // If both identifiers exist on both sides, BOTH must match
+          if (rowStyle && rowSku && logStyle && logSku) {
+            if (rowStyle === logStyle && rowSku === logSku) {
+              return acc + qty;
+            }
+            return acc;
+          }
+
+          // Fallback: match by style_code if SKU is absent on either record
+          if (rowStyle && logStyle && rowStyle === logStyle) {
+            return acc + qty;
+          }
+
+          // Fallback: match by sku if style_code is absent on either record
+          if (rowSku && logSku && rowSku === logSku) {
+            return acc + qty;
+          }
+
+          return acc;
+        }, 0);
 
         return {
           id: row.id,
@@ -141,12 +146,11 @@ export default function InventoryMonitoringPage() {
     }
   }, [selectedStore]);
 
-  // Effect 1: HTTP fetch on store filter changes
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Effect 2: Realtime WebSocket (Mounted ONCE with explicit removeChannel teardown)
+  // Realtime subscription with proper teardown
   useEffect(() => {
     const channel = supabase
       .channel("store_inventory_feed")
@@ -245,7 +249,6 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus]);
 
-  // Overall Inventory Stats
   const stats = useMemo(() => {
     const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
     const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
@@ -301,31 +304,32 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* KPI Cards: Total In, Total Out, Available, and Warnings */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Out */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-rose-400">Total Scanned Out</p>
-            <h3 className="text-2xl font-bold text-white mt-1">{stats.totalOut.toLocaleString()} <span className="text-xs text-rose-400 font-semibold">sold</span></h3>
+            <h3 className="text-2xl font-bold text-white mt-1">
+              {stats.totalOut.toLocaleString()} <span className="text-xs text-rose-400 font-semibold">sold</span>
+            </h3>
           </div>
           <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl">
             <ArrowUpRight className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Current Available */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Available Balance</p>
-            <h3 className="text-2xl font-bold text-white mt-1">{stats.totalAvailable.toLocaleString()} <span className="text-xs text-emerald-400 font-semibold">units</span></h3>
+            <h3 className="text-2xl font-bold text-white mt-1">
+              {stats.totalAvailable.toLocaleString()} <span className="text-xs text-emerald-400 font-semibold">units</span>
+            </h3>
           </div>
           <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
             <Boxes className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Low Stock Alerts Filter */}
         <div
           onClick={() => setFilterStockStatus(filterStockStatus === "LOW" ? "ALL" : "LOW")}
           className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
@@ -341,7 +345,6 @@ export default function InventoryMonitoringPage() {
           </div>
         </div>
 
-        {/* Out of Stock Filter */}
         <div
           onClick={() => setFilterStockStatus(filterStockStatus === "OUT" ? "ALL" : "OUT")}
           className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
@@ -395,7 +398,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Table: Includes Delivered, Total Out, and Balance */}
+      {/* Table */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -456,18 +459,12 @@ export default function InventoryMonitoringPage() {
                           </span>
                         )}
                       </td>
-                      
-                      {/* Delivered / In */}
                       <td className="px-4 py-3 text-right font-mono text-slate-300 whitespace-nowrap">
                         {item.initial_stock}
                       </td>
-
-                      {/* Total Out (Scanned) */}
                       <td className="px-4 py-3 text-right font-mono font-bold text-rose-400 whitespace-nowrap">
                         {item.total_out > 0 ? `-${item.total_out}` : "0"}
                       </td>
-
-                      {/* Available Balance */}
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <span
                           className={`font-bold font-mono text-sm ${
@@ -481,11 +478,9 @@ export default function InventoryMonitoringPage() {
                           {item.current_stock}
                         </span>
                       </td>
-
                       <td className="px-4 py-3 text-right text-slate-400 font-mono">
                         {item.safety_stock}
                       </td>
-
                       <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap font-mono text-[11px]">
                         {item.last_replenished_at
                           ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
