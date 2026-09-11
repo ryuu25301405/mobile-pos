@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 import {
   Boxes,
   Store,
@@ -16,6 +17,9 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
+  Upload,
+  CheckCircle2,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -28,6 +32,13 @@ interface StoreInventoryItem {
   safety_stock: number;
   last_replenished_at: string;
   total_out: number;
+}
+
+interface BulkImportItem {
+  store: string;
+  style_code: string;
+  sku: string;
+  quantity: number;
 }
 
 const STORES = [
@@ -54,7 +65,7 @@ export default function InventoryMonitoringPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // Restock Modal State
+  // Single Restock Modal
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
   const [restockStyleCode, setRestockStyleCode] = useState<string>("");
   const [restockSku, setRestockSku] = useState<string>("");
@@ -62,7 +73,13 @@ export default function InventoryMonitoringPage() {
   const [restockQty, setRestockQty] = useState<number>(10);
   const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
 
-  // Reset pagination back to page 1 whenever filters or items per page change
+  // Bulk Import Modal State
+  const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
+  const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
+  const [bulkPreview, setBulkPreview] = useState<BulkImportItem[]>([]);
+  const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedStore, searchQuery, filterStockStatus, pageSize]);
@@ -115,7 +132,7 @@ export default function InventoryMonitoringPage() {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Realtime subscription with proper teardown
+  // Realtime subscription with cleanup
   useEffect(() => {
     const channel = supabase
       .channel("store_inventory_feed")
@@ -131,6 +148,7 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
+  // Single Item Restock
   const handleStockIn = async (e: React.FormEvent) => {
     e.preventDefault();
     const styleCode = restockStyleCode.trim();
@@ -188,7 +206,75 @@ export default function InventoryMonitoringPage() {
     }
   };
 
-  // Filtered List
+  // Bulk File Upload Parser
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: "binary" });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data: any[] = XLSX.utils.sheet_to_json(ws);
+
+      const parsed: BulkImportItem[] = data.map((row) => {
+        // Flexible column mapping (supports various casing in Excel)
+        const store =
+          row["Store"] || row["store"] || row["Store Location"] || bulkDefaultStore;
+        const style =
+          row["Style Code"] ||
+          row["style_code"] ||
+          row["Style"] ||
+          row["style"] ||
+          "";
+        const sku =
+          row["SKU"] || row["sku"] || row["Barcode"] || row["barcode"] || "";
+        const qty = Number(
+          row["Quantity"] || row["quantity"] || row["Qty"] || row["qty"] || 0
+        );
+
+        return {
+          store: String(store).trim(),
+          style_code: String(style).trim(),
+          sku: String(sku).trim(),
+          quantity: Math.max(0, qty),
+        };
+      }).filter((item) => item.quantity > 0 && (item.style_code || item.sku));
+
+      setBulkPreview(parsed);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  // Process Bulk Upsert via Supabase Stored Procedure
+  const handleConfirmBulkDelivery = async () => {
+    if (bulkPreview.length === 0) return;
+    setBulkSubmitting(true);
+
+    try {
+      const { error } = await supabase.rpc("bulk_receive_delivery", {
+        p_items: bulkPreview,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      alert(`Successfully processed ${bulkPreview.length} delivery items!`);
+      setIsBulkOpen(false);
+      setBulkPreview([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      fetchInventory();
+    } catch (err: any) {
+      alert(`Bulk intake failed: ${err.message || "Unknown error"}`);
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const q = searchQuery.toLowerCase();
@@ -210,7 +296,6 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus]);
 
-  // Pagination Calculations
   const totalItems = filteredItems.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
   const startIndex = (currentPage - 1) * pageSize;
@@ -218,7 +303,6 @@ export default function InventoryMonitoringPage() {
     return filteredItems.slice(startIndex, startIndex + pageSize);
   }, [filteredItems, startIndex, pageSize]);
 
-  // Overall Inventory Stats
   const stats = useMemo(() => {
     const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
     const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
@@ -264,12 +348,22 @@ export default function InventoryMonitoringPage() {
             <span>Sales Report</span>
           </Link>
 
+          {/* Bulk Import Trigger */}
+          <button
+            onClick={() => setIsBulkOpen(true)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-indigo-600/10"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Bulk Delivery (Excel)</span>
+          </button>
+
+          {/* Single Item Trigger */}
           <button
             onClick={() => setIsRestockOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-emerald-600/10"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>+ Receive Delivery</span>
+            <span>+ Single Item</span>
           </button>
         </div>
       </div>
@@ -464,7 +558,7 @@ export default function InventoryMonitoringPage() {
           </table>
         </div>
 
-        {/* Pagination Bar */}
+        {/* Pagination Controls */}
         <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-900/80">
           <div className="flex items-center gap-3">
             <span>
@@ -514,7 +608,126 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Stock In Delivery Modal */}
+      {/* MODAL 1: Bulk Delivery Excel Intake */}
+      {isBulkOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-2xl w-full space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-white text-sm">Bulk Delivery Intake (Spreadsheet)</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsBulkOpen(false);
+                  setBulkPreview([]);
+                }}
+                className="text-slate-500 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-200">Supported Columns in Excel / CSV:</p>
+                <p>• <code className="text-indigo-300">Style Code</code> (or Style) • <code className="text-indigo-300">SKU</code> (or Barcode) • <code className="text-indigo-300">Quantity</code> • <code className="text-indigo-300">Store</code> (optional)</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="text-slate-400 block mb-1">Default Store (Used if column missing in file)</label>
+                  <select
+                    value={bulkDefaultStore}
+                    onChange={(e) => setBulkDefaultStore(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white focus:outline-none"
+                  >
+                    {STORES.filter((s) => s !== "All Stores").map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex-1">
+                  <label className="text-slate-400 block mb-1">Select Excel / CSV File</label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    onChange={handleFileUpload}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-slate-300 text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Parsed Preview Table */}
+              {bulkPreview.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-slate-300 font-semibold">
+                    <span>Preview: {bulkPreview.length} items ready to update</span>
+                    <span className="text-emerald-400 font-bold">
+                      +{bulkPreview.reduce((acc, curr) => acc + curr.quantity, 0)} total units
+                    </span>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto border border-slate-800 rounded-lg">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                        <tr>
+                          <th className="p-2">Store</th>
+                          <th className="p-2">Style Code</th>
+                          <th className="p-2">SKU</th>
+                          <th className="p-2 text-right">Qty Received</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 text-slate-200">
+                        {bulkPreview.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-800/40">
+                            <td className="p-2 truncate max-w-[120px]">{item.store}</td>
+                            <td className="p-2 font-mono text-white">{item.style_code || "-"}</td>
+                            <td className="p-2 font-mono text-blue-400">{item.sku || "-"}</td>
+                            <td className="p-2 text-right font-bold text-emerald-400">+{item.quantity}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkOpen(false);
+                  setBulkPreview([]);
+                }}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkPreview.length === 0 || bulkSubmitting}
+                onClick={handleConfirmBulkDelivery}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer text-xs flex items-center gap-1.5"
+              >
+                {bulkSubmitting ? (
+                  <span>Updating Inventory...</span>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirm Intake ({bulkPreview.length} Items)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Single Restock Delivery Modal */}
       {isRestockOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-md w-full space-y-4">
