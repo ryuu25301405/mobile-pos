@@ -39,6 +39,8 @@ import {
   Store as StoreIcon,
   Grid,
   List,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -196,6 +198,10 @@ export default function QlikViewAnalyticsPage() {
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
   const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
+  
+  // Layout expansion state: "none" (split), "graph" (maximized left), "table" (maximized right)
+  const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
+
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
   >([]);
@@ -494,34 +500,6 @@ export default function QlikViewAnalyticsPage() {
       : CYCLIC_DIMENSIONS[cyclicIndex];
   }, [tableMode, drillLevel, cyclicIndex]);
 
-  const tableRows = useMemo(() => {
-    const map: Record<
-      string,
-      { label: string; revenue: number; units: number; count: number; aur: number }
-    > = {};
-
-    currentSubset.forEach((item) => {
-      const keyVal = item[currentDimension.key] || "Unknown";
-      if (!map[keyVal]) {
-        map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0, aur: 0 };
-      }
-      map[keyVal].revenue += item.revenue;
-      map[keyVal].units += item.quantity;
-      map[keyVal].count += 1;
-    });
-
-    Object.values(map).forEach((r) => {
-      r.aur = r.units > 0 ? r.revenue / r.units : 0;
-    });
-
-    return Object.values(map).sort((a, b) => {
-      if (activeMeasure.key === "units") return b.units - a.units;
-      if (activeMeasure.key === "transactions") return b.count - a.count;
-      if (activeMeasure.key === "aur") return b.aur - a.aur;
-      return b.revenue - a.revenue;
-    });
-  }, [currentSubset, currentDimension, activeMeasure]);
-
   const graphRows = useMemo(() => {
     const map: Record<
       string,
@@ -680,18 +658,6 @@ export default function QlikViewAnalyticsPage() {
       totalLogs: matches.length,
     };
   }, [currentSubset, inspectedProduct]);
-
-  const handleRowClick = (label: string) => {
-    if (tableMode === "cyclic") {
-      toggleSelection(currentDimension.key, label);
-    } else {
-      toggleSelection(currentDimension.key, label);
-      setDrillBreadcrumbs((prev) => [...prev, { dim: currentDimension, value: label }]);
-      if (drillLevel < DRILL_HIERARCHY.length - 1) {
-        setDrillLevel((prev) => prev + 1);
-      }
-    }
-  };
 
   const handleGraphSliceClick = (label: string) => {
     toggleSelection(graphDimensionKey, label);
@@ -1037,28 +1003,9 @@ export default function QlikViewAnalyticsPage() {
         {/* Workspace Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs font-semibold">
-              <button
-                onClick={() => setTableMode("drilldown")}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer text-xs ${
-                  tableMode === "drilldown" ? "bg-emerald-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Drill-Down Mode
-              </button>
-              <button
-                onClick={() => setTableMode("cyclic")}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer text-xs ${
-                  tableMode === "cyclic" ? "bg-indigo-600 text-white font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Cyclic Mode
-              </button>
-            </div>
-
             <button
               onClick={cycleMeasure}
-              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
             >
               <Layers className="w-3.5 h-3.5 text-emerald-400" />
               <span>Measure: {activeMeasure.label} ⟳</span>
@@ -1066,11 +1013,10 @@ export default function QlikViewAnalyticsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Visual View Switcher (Bar Chart, Donut Ring, Table) */}
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
               <button
                 onClick={() => setVisualizationMode("chart")}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
                   visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -1079,99 +1025,57 @@ export default function QlikViewAnalyticsPage() {
               </button>
               <button
                 onClick={() => setVisualizationMode("donut")}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
                   visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
                 }`}
               >
                 <PieChartIcon className="w-3.5 h-3.5" />
                 <span>Proportion Ring</span>
               </button>
-              <button
-                onClick={() => setVisualizationMode("table")}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
-                  visualizationMode === "table" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Table className="w-3.5 h-3.5" />
-                <span>Table</span>
-              </button>
-            </div>
-
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-              <button
-                onClick={() => setActiveTab("both")}
-                className={`px-3 py-1 rounded-lg transition ${activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
-              >
-                Split
-              </button>
-              <button
-                onClick={() => setActiveTab("summary")}
-                className={`px-3 py-1 rounded-lg transition ${activeTab === "summary" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
-              >
-                Summary
-              </button>
-              <button
-                onClick={() => setActiveTab("details")}
-                className={`px-3 py-1 rounded-lg transition ${activeTab === "details" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
-              >
-                Products ({filteredProducts.length})
-              </button>
             </div>
           </div>
         </div>
 
-        {/* Drill Breadcrumbs */}
-        {tableMode === "drilldown" && (
-          <div className="bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-1.5 text-xs">
-            <span
-              onClick={() => handleBreadcrumbClick(0)}
-              className={`cursor-pointer hover:underline ${drillLevel === 0 ? "text-emerald-400 font-bold" : "text-slate-400"}`}
-            >
-              All Stores
-            </span>
-            {drillBreadcrumbs.map((bc, idx) => (
-              <div key={idx} className="flex items-center gap-1.5">
-                <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-                <span
-                  onClick={() => handleBreadcrumbClick(idx + 1)}
-                  className={`cursor-pointer hover:underline ${idx + 1 === drillLevel ? "text-emerald-400 font-bold" : "text-slate-400"}`}
-                >
-                  {bc.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* MAIN DISPLAY GRID - EQUAL HEIGHT MATCHING COLUMNS */}
-        <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
+        {/* MAIN DISPLAY GRID WITH EXPAND/MAXIMIZE CAPABILITY */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
-          {/* LEFT GRAPH STAGE (Fixed height matching right panel) */}
-          {(activeTab === "both" || activeTab === "summary") && (
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
-              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-xs font-bold text-white flex items-center gap-2">
+          {/* LEFT GRAPH STAGE */}
+          {expandedPanel !== "table" && (
+            <div className={`bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[640px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
+              <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-sm font-bold text-white flex items-center gap-2">
                   {visualizationMode === "donut" ? <PieChartIcon className="w-4 h-4 text-emerald-400" /> : <BarChart2 className="w-4 h-4 text-emerald-400" />}
-                  <span>{visualizationMode === "donut" ? "Proportion Share" : visualizationMode === "chart" ? "Bar Chart Breakdown" : "Aggregation Table"}</span>
+                  <span>{visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}</span>
                 </span>
 
-                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-xl text-[11px]">
-                  <span className="text-slate-400">Analyze by:</span>
-                  <select
-                    value={graphDimensionKey}
-                    onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)}
-                    className="bg-slate-900 text-emerald-400 font-bold focus:outline-none cursor-pointer"
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-3 py-1 rounded-xl text-xs">
+                    <span className="text-slate-400 font-medium">Analyze by:</span>
+                    <select
+                      value={graphDimensionKey}
+                      onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)}
+                      className="bg-slate-900 text-emerald-400 font-bold focus:outline-none cursor-pointer"
+                    >
+                      {CYCLIC_DIMENSIONS.map((dim) => (
+                        <option key={dim.key} value={dim.key}>{dim.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Maximize / Minimize Button */}
+                  <button
+                    onClick={() => setExpandedPanel(expandedPanel === "graph" ? "none" : "graph")}
+                    className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl transition cursor-pointer"
+                    title={expandedPanel === "graph" ? "Restore Split View" : "Maximize Panel"}
                   >
-                    {CYCLIC_DIMENSIONS.map((dim) => (
-                      <option key={dim.key} value={dim.key}>{dim.label}</option>
-                    ))}
-                  </select>
+                    {expandedPanel === "graph" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
               {visualizationMode === "donut" ? (
-                <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-8 flex-1 overflow-hidden">
-                  <div className="relative w-48 h-48 flex items-center justify-center shrink-0">
+                <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden">
+                  <div className="relative w-56 h-56 flex items-center justify-center shrink-0">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
                       {donutSlices.map((slice, idx) => {
@@ -1197,34 +1101,34 @@ export default function QlikViewAnalyticsPage() {
                       })}
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Total</span>
-                      <span className="text-sm font-black text-white">
+                      <span className="text-xs uppercase font-bold text-slate-400">Total</span>
+                      <span className="text-base font-black text-white">
                         {graphRows.length} items
                       </span>
                     </div>
                   </div>
 
-                  <div className="space-y-2 overflow-y-auto pr-2 w-full sm:w-56 max-h-[420px] [scrollbar-width:thin]">
+                  <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[460px] [scrollbar-width:thin]">
                     {graphRows.map((row) => (
                       <div
                         key={row.label}
                         onClick={() => handleGraphSliceClick(row.label)}
-                        className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 cursor-pointer transition"
+                        className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm"
                       >
-                        <div className="flex items-center gap-2 truncate mr-2">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                          <span className="font-semibold text-white truncate">{row.label}</span>
+                        <div className="flex items-center gap-2.5 truncate mr-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                          <span className="font-semibold text-white truncate text-sm">{row.label}</span>
                         </div>
-                        <div className="font-mono text-emerald-400 font-bold shrink-0">{row.share.toFixed(1)}%</div>
+                        <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm">{row.share.toFixed(1)}%</div>
                       </div>
                     ))}
                   </div>
                 </div>
-              ) : visualizationMode === "chart" ? (
-                <div className="p-4 space-y-3 flex-1 overflow-hidden flex flex-col">
-                  <div className="overflow-y-auto space-y-2 pr-1 flex-1 [scrollbar-width:thin]">
+              ) : (
+                <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col">
+                  <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin]">
                     {graphRows.length === 0 ? (
-                      <div className="p-8 text-center text-slate-500 text-xs">No chart data available.</div>
+                      <div className="p-12 text-center text-slate-500 text-sm">No chart data available.</div>
                     ) : (
                       graphRows.map((row) => {
                         const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
@@ -1238,18 +1142,18 @@ export default function QlikViewAnalyticsPage() {
                           <div
                             key={row.label}
                             onClick={() => handleGraphSliceClick(row.label)}
-                            className="bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 p-3 rounded-xl cursor-pointer transition space-y-1.5 group"
+                            className="bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm"
                           >
-                            <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center justify-between text-sm">
                               <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
                                 {row.label}
                               </span>
-                              <div className="flex items-center gap-2 font-mono shrink-0">
-                                <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
-                                <span className="font-bold text-emerald-400">{displayVal}</span>
+                              <div className="flex items-center gap-3 font-mono shrink-0">
+                                <span className="text-xs text-slate-400">{row.share.toFixed(1)}%</span>
+                                <span className="font-black text-emerald-400">{displayVal}</span>
                               </div>
                             </div>
-                            <div className="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                            <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden">
                               <div
                                 style={{ width: `${pct}%`, backgroundColor: row.color }}
                                 className="h-full rounded-full transition-all duration-500"
@@ -1261,113 +1165,89 @@ export default function QlikViewAnalyticsPage() {
                     )}
                   </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
-                      <tr>
-                        <th className="px-4 py-3">Dimension Item</th>
-                        <th className="px-3 py-3 text-right">Logs</th>
-                        <th className="px-3 py-3 text-right">Units</th>
-                        <th className="px-4 py-3 text-right">{activeMeasure.label}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-900 text-xs">
-                      {graphRows.map((row) => {
-                        const displayVal =
-                          activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
-                          activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
-                          activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
-                          `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-
-                        return (
-                          <tr key={row.label} onClick={() => handleGraphSliceClick(row.label)} className="hover:bg-slate-900/60 transition-colors cursor-pointer group">
-                            <td className="px-4 py-2.5 font-bold text-white group-hover:text-emerald-400">{row.label}</td>
-                            <td className="px-3 py-2.5 text-right text-slate-400 font-mono">{row.count}</td>
-                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{row.units}</td>
-                            <td className="px-4 py-2.5 text-right font-black text-emerald-400 font-mono">{displayVal}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               )}
             </div>
           )}
 
-          {/* RIGHT ITEMIZED PRODUCTS TABLE WITH VIEW MODE TOGGLE (Consolidated vs Store Breakdown) */}
-          {(activeTab === "both" || activeTab === "details") && (
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
-              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2">
+          {/* RIGHT ITEMIZED PRODUCTS TABLE WITH EXPAND/MAXIMIZE CAPABILITY */}
+          {expandedPanel !== "graph" && (
+            <div className={`bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
+              <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2.5">
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">Product Catalog ({filteredProducts.length})</span>
+                  <span className="text-sm font-bold text-white">Product Catalog ({filteredProducts.length})</span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  {/* View Mode Toggle: Consolidated vs Per-Store Breakdown */}
-                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px]">
+                <div className="flex items-center gap-3">
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
                     <button
                       onClick={() => setProductViewMode("consolidated")}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer font-medium ${
                         productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
                       }`}
-                      title="View total stocks across stores"
                     >
                       <List className="w-3.5 h-3.5" />
                       <span>Total Stock</span>
                     </button>
                     <button
                       onClick={() => setProductViewMode("store_breakdown")}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer font-medium ${
                         productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
                       }`}
-                      title="View stock breakdown per store"
                     >
                       <Grid className="w-3.5 h-3.5" />
-                      <span>Store Breakdown</span>
+                      <span>Store Breakdown Matrix</span>
                     </button>
                   </div>
 
-                  <div className="relative w-36 sm:w-40">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <div className="relative w-44 sm:w-52">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       placeholder="Search style..."
                       value={detailSearch}
                       onChange={(e) => setDetailSearch(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 text-xs pl-8 pr-2.5 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-900 border border-slate-800 text-xs pl-9 pr-3 py-1.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                   </div>
+
+                  {/* Maximize / Minimize Button */}
+                  <button
+                    onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")}
+                    className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl transition cursor-pointer"
+                    title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}
+                  >
+                    {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
               <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
                 {productViewMode === "consolidated" ? (
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
                       <tr>
-                        <th className="px-4 py-2">Style / SKU</th>
-                        <th className="px-3 py-2">Class</th>
-                        <th className="px-3 py-2">Color & Size</th>
-                        <th className="px-3 py-2 text-right">Price</th>
-                        <th className="px-3 py-2 text-right">Total Stock</th>
-                        <th className="px-4 py-2 text-right">Action</th>
+                        <th className="px-5 py-3">Style / SKU</th>
+                        <th className="px-4 py-3">Class</th>
+                        <th className="px-4 py-3">Color & Size</th>
+                        <th className="px-4 py-3 text-right">Price</th>
+                        <th className="px-4 py-3 text-right">Total Stock</th>
+                        <th className="px-5 py-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-900/80 text-xs">
                       {filteredProducts.length === 0 ? (
-                        <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
+                        <tr><td colSpan={6} className="p-10 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                            <td className="px-4 py-1.5 font-mono whitespace-nowrap">
-                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
-                              <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
+                            <td className="px-5 py-3 font-mono">
+                              <span className="font-bold text-emerald-400 block text-sm">{prod.styleCode}</span>
+                              <span className="text-blue-400 text-xs block">{prod.sku !== "-" ? prod.sku : ""}</span>
                             </td>
-                            <td className="px-3 py-1.5 whitespace-nowrap">
-                              <span className={`text-[10px] font-black px-2 py-0.2 rounded-lg border ${
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
                                 prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                 prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                                 "bg-slate-800 text-slate-400 border-slate-700"
@@ -1375,18 +1255,18 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-3 py-1.5 max-w-[120px] truncate">
-                              <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
-                              <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
+                            <td className="px-4 py-3 max-w-[180px]">
+                              <span className="text-white block font-medium text-sm" title={prod.styleName}>{prod.styleName}</span>
+                              <span className="text-xs text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
                             </td>
-                            <td className="px-3 py-1.5 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">{prod.units} pcs</td>
-                            <td className="px-4 py-1.5 text-right whitespace-nowrap">
+                            <td className="px-4 py-3 text-right text-slate-300 font-mono text-sm whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap">{prod.units} pcs</td>
+                            <td className="px-5 py-3 text-right whitespace-nowrap">
                               <button
                                 onClick={() => setInspectedProduct(prod)}
-                                className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                                className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer"
                               >
-                                <Eye className="w-3 h-3" />
+                                <Eye className="w-3.5 h-3.5" />
                                 <span>Inspect</span>
                               </button>
                             </td>
@@ -1396,38 +1276,37 @@ export default function QlikViewAnalyticsPage() {
                     </tbody>
                   </table>
                 ) : (
-                  /* PER-STORE BREAKDOWN MATRIX TABLE */
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
                       <tr>
-                        <th className="px-4 py-2">Style / Variant</th>
+                        <th className="px-5 py-3 sticky left-0 bg-slate-900 z-20">Style / Variant</th>
                         {universe.stores.map((st) => (
-                          <th key={st} className="px-2 py-2 text-right truncate max-w-[90px]" title={st}>
+                          <th key={st} className="px-3 py-3 text-right truncate max-w-[120px]" title={st}>
                             {st}
                           </th>
                         ))}
-                        <th className="px-3 py-2 text-right">Total</th>
+                        <th className="px-5 py-3 text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-900/80 text-xs">
                       {filteredProducts.length === 0 ? (
-                        <tr><td colSpan={universe.stores.length + 2} className="p-8 text-center text-slate-500">No product records.</td></tr>
+                        <tr><td colSpan={universe.stores.length + 2} className="p-10 text-center text-slate-500 text-sm">No product records.</td></tr>
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-4 py-1.5 font-mono whitespace-nowrap">
-                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
-                              <span className="text-[10px] text-slate-400">{prod.color} / {prod.size}</span>
+                            <td className="px-5 py-3.5 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r border-slate-800/60">
+                              <span className="font-bold text-emerald-400 block text-sm">{prod.styleCode}</span>
+                              <span className="text-xs text-slate-400">{prod.color} / {prod.size}</span>
                             </td>
                             {universe.stores.map((st) => {
                               const storeQty = prod.storeBreakdown[st] || 0;
                               return (
-                                <td key={st} className={`px-2 py-1.5 text-right font-mono ${storeQty > 0 ? "text-white font-semibold" : "text-slate-700"}`}>
+                                <td key={st} className={`px-3 py-3.5 text-right font-mono text-sm ${storeQty > 0 ? "text-white font-bold" : "text-slate-700"}`}>
                                   {storeQty > 0 ? `${storeQty}` : "-"}
                                 </td>
                               );
                             })}
-                            <td className="px-3 py-1.5 text-right font-mono font-black text-emerald-400 whitespace-nowrap">
+                            <td className="px-5 py-3.5 text-right font-mono font-black text-emerald-400 text-sm whitespace-nowrap">
                               {prod.units} pcs
                             </td>
                           </tr>
