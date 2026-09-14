@@ -26,7 +26,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   BarChart2,
-  PieChart,
   Table,
   ChevronDown,
   ChevronUp,
@@ -341,6 +340,7 @@ export default function QlikViewAnalyticsPage() {
 
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
   const [visualizationMode, setVisualizationMode] = useState<"table" | "chart">("table");
+  const [chartDimensionIndex, setChartDimensionIndex] = useState<number>(0);
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
   >([]);
@@ -655,6 +655,37 @@ export default function QlikViewAnalyticsPage() {
       r.aur = r.units > 0 ? r.revenue / r.units : 0;
     });
 
+    return Object.values(map).sort((a, b) => {
+      if (activeMeasure.key === "units") return b.units - a.units;
+      if (activeMeasure.key === "transactions") return b.count - a.count;
+      if (activeMeasure.key === "aur") return b.aur - a.aur;
+      return b.revenue - a.revenue;
+    });
+  }, [currentSubset, currentDimension, activeMeasure]);
+
+  // Independent Chart Data Calculation
+  const chartDimension = CYCLIC_DIMENSIONS[chartDimensionIndex];
+
+  const chartRows = useMemo(() => {
+    const map: Record<
+      string,
+      { label: string; revenue: number; units: number; count: number; aur: number }
+    > = {};
+
+    currentSubset.forEach((item) => {
+      const keyVal = item[chartDimension.key] || "Unknown";
+      if (!map[keyVal]) {
+        map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0, aur: 0 };
+      }
+      map[keyVal].revenue += item.revenue;
+      map[keyVal].units += item.quantity;
+      map[keyVal].count += 1;
+    });
+
+    Object.values(map).forEach((r) => {
+      r.aur = r.units > 0 ? r.revenue / r.units : 0;
+    });
+
     const rows = Object.values(map).sort((a, b) => {
       if (activeMeasure.key === "units") return b.units - a.units;
       if (activeMeasure.key === "transactions") return b.count - a.count;
@@ -684,12 +715,12 @@ export default function QlikViewAnalyticsPage() {
         share: totalVal > 0 ? (val / totalVal) * 100 : 0,
       };
     });
-  }, [currentSubset, currentDimension, activeMeasure]);
+  }, [currentSubset, chartDimension, activeMeasure]);
 
-  const maxMeasureValue = useMemo(() => {
-    if (tableRows.length === 0) return 1;
-    return Math.max(...tableRows.map((r) => r.measureValue), 1);
-  }, [tableRows]);
+  const maxChartMeasureValue = useMemo(() => {
+    if (chartRows.length === 0) return 1;
+    return Math.max(...chartRows.map((r) => r.measureValue), 1);
+  }, [chartRows]);
 
   // Granular Product Details with Automatic ABC / Pareto Classification
   const filteredProducts = useMemo(() => {
@@ -1560,12 +1591,12 @@ export default function QlikViewAnalyticsPage() {
           {/* TABLES / CHARTS GRID */}
           <div className={`grid gap-3 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
             
-            {/* TABLE 1 OR VISUAL BAR CHART */}
+            {/* TABLE 1 OR INDEPENDENT CHART VIEW */}
             {(activeTab === "both" || activeTab === "summary") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    {currentDimension.label} ({visualizationMode === "chart" ? "Visual Chart" : "Table View"})
+                    {visualizationMode === "chart" ? `Chart: ${chartDimension.label}` : currentDimension.label}
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
                     Sorted by {activeMeasure.label}
@@ -1640,49 +1671,66 @@ export default function QlikViewAnalyticsPage() {
                     </table>
                   </div>
                 ) : (
-                  /* INTERACTIVE BAR CHART VIEW */
-                  <div className="p-4 max-h-[460px] overflow-y-auto space-y-3">
-                    {tableRows.length === 0 ? (
-                      <div className="p-6 text-center text-slate-500 text-xs">No chart data available.</div>
-                    ) : (
-                      tableRows.map((row) => {
-                        const pct = Math.max(6, (row.measureValue / maxMeasureValue) * 100);
-                        const displayVal =
-                          activeMeasure.key === "units"
-                            ? `${row.units.toLocaleString()} pcs`
-                            : activeMeasure.key === "transactions"
-                            ? `${row.count.toLocaleString()} logs`
-                            : activeMeasure.key === "aur"
-                            ? `₱${row.aur.toFixed(2)}`
-                            : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+                  /* INTERACTIVE BAR CHART VIEW WITH INDEPENDENT DIMENSION PICKER */
+                  <div className="p-3 space-y-3">
+                    <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-[11px]">
+                      <span className="text-slate-400 font-semibold">Viewing Dimension:</span>
+                      <select
+                        value={chartDimensionIndex}
+                        onChange={(e) => setChartDimensionIndex(Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-800 text-emerald-400 font-bold px-2 py-1 rounded-md focus:outline-none cursor-pointer"
+                      >
+                        {CYCLIC_DIMENSIONS.map((dim, idx) => (
+                          <option key={dim.key} value={idx}>
+                            {dim.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                        return (
-                          <div
-                            key={row.label}
-                            onClick={() => handleRowClick(row.label)}
-                            className="bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition space-y-1.5 group"
-                            title={`Drill / Filter by ${row.label}`}
-                          >
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
-                                {row.label}
-                              </span>
-                              <div className="flex items-center gap-2 font-mono shrink-0">
-                                <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
-                                <span className="font-bold text-emerald-400">{displayVal}</span>
+                    <div className="max-h-[390px] overflow-y-auto space-y-2.5 pr-1">
+                      {chartRows.length === 0 ? (
+                        <div className="p-6 text-center text-slate-500 text-xs">No chart data available.</div>
+                      ) : (
+                        chartRows.map((row) => {
+                          const pct = Math.max(6, (row.measureValue / maxChartMeasureValue) * 100);
+                          const displayVal =
+                            activeMeasure.key === "units"
+                              ? `${row.units.toLocaleString()} pcs`
+                              : activeMeasure.key === "transactions"
+                              ? `${row.count.toLocaleString()} logs`
+                              : activeMeasure.key === "aur"
+                              ? `₱${row.aur.toFixed(2)}`
+                              : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                          return (
+                            <div
+                              key={row.label}
+                              onClick={() => handleRowClick(row.label)}
+                              className="bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition space-y-1.5 group"
+                              title={`Drill / Filter by ${row.label}`}
+                            >
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
+                                  {row.label}
+                                </span>
+                                <div className="flex items-center gap-2 font-mono shrink-0">
+                                  <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
+                                  <span className="font-bold text-emerald-400">{displayVal}</span>
+                                </div>
+                              </div>
+
+                              <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                                <div
+                                  style={{ width: `${pct}%` }}
+                                  className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500"
+                                />
                               </div>
                             </div>
-
-                            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${pct}%` }}
-                                className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500"
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
