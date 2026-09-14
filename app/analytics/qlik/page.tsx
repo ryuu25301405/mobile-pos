@@ -200,7 +200,6 @@ export default function QlikViewAnalyticsPage() {
   const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
   const [drawerSearch, setDrawerSearch] = useState("");
 
-  // Inspect Product Modal State
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -650,7 +649,6 @@ export default function QlikViewAnalyticsPage() {
     );
   }, [currentSubset, detailSearch]);
 
-  // Detailed Breakdown for Inspected Product Modal
   const inspectedProductBreakdown = useMemo(() => {
     if (!inspectedProduct) return { stores: [], totalLogs: 0 };
 
@@ -1398,10 +1396,10 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* ITEMIZED PRODUCTS TABLE WITH CLICK-TO-INSPECT */}
+          {/* ITEMIZED PRODUCTS TABLE WITH MAXIMIZED SPACE */}
           {(activeTab === "both" || activeTab === "details") && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white">Itemized Product Catalog (ABC Classified)</span>
@@ -1422,30 +1420,30 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto max-h-[340px]">
+              <div className="overflow-x-auto max-h-[520px]">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
                     <tr>
-                      <th className="px-4 py-2.5">Style / SKU</th>
-                      <th className="px-3 py-2.5">Pareto Class</th>
-                      <th className="px-3 py-2.5">Color & Size</th>
-                      <th className="px-3 py-2.5 text-right">Unit Price</th>
-                      <th className="px-3 py-2.5 text-right">Sold</th>
-                      <th className="px-4 py-2.5 text-right">Action</th>
+                      <th className="px-4 py-2">Style / SKU</th>
+                      <th className="px-3 py-2">Pareto Class</th>
+                      <th className="px-3 py-2">Color & Size</th>
+                      <th className="px-3 py-2 text-right">Unit Price</th>
+                      <th className="px-3 py-2 text-right">Sold</th>
+                      <th className="px-4 py-2 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-900 text-xs">
+                  <tbody className="divide-y divide-slate-900/80 text-xs">
                     {filteredProducts.length === 0 ? (
                       <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
                     ) : (
                       filteredProducts.map((prod) => (
                         <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                          <td className="px-4 py-2 font-mono whitespace-nowrap">
+                          <td className="px-4 py-1.5 font-mono whitespace-nowrap">
                             <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
                             <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-lg border ${
+                          <td className="px-3 py-1.5 whitespace-nowrap">
+                            <span className={`text-[10px] font-black px-2 py-0.2 rounded-lg border ${
                               prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                               prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                               "bg-slate-800 text-slate-400 border-slate-700"
@@ -1453,16 +1451,16 @@ export default function QlikViewAnalyticsPage() {
                               Class {prod.abcClass}
                             </span>
                           </td>
-                          <td className="px-3 py-2 max-w-[130px] truncate">
+                          <td className="px-3 py-1.5 max-w-[130px] truncate">
                             <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
                             <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
                           </td>
-                          <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
-                          <td className="px-4 py-2 text-right whitespace-nowrap">
+                          <td className="px-3 py-1.5 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
+                          <td className="px-4 py-1.5 text-right whitespace-nowrap">
                             <button
                               onClick={() => setInspectedProduct(prod)}
-                              className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
                             >
                               <Eye className="w-3 h-3" />
                               <span>Inspect</span>
@@ -1474,6 +1472,40 @@ export default function QlikViewAnalyticsPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Nested Mini-Chart Distribution */}
+              {topProductsForMiniChart.list.length > 0 && (
+                <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Top Product Revenue Distribution</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">{topProductsForMiniChart.list.length} leading variants</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {topProductsForMiniChart.list.map((item) => {
+                      const pct = Math.min(100, Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100));
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => toggleSelection("style_code", item.styleCode)}
+                          className="bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1"
+                        >
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-mono font-bold text-slate-200 truncate mr-1">{item.styleCode}</span>
+                            <span className="font-mono text-emerald-400 font-bold shrink-0">₱{item.revenue.toLocaleString()}</span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                            <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
