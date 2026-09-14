@@ -32,6 +32,10 @@ import {
   Bookmark,
   BookmarkPlus,
   Trash2,
+  ScanBarcode,
+  Store,
+  LayoutDashboard,
+  PlusCircle,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -663,7 +667,6 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [currentSubset, currentDimension, activeMeasure]);
 
-  // Independent Chart Data Calculation
   const chartDimension = CYCLIC_DIMENSIONS[chartDimensionIndex];
 
   const chartRows = useMemo(() => {
@@ -722,7 +725,6 @@ export default function QlikViewAnalyticsPage() {
     return Math.max(...chartRows.map((r) => r.measureValue), 1);
   }, [chartRows]);
 
-  // Granular Product Details with Automatic ABC / Pareto Classification
   const filteredProducts = useMemo(() => {
     const map: Record<
       string,
@@ -977,6 +979,54 @@ export default function QlikViewAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-4">
+      
+      {/* GLOBAL MASTER NAVIGATION BAR */}
+      <nav className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
+            <LayoutDashboard className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-white tracking-wide">Retail Control Center</h2>
+            <p className="text-[10px] text-slate-400 font-mono">Multi-Branch Analytics & Operations</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/analytics/qlik"
+            className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Analytics Hub</span>
+          </Link>
+
+          <Link
+            href="/inventory"
+            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+          >
+            <Boxes className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Store Inventory</span>
+          </Link>
+
+          <Link
+            href="/scanview"
+            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+          >
+            <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Scanner</span>
+          </Link>
+
+          <Link
+            href="/reports/daily-sales"
+            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>Daily Sales Report</span>
+          </Link>
+        </div>
+      </nav>
+
       {/* 1. COMMAND HUB HEADER */}
       <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3.5 gap-4">
         <div>
@@ -1031,21 +1081,6 @@ export default function QlikViewAnalyticsPage() {
               CSV
             </button>
           </div>
-
-          <Link
-            href="/inventory"
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-          >
-            <Boxes className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Store Inventory</span>
-          </Link>
-          <Link
-            href="/reports/daily-sales"
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-          >
-            <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Daily Sales</span>
-          </Link>
         </div>
       </header>
 
@@ -1671,7 +1706,7 @@ export default function QlikViewAnalyticsPage() {
                     </table>
                   </div>
                 ) : (
-                  /* INTERACTIVE BAR CHART VIEW WITH INDEPENDENT DIMENSION PICKER */
+                  /* INTERACTIVE BAR CHART VIEW */
                   <div className="p-3 space-y-3">
                     <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-[11px]">
                       <span className="text-slate-400 font-semibold">Viewing Dimension:</span>
