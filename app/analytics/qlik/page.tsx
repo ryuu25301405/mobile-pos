@@ -35,6 +35,8 @@ import {
   ScanBarcode,
   LayoutDashboard,
   SlidersHorizontal,
+  Eye,
+  Store as StoreIcon,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -149,6 +151,21 @@ const CHART_COLORS = [
   "#F43F5E", // Rose
 ];
 
+interface ProductSummaryItem {
+  key: string;
+  styleCode: string;
+  sku: string;
+  styleName: string;
+  color: string;
+  size: string;
+  category: string;
+  department: string;
+  price: number;
+  units: number;
+  revenue: number;
+  abcClass: "A" | "B" | "C";
+}
+
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,11 +194,14 @@ export default function QlikViewAnalyticsPage() {
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
-  >([0 as any]);
+  >([]);
 
   const [detailSearch, setDetailSearch] = useState("");
   const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
   const [drawerSearch, setDrawerSearch] = useState("");
+
+  // Inspect Product Modal State
+  const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -499,7 +519,6 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [currentSubset, currentDimension, activeMeasure]);
 
-  // Dynamic Graph Rows based on graphDimensionKey
   const graphRows = useMemo(() => {
     const map: Record<
       string,
@@ -572,22 +591,7 @@ export default function QlikViewAnalyticsPage() {
   }, [graphRows]);
 
   const filteredProducts = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        key: string;
-        styleCode: string;
-        sku: string;
-        styleName: string;
-        color: string;
-        size: string;
-        category: string;
-        department: string;
-        price: number;
-        units: number;
-        revenue: number;
-      }
-    > = {};
+    const map: Record<string, ProductSummaryItem> = {};
 
     currentSubset.forEach((item) => {
       const prodKey = `${item.style_code}-${item.sku}-${item.size}-${item.color}`;
@@ -604,6 +608,7 @@ export default function QlikViewAnalyticsPage() {
           price: item.price,
           units: 0,
           revenue: 0,
+          abcClass: "C",
         };
       }
       map[prodKey].units += item.quantity;
@@ -644,6 +649,33 @@ export default function QlikViewAnalyticsPage() {
         p.size.toLowerCase().includes(q)
     );
   }, [currentSubset, detailSearch]);
+
+  // Detailed Breakdown for Inspected Product Modal
+  const inspectedProductBreakdown = useMemo(() => {
+    if (!inspectedProduct) return { stores: [], totalLogs: 0 };
+
+    const matches = currentSubset.filter(
+      (item) =>
+        item.style_code === inspectedProduct.styleCode &&
+        item.color === inspectedProduct.color &&
+        item.size === inspectedProduct.size
+    );
+
+    const storeMap: Record<string, { store: string; units: number; revenue: number; logs: number }> = {};
+    matches.forEach((m) => {
+      if (!storeMap[m.store]) {
+        storeMap[m.store] = { store: m.store, units: 0, revenue: 0, logs: 0 };
+      }
+      storeMap[m.store].units += m.quantity;
+      storeMap[m.store].revenue += m.revenue;
+      storeMap[m.store].logs += 1;
+    });
+
+    return {
+      stores: Object.values(storeMap).sort((a, b) => b.revenue - a.revenue),
+      totalLogs: matches.length,
+    };
+  }, [currentSubset, inspectedProduct]);
 
   const topProductsForMiniChart = useMemo(() => {
     const list = filteredProducts.slice(0, 6);
@@ -1124,7 +1156,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSPACE WITH DYNAMIC GRAPH DIMENSION SELECTOR */}
+      {/* 4. MAIN ANALYTICS WORKSPACE */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4">
         
         {/* Workspace Controls */}
@@ -1216,7 +1248,7 @@ export default function QlikViewAnalyticsPage() {
         {/* MAIN DISPLAY GRID */}
         <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
           
-          {/* VISUAL GRAPH STAGE WITH DYNAMIC DIMENSION SELECTOR */}
+          {/* VISUAL GRAPH STAGE */}
           {(activeTab === "both" || activeTab === "summary") && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
@@ -1225,7 +1257,6 @@ export default function QlikViewAnalyticsPage() {
                   <span>{visualizationMode === "donut" ? "Proportion Share" : visualizationMode === "chart" ? "Bar Chart Breakdown" : "Aggregation Table"}</span>
                 </span>
 
-                {/* UNIVERSAL GRAPH DIMENSION SELECTOR */}
                 <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-xl text-[11px]">
                   <span className="text-slate-400">Analyze by:</span>
                   <select
@@ -1241,7 +1272,6 @@ export default function QlikViewAnalyticsPage() {
               </div>
 
               {visualizationMode === "donut" ? (
-                /* DONUT RING VISUALIZATION */
                 <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-8 min-h-[380px]">
                   <div className="relative w-48 h-48 flex items-center justify-center">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -1264,10 +1294,7 @@ export default function QlikViewAnalyticsPage() {
                             strokeDashoffset={strokeDashoffset}
                             onClick={() => handleGraphSliceClick(slice.label)}
                             className="cursor-pointer hover:opacity-80 transition-all duration-300"
-                            aria-label={`Filter by ${slice.label}`}
-                          >
-                            <title>{`Filter by ${slice.label}`}</title>
-                          </circle>
+                          />
                         );
                       })}
                     </svg>
@@ -1279,7 +1306,6 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* Legend */}
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 w-full sm:w-56">
                     {graphRows.map((row) => (
                       <div
@@ -1297,7 +1323,6 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
               ) : visualizationMode === "chart" ? (
-                /* BAR CHART VISUALIZATION */
                 <div className="p-4 space-y-3">
                   <div className="max-h-[410px] overflow-y-auto space-y-2 pr-1">
                     {graphRows.length === 0 ? (
@@ -1339,7 +1364,6 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
               ) : (
-                /* STANDARD TABLE VIEW */
                 <div className="overflow-x-auto max-h-[440px]">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
@@ -1374,7 +1398,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* ITEMIZED PRODUCTS TABLE */}
+          {/* ITEMIZED PRODUCTS TABLE WITH CLICK-TO-INSPECT */}
           {(activeTab === "both" || activeTab === "details") && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
@@ -1407,15 +1431,15 @@ export default function QlikViewAnalyticsPage() {
                       <th className="px-3 py-2.5">Color & Size</th>
                       <th className="px-3 py-2.5 text-right">Unit Price</th>
                       <th className="px-3 py-2.5 text-right">Sold</th>
-                      <th className="px-4 py-2.5 text-right">Total Revenue</th>
+                      <th className="px-4 py-2.5 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-900 text-xs">
                     {filteredProducts.length === 0 ? (
                       <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
                     ) : (
-                      filteredProducts.map((prod: any) => (
-                        <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
+                      filteredProducts.map((prod) => (
+                        <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
                           <td className="px-4 py-2 font-mono whitespace-nowrap">
                             <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
                             <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
@@ -1435,8 +1459,14 @@ export default function QlikViewAnalyticsPage() {
                           </td>
                           <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
-                          <td className="px-4 py-2 text-right font-mono font-black text-emerald-400 whitespace-nowrap">
-                            ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          <td className="px-4 py-2 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => setInspectedProduct(prod)}
+                              className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>Inspect</span>
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -1444,45 +1474,78 @@ export default function QlikViewAnalyticsPage() {
                   </tbody>
                 </table>
               </div>
-
-              {/* Nested Mini-Chart Distribution */}
-              {topProductsForMiniChart.list.length > 0 && (
-                <div className="p-3.5 bg-slate-900 border-t border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Top Product Revenue Distribution</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">{topProductsForMiniChart.list.length} leading variants</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {topProductsForMiniChart.list.map((item) => {
-                      const pct = Math.min(100, Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100));
-                      return (
-                        <div
-                          key={item.key}
-                          onClick={() => toggleSelection("style_code", item.styleCode)}
-                          className="bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-bold text-slate-200 truncate mr-1">{item.styleCode}</span>
-                            <span className="font-mono text-emerald-400 font-bold shrink-0">₱{item.revenue.toLocaleString()}</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
-                            <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full" />
-                          </div>
-                          <span className="text-[9px] text-slate-500 truncate block">{item.color} • {item.size} ({item.units} pcs)</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* CLICK-TO-INSPECT PRODUCT MODAL DRAWER */}
+      {inspectedProduct && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  SKU Inspection & Performance Audit
+                </span>
+                <h2 className="text-lg font-bold text-white mt-1">{inspectedProduct.styleName}</h2>
+              </div>
+              <button onClick={() => setInspectedProduct(null)} className="text-slate-500 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-500">Style Code</p>
+                <p className="text-sm font-mono font-bold text-emerald-400 mt-0.5">{inspectedProduct.styleCode}</p>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-500">Variant</p>
+                <p className="text-xs font-semibold text-white mt-0.5">{inspectedProduct.color} / {inspectedProduct.size}</p>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-500">Pareto Tier</p>
+                <p className="text-xs font-bold text-indigo-400 mt-0.5">Class {inspectedProduct.abcClass}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-slate-400 font-bold uppercase tracking-wider">Multi-Branch Sales Breakdown</span>
+                <span className="text-slate-500 font-mono">{inspectedProductBreakdown.totalLogs} total scan logs</span>
+              </div>
+
+              <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                {inspectedProductBreakdown.stores.map((st) => (
+                  <div key={st.store} className="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
+                      <span className="font-bold text-white">{st.store}</span>
+                    </div>
+                    <div className="flex items-center gap-4 font-mono">
+                      <span className="text-slate-400">{st.units} pcs</span>
+                      <span className="font-bold text-emerald-400">₱{st.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  toggleSelection("style_code", inspectedProduct.styleCode);
+                  setInspectedProduct(null);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Filter Workspace by {inspectedProduct.styleCode}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BOOKMARKS MANAGER MODAL */}
       {isBookmarkModalOpen && (
