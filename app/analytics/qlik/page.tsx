@@ -1264,8 +1264,10 @@ export default function QlikViewAnalyticsPage() {
                             strokeDashoffset={strokeDashoffset}
                             onClick={() => handleGraphSliceClick(slice.label)}
                             className="cursor-pointer hover:opacity-80 transition-all duration-300"
-                            title={`Filter by ${slice.label}`}
-                          />
+                            aria-label={`Filter by ${slice.label}`}
+                          >
+                            <title>{`Filter by ${slice.label}`}</title>
+                          </circle>
                         );
                       })}
                     </svg>
