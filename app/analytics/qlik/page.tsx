@@ -33,8 +33,8 @@ import {
   BookmarkPlus,
   Trash2,
   ScanBarcode,
-  Store,
   LayoutDashboard,
+  SlidersHorizontal,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ interface MeasureConfig {
 const MEASURES: MeasureConfig[] = [
   {
     key: "revenue",
-    label: "Revenue (₱)",
+    label: "Total Revenue (₱)",
     format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
   },
   {
@@ -84,12 +84,12 @@ const MEASURES: MeasureConfig[] = [
   },
   {
     key: "aur",
-    label: "AUR (₱)",
+    label: "Average Unit Retail (₱)",
     format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
   },
   {
     key: "transactions",
-    label: "Transactions",
+    label: "Transaction Logs",
     format: (v) => `${v.toLocaleString()} logs`,
   },
 ];
@@ -138,177 +138,6 @@ const EMPTY_SELECTIONS: StateSelection = {
   styles: [],
 };
 
-// --- GLASSMORPHIC LIST BOX COMPONENT ---
-interface ListBoxProps {
-  title: string;
-  items: string[];
-  selectedItems: string[];
-  possibleValues: Set<string>;
-  frequencies: Record<string, number>;
-  onToggle: (val: string) => void;
-  onClear: () => void;
-  maxHeight?: string;
-}
-
-function QlikListBox({
-  title,
-  items,
-  selectedItems,
-  possibleValues,
-  frequencies,
-  onToggle,
-  onClear,
-  maxHeight = "max-h-28",
-}: ListBoxProps) {
-  const [search, setSearch] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-
-  const normalizedItems = useMemo(() => {
-    const map = new Map<string, { display: string; originals: string[]; totalFreq: number }>();
-
-    items.forEach((item) => {
-      const key = item.trim().toUpperCase();
-      const existing = map.get(key);
-      const freq = frequencies[item] || 0;
-
-      if (!existing) {
-        map.set(key, {
-          display: item.trim(),
-          originals: [item],
-          totalFreq: freq,
-        });
-      } else {
-        existing.originals.push(item);
-        existing.totalFreq += freq;
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) => {
-      const aSel = a.originals.some((o) => selectedItems.includes(o));
-      const bSel = b.originals.some((o) => selectedItems.includes(o));
-      if (aSel && !bSel) return -1;
-      if (!aSel && bSel) return 1;
-      return a.display.localeCompare(b.display);
-    });
-  }, [items, selectedItems, frequencies]);
-
-  const filtered = normalizedItems.filter((item) =>
-    item.display.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const selectedCount = selectedItems.length;
-
-  return (
-    <div className="bg-slate-900/30 hover:bg-slate-900/50 rounded-xl overflow-hidden transition-all duration-200 border border-slate-800/40">
-      <div className="px-3 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
-          >
-            {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-          </button>
-          <span className="text-[11px] font-semibold text-slate-300 tracking-wide truncate">
-            {title}
-          </span>
-          {selectedCount > 0 && (
-            <span className="bg-emerald-500/20 text-emerald-400 text-[9px] font-bold px-1.5 py-0.2 rounded-full">
-              {selectedCount}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setShowSearch(!showSearch)}
-            className={`p-1 rounded transition-colors cursor-pointer ${
-              showSearch || search ? "text-emerald-400 bg-slate-800/60" : "text-slate-500 hover:text-slate-300"
-            }`}
-            title="Search list"
-          >
-            <Search className="w-3 h-3" />
-          </button>
-
-          {selectedCount > 0 && (
-            <button
-              type="button"
-              onClick={onClear}
-              className="text-[10px] text-slate-500 hover:text-rose-400 transition-colors font-medium px-1 cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {!collapsed && showSearch && (
-        <div className="px-2 pb-2">
-          <input
-            type="text"
-            placeholder={`Filter ${title.toLowerCase()}...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-950/80 border border-slate-800/60 focus:border-emerald-500/50 text-[11px] px-2.5 py-1 rounded-lg text-white placeholder-slate-500 focus:outline-none transition-colors"
-            autoFocus
-          />
-        </div>
-      )}
-
-      {!collapsed && (
-        <div
-          className={`${maxHeight} overflow-y-auto text-[11px] select-none [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-800`}
-        >
-          {filtered.length === 0 ? (
-            <div className="p-3 text-center text-slate-600 text-[10px] italic">
-              No items
-            </div>
-          ) : (
-            filtered.map((item) => {
-              const isSelected = item.originals.some((o) => selectedItems.includes(o));
-              const isPossible = item.originals.some((o) => possibleValues.has(o));
-              const primaryOriginal = item.originals[0];
-
-              return (
-                <div
-                  key={item.display}
-                  onClick={() => onToggle(primaryOriginal)}
-                  className={`px-3 py-1.5 flex items-center justify-between cursor-pointer transition-colors ${
-                    isSelected
-                      ? "bg-emerald-500/20 text-emerald-300 font-medium"
-                      : isPossible
-                      ? "text-slate-300 hover:bg-slate-800/40 hover:text-white"
-                      : "text-slate-600 opacity-40 hover:opacity-60"
-                  }`}
-                >
-                  <span className="truncate pr-2">{item.display}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`text-[10px] font-mono px-1 py-0.5 rounded ${
-                        isSelected
-                          ? "bg-emerald-500/30 text-emerald-200 font-bold"
-                          : isPossible
-                          ? "text-slate-500"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {item.totalFreq}
-                    </span>
-                    {isSelected && <Check className="w-3 h-3 text-emerald-400 stroke-[2.5]" />}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- MAIN PAGE ---
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -337,9 +166,11 @@ export default function QlikViewAnalyticsPage() {
   const [chartDimensionIndex, setChartDimensionIndex] = useState<number>(0);
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
-  >([]);
+  >([0 as any]);
 
   const [detailSearch, setDetailSearch] = useState("");
+  const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
+  const [drawerSearch, setDrawerSearch] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -968,24 +799,29 @@ export default function QlikViewAnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-4">
+    <div className="min-h-screen bg-[#090D16] text-slate-100 p-4 sm:p-6 space-y-4">
       
-      {/* FLOATING GLASS NAVIGATION BAR */}
-      <nav className="bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-2xl">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+      {/* 1. TOP HEADER & GLOBAL NAVIGATION DECK */}
+      <nav className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
             <LayoutDashboard className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white tracking-wide">Retail Control Center</h2>
-            <p className="text-[10px] text-slate-400 font-mono">Multi-Branch Analytics & Operations</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black tracking-tight text-white">RETAIL CONTROL CENTER</span>
+              <span className="text-[9px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                QlikView Active
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-mono">Multi-Branch Associative Analytics Suite</p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/analytics/qlik"
-            className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-xs font-bold transition"
+            className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition"
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>Analytics Hub</span>
@@ -993,7 +829,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/inventory"
-            className="flex items-center gap-1.5 bg-slate-900/40 hover:bg-slate-800/60 text-slate-300 border border-slate-800/50 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <Boxes className="w-3.5 h-3.5 text-indigo-400" />
             <span>Store Inventory</span>
@@ -1001,7 +837,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/scanview"
-            className="flex items-center gap-1.5 bg-slate-900/40 hover:bg-slate-800/60 text-slate-300 border border-slate-800/50 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" />
             <span>Scanner</span>
@@ -1009,7 +845,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/reports/daily-sales"
-            className="flex items-center gap-1.5 bg-slate-900/40 hover:bg-slate-800/60 text-slate-300 border border-slate-800/50 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
             <span>Daily Sales Report</span>
@@ -1017,26 +853,131 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </nav>
 
-      {/* HEADER CONTROLS */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800/40 pb-3.5 gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              QlikView Engine Active
-            </span>
-            <span className="text-[11px] text-slate-500 font-mono">
-              Associative Visual Analytics
-            </span>
+      {/* 2. EXECUTIVE KPI CARDS (Full Width Top Deck) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
+            </p>
+            <h3 className="text-2xl font-black text-white mt-1">
+              ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-[10px] text-emerald-400 font-mono mt-1">
+              {metricsA.shareOfTotal.toFixed(1)}% of total universe
+            </p>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-            Associative Sales & Drill-Down Analyzer
-          </h1>
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl">
+            <DollarSign className="w-5 h-5" />
+          </div>
         </div>
 
+        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State B Revenue" : "Units Sold"}
+            </p>
+            <h3 className="text-2xl font-black text-white mt-1">
+              {isComparativeMode
+                ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                : `${metricsA.units.toLocaleString()} pcs`}
+            </h3>
+            <p className="text-[10px] text-indigo-400 font-mono mt-1">
+              {isComparativeMode
+                ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
+                : `out of ${universe.totalUnits.toLocaleString()} total units`}
+            </p>
+          </div>
+          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl">
+            <ShoppingBag className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {isComparativeMode ? "State A Units" : "Transactions"}
+            </p>
+            <h3 className="text-2xl font-black text-white mt-1">
+              {isComparativeMode
+                ? `${metricsA.units.toLocaleString()} pcs`
+                : `${metricsA.transactions.toLocaleString()} logs`}
+            </h3>
+            <p className="text-[10px] text-blue-400 font-mono mt-1">
+              {isComparativeMode ? `State B: ${metricsB.units} pcs` : "scanned audit logs"}
+            </p>
+          </div>
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Average Unit Retail (AUR)
+            </p>
+            <h3 className="text-2xl font-black text-white mt-1">
+              ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-[10px] text-purple-400 font-mono mt-1">
+              {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail avg"}
+            </p>
+          </div>
+          <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* 3. TOP-DOCKED HORIZONTAL FACET BAR (Interactive Qlik Filter Drawer Trigger Hub) */}
+      <div className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-2">
+            <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
+            <span>Associative Facets:</span>
+          </div>
+
+          {/* Dimension Toggle Buttons */}
+          {CYCLIC_DIMENSIONS.map((dim) => {
+            const fieldKeyMap: Record<string, keyof StateSelection> = {
+              store: "stores",
+              department: "departments",
+              category: "categories",
+              color: "colors",
+              size: "sizes",
+              style_code: "styles",
+            };
+            const count = activeSelection[fieldKeyMap[dim.key]]?.length || 0;
+
+            return (
+              <button
+                key={dim.key}
+                onClick={() => setActiveFilterDrawer(activeFilterDrawer === dim.key ? null : dim.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                  count > 0
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : activeFilterDrawer === dim.key
+                    ? "bg-slate-800 text-white border-slate-700"
+                    : "bg-slate-950/80 text-slate-300 border-slate-800 hover:border-slate-700"
+                }`}
+              >
+                <span>{dim.label}</span>
+                {count > 0 && (
+                  <span className="bg-emerald-500 text-slate-950 px-1.5 py-0.2 rounded-md text-[10px] font-black">
+                    {count}
+                  </span>
+                )}
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800/80 text-amber-400 border border-slate-800/50 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <Bookmark className="w-3.5 h-3.5" />
             <span>Presets ({bookmarks.length})</span>
@@ -1046,268 +987,12 @@ export default function QlikViewAnalyticsPage() {
             onClick={() => setIsComparativeMode(!isComparativeMode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
               isComparativeMode
-                ? "bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/20"
-                : "bg-slate-900/60 hover:bg-slate-800/80 text-slate-300 border-slate-800/50"
+                ? "bg-purple-600 text-white border-purple-500 shadow-lg"
+                : "bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800"
             }`}
           >
             <GitCompare className="w-3.5 h-3.5" />
-            <span>{isComparativeMode ? "Comparative: ON" : "Alternate States (A/B)"}</span>
-          </button>
-
-          <div className="flex items-center bg-slate-900/60 border border-slate-800/50 rounded-xl p-0.5 text-xs">
-            <button
-              onClick={() => exportToSpreadsheet("xlsx")}
-              className="flex items-center gap-1 text-emerald-400 hover:text-white px-3 py-1 rounded-lg transition font-semibold cursor-pointer"
-            >
-              <Download className="w-3 h-3" />
-              <span>Excel</span>
-            </button>
-            <span className="text-slate-700">|</span>
-            <button
-              onClick={() => exportToSpreadsheet("csv")}
-              className="text-slate-400 hover:text-white px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer"
-            >
-              CSV
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* DATE RANGE TOOLBAR */}
-      <div className="bg-slate-900/30 border border-slate-800/40 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-wider text-[10px] mr-1">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Date Range:</span>
-          </div>
-
-          <div className="flex items-center bg-slate-950/60 border border-slate-800/60 rounded-xl p-0.5 text-[11px]">
-            <button
-              onClick={() => applyDatePreset("all")}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "all" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              All Time
-            </button>
-            <button
-              onClick={() => applyDatePreset("today")}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "today" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Today
-            </button>
-            <button
-              onClick={() => applyDatePreset("yesterday")}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "yesterday" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Yesterday
-            </button>
-            <button
-              onClick={() => applyDatePreset("7days")}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "7days" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Last 7 Days
-            </button>
-            <button
-              onClick={() => applyDatePreset("30days")}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "30days" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Last 30 Days
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-slate-950/60 border border-slate-800/60 rounded-xl px-2.5 py-1">
-            <span className="text-[10px] uppercase text-slate-500 font-bold">From</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setDatePreset("custom");
-              }}
-              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-950/60 border border-slate-800/60 rounded-xl px-2.5 py-1">
-            <span className="text-[10px] uppercase text-slate-500 font-bold">To</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setDatePreset("custom");
-              }}
-              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
-            />
-          </div>
-
-          {(startDate || endDate) && (
-            <button
-              onClick={() => applyDatePreset("all")}
-              className="text-[11px] text-slate-400 hover:text-rose-400 px-2.5 py-1 bg-slate-950/60 border border-slate-800/60 rounded-xl cursor-pointer"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* COMPARATIVE MODE & SELECTIONS BAR */}
-      {isComparativeMode && (
-        <div className="bg-purple-950/20 border border-purple-500/20 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-purple-300 flex items-center gap-1.5">
-              <GitCompare className="w-4 h-4 text-purple-400" />
-              Active Target State:
-            </span>
-
-            <div className="flex items-center bg-slate-950/60 border border-slate-800/60 rounded-xl p-0.5">
-              <button
-                onClick={() => setActiveEditingState("A")}
-                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  activeEditingState === "A" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                State A (Baseline)
-              </button>
-              <button
-                onClick={() => setActiveEditingState("B")}
-                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  activeEditingState === "B" ? "bg-purple-500 text-white" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                State B (Comparison)
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400">Δ Revenue:</span>
-              <span
-                className={`font-bold flex items-center ${
-                  metricsA.revenue >= metricsB.revenue ? "text-emerald-400" : "text-rose-400"
-                }`}
-              >
-                {metricsA.revenue >= metricsB.revenue ? (
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                ) : (
-                  <ArrowDownRight className="w-3.5 h-3.5" />
-                )}
-                ₱{Math.abs(metricsA.revenue - metricsB.revenue).toLocaleString("en-PH", {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400">Δ Units:</span>
-              <span
-                className={`font-bold ${
-                  metricsA.units >= metricsB.units ? "text-emerald-400" : "text-rose-400"
-                }`}
-              >
-                {metricsA.units - metricsB.units > 0 ? "+" : ""}
-                {metricsA.units - metricsB.units} pcs
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ACTIVE SELECTIONS PILL ROW */}
-      <div className="bg-slate-900/30 border border-slate-800/40 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1">
-            <Filter className="w-3 h-3 text-emerald-400" />
-            {isComparativeMode ? `State ${activeEditingState} Selections:` : "Active Selections:"}
-          </span>
-
-          {activeSelection.stores.length === 0 &&
-          activeSelection.departments.length === 0 &&
-          activeSelection.categories.length === 0 &&
-          activeSelection.colors.length === 0 &&
-          activeSelection.sizes.length === 0 &&
-          activeSelection.styles.length === 0 ? (
-            <span className="text-slate-500 italic text-[11px]">None (Universe State)</span>
-          ) : (
-            <>
-              {activeSelection.stores.map((s) => (
-                <span
-                  key={s}
-                  onClick={() => toggleSelection("store", s)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Store: {s} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-              {activeSelection.departments.map((d) => (
-                <span
-                  key={d}
-                  onClick={() => toggleSelection("department", d)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Dept: {d} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-              {activeSelection.categories.map((c) => (
-                <span
-                  key={c}
-                  onClick={() => toggleSelection("category", c)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Category: {c} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-              {activeSelection.colors.map((cl) => (
-                <span
-                  key={cl}
-                  onClick={() => toggleSelection("color", cl)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Color: {cl} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-              {activeSelection.sizes.map((sz) => (
-                <span
-                  key={sz}
-                  onClick={() => toggleSelection("size", sz)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Size: {sz} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-              {activeSelection.styles.map((st) => (
-                <span
-                  key={st}
-                  onClick={() => toggleSelection("style_code", st)}
-                  className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
-                >
-                  Style: {st} <X className="w-2.5 h-2.5" />
-                </span>
-              ))}
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold transition px-2.5 py-1 bg-slate-950/60 border border-slate-800/60 rounded-xl cursor-pointer text-[11px]"
-          >
-            <BookmarkPlus className="w-3 h-3" />
-            <span>Save Preset</span>
+            <span>{isComparativeMode ? "State A/B: ON" : "State A/B"}</span>
           </button>
 
           {(activeSelection.stores.length > 0 ||
@@ -1318,609 +1003,450 @@ export default function QlikViewAnalyticsPage() {
             activeSelection.styles.length > 0) && (
             <button
               onClick={clearCurrentStateSelections}
-              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2.5 py-1 bg-slate-950/60 border border-slate-800/60 rounded-xl cursor-pointer text-[11px]"
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs"
             >
-              <RotateCcw className="w-3 h-3" />
-              <span>Clear State</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filters</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* COMMAND CANVAS LAYOUT GRID */}
-      <div className="grid grid-cols-12 gap-4 items-start pt-1">
+      {/* FILTER DRAWER / POPUP LISTBOX WHEN ACTIVE */}
+      {activeFilterDrawer && (
+        <div className="bg-[#111827] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Filtering: {CYCLIC_DIMENSIONS.find((d) => d.key === activeFilterDrawer)?.label}
+              </h3>
+            </div>
+            <button
+              onClick={() => {
+                setActiveFilterDrawer(null);
+                setDrawerSearch("");
+              }}
+              className="text-slate-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search filter values..."
+              value={drawerSearch}
+              onChange={(e) => setDrawerSearch(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto pr-1">
+            {(() => {
+              const fieldMap: Record<DimensionKey, { items: string[]; sel: string[]; poss: Set<string>; freq: Record<string, number> }> = {
+                store: { items: universe.stores, sel: activeSelection.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
+                department: { items: universe.departments, sel: activeSelection.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
+                category: { items: universe.categories, sel: activeSelection.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
+                color: { items: universe.colors, sel: activeSelection.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
+                size: { items: universe.sizes, sel: activeSelection.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
+                style_code: { items: universe.styles, sel: activeSelection.styles, poss: new Set(universe.styles), freq: {} },
+              };
+
+              const current = fieldMap[activeFilterDrawer];
+              const filteredList = current.items.filter((i) => i.toLowerCase().includes(drawerSearch.toLowerCase()));
+
+              if (filteredList.length === 0) {
+                return <div className="col-span-full py-4 text-center text-slate-500 text-xs italic">No matching options found.</div>;
+              }
+
+              return filteredList.map((val) => {
+                const isSelected = current.sel.includes(val);
+                const isPossible = activeFilterDrawer === "style_code" || current.poss.has(val);
+                const freq = current.freq[val] || 0;
+
+                return (
+                  <div
+                    key={val}
+                    onClick={() => toggleSelection(activeFilterDrawer, val)}
+                    className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between text-xs border ${
+                      isSelected
+                        ? "bg-emerald-600 text-white font-bold border-emerald-500 shadow-md"
+                        : isPossible
+                        ? "bg-slate-950/80 text-slate-200 border-slate-800 hover:border-slate-700"
+                        : "bg-slate-950/30 text-slate-600 border-slate-900 opacity-40"
+                    }`}
+                  >
+                    <span className="truncate mr-1">{val}</span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isSelected ? "bg-emerald-700 text-white" : "bg-slate-900 text-slate-400"}`}>
+                      {freq}
+                    </span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* 4. MAIN ANALYTICS WORKSTAGE (Full Width Workspace) */}
+      <div className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 shadow-2xl space-y-4">
         
-        {/* Left Sidebar: Borderless Glass Facet Panel */}
-        <div className="col-span-12 md:col-span-3 space-y-3">
-          <div className="bg-slate-900/20 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-3.5 space-y-3 shadow-xl">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-white">
-                  Data Facets {isComparativeMode && `(${activeEditingState})`}
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-500 bg-slate-950/80 px-2 py-0.5 rounded-lg border border-slate-800/60">
-                Assoc.
-              </span>
+        {/* Workspace Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs font-semibold">
+              <button
+                onClick={() => setTableMode("drilldown")}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer text-xs ${
+                  tableMode === "drilldown" ? "bg-emerald-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Drill-Down Mode
+              </button>
+              <button
+                onClick={() => setTableMode("cyclic")}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer text-xs ${
+                  tableMode === "cyclic" ? "bg-indigo-600 text-white font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Cyclic Mode
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <QlikListBox
-                title="Store Location"
-                items={universe.stores}
-                selectedItems={activeSelection.stores}
-                possibleValues={possibleValues.stores}
-                frequencies={fieldFrequencies.stores}
-                onToggle={(val) => toggleSelection("store", val)}
-                onClear={() => setActiveSelection((prev) => ({ ...prev, stores: [] }))}
-                maxHeight="max-h-32"
-              />
+            {tableMode === "cyclic" && (
+              <button
+                onClick={() => setCyclicIndex((prev) => (prev + 1) % CYCLIC_DIMENSIONS.length)}
+                className="flex items-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Dimension: {currentDimension.label}</span>
+              </button>
+            )}
 
-              <QlikListBox
-                title="Department"
-                items={universe.departments}
-                selectedItems={activeSelection.departments}
-                possibleValues={possibleValues.departments}
-                frequencies={fieldFrequencies.departments}
-                onToggle={(val) => toggleSelection("department", val)}
-                onClear={() => setActiveSelection((prev) => ({ ...prev, departments: [] }))}
-                maxHeight="max-h-24"
-              />
+            <button
+              onClick={cycleMeasure}
+              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Measure: {activeMeasure.label} ⟳</span>
+            </button>
 
-              <QlikListBox
-                title="Category"
-                items={universe.categories}
-                selectedItems={activeSelection.categories}
-                possibleValues={possibleValues.categories}
-                frequencies={fieldFrequencies.categories}
-                onToggle={(val) => toggleSelection("category", val)}
-                onClear={() => setActiveSelection((prev) => ({ ...prev, categories: [] }))}
-                maxHeight="max-h-24"
-              />
+            {tableMode === "drilldown" && drillLevel > 0 && (
+              <button
+                onClick={handleDrillUp}
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                <CornerLeftUp className="w-3.5 h-3.5" />
+                <span>Drill Up</span>
+              </button>
+            )}
+          </div>
 
-              <QlikListBox
-                title="Color"
-                items={universe.colors}
-                selectedItems={activeSelection.colors}
-                possibleValues={possibleValues.colors}
-                frequencies={fieldFrequencies.colors}
-                onToggle={(val) => toggleSelection("color", val)}
-                onClear={() => setActiveSelection((prev) => ({ ...prev, colors: [] }))}
-                maxHeight="max-h-28"
-              />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+              <button
+                onClick={() => setVisualizationMode("table")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                  visualizationMode === "table" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Table</span>
+              </button>
+              <button
+                onClick={() => setVisualizationMode("chart")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                  visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5" />
+                <span>Chart</span>
+              </button>
+            </div>
 
-              <QlikListBox
-                title="Size"
-                items={universe.sizes}
-                selectedItems={activeSelection.sizes}
-                possibleValues={possibleValues.sizes}
-                frequencies={fieldFrequencies.sizes}
-                onToggle={(val) => toggleSelection("size", val)}
-                onClear={() => setActiveSelection((prev) => ({ ...prev, sizes: [] }))}
-                maxHeight="max-h-28"
-              />
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+              <button
+                onClick={() => setActiveTab("both")}
+                className={`px-3 py-1 rounded-lg transition ${activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
+              >
+                Split View
+              </button>
+              <button
+                onClick={() => setActiveTab("summary")}
+                className={`px-3 py-1 rounded-lg transition ${activeTab === "summary" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
+              >
+                Summary
+              </button>
+              <button
+                onClick={() => setActiveTab("details")}
+                className={`px-3 py-1 rounded-lg transition ${activeTab === "details" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
+              >
+                Products ({filteredProducts.length})
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Right Stage: Metrics & Analytics Workspace */}
-        <div className="col-span-12 md:col-span-9 space-y-3">
+        {/* Drill Breadcrumbs */}
+        {tableMode === "drilldown" && (
+          <div className="bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-1.5 text-xs">
+            <span
+              onClick={() => handleBreadcrumbClick(0)}
+              className={`cursor-pointer hover:underline ${drillLevel === 0 ? "text-emerald-400 font-bold" : "text-slate-400"}`}
+            >
+              All Stores
+            </span>
+            {drillBreadcrumbs.map((bc, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
+                <span
+                  onClick={() => handleBreadcrumbClick(idx + 1)}
+                  className={`cursor-pointer hover:underline ${idx + 1 === drillLevel ? "text-emerald-400 font-bold" : "text-slate-400"}`}
+                >
+                  {bc.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TABLES / CHARTS STAGE */}
+        <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
           
-          {/* Executive KPI Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
-                </p>
-                <h3 className="text-xl font-black text-white mt-0.5">
-                  ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                </h3>
-                <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                  {metricsA.shareOfTotal.toFixed(1)}% of universe
-                </p>
-              </div>
-              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
-                <DollarSign className="w-4 h-4" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {isComparativeMode ? "State B Revenue" : "Units Sold"}
-                </p>
-                <h3 className="text-xl font-black text-white mt-0.5">
-                  {isComparativeMode
-                    ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                    : `${metricsA.units.toLocaleString()} pcs`}
-                </h3>
-                <p className="text-[10px] text-indigo-400 font-mono mt-0.5">
-                  {isComparativeMode
-                    ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
-                    : `out of ${universe.totalUnits.toLocaleString()} total units`}
-                </p>
-              </div>
-              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
-                <ShoppingBag className="w-4 h-4" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {isComparativeMode ? "State A Units" : "Transactions"}
-                </p>
-                <h3 className="text-xl font-black text-white mt-0.5">
-                  {isComparativeMode
-                    ? `${metricsA.units.toLocaleString()} pcs`
-                    : `${metricsA.transactions.toLocaleString()} logs`}
-                </h3>
-                <p className="text-[10px] text-blue-400 font-mono mt-0.5">
-                  {isComparativeMode ? `State B: ${metricsB.units} pcs` : "matching state"}
-                </p>
-              </div>
-              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Average Unit Retail (AUR)
-                </p>
-                <h3 className="text-xl font-black text-white mt-0.5">
-                  ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                </h3>
-                <p className="text-[10px] text-purple-400 font-mono mt-0.5">
-                  {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail"}
-                </p>
-              </div>
-              <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
-                <Layers className="w-4 h-4" />
-              </div>
-            </div>
-          </div>
-
-          {/* Analytics Toolbar */}
-          <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-lg">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center bg-slate-950/60 border border-slate-800/60 rounded-xl p-0.5 text-xs font-semibold">
-                <button
-                  onClick={() => setTableMode("drilldown")}
-                  className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                    tableMode === "drilldown"
-                      ? "bg-emerald-500 text-slate-950 font-bold shadow-sm"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Drill-Down
-                </button>
-                <button
-                  onClick={() => setTableMode("cyclic")}
-                  className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                    tableMode === "cyclic"
-                      ? "bg-indigo-600 text-white font-bold shadow-sm"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Cyclic
-                </button>
+          {/* SUMMARY TABLE OR CHART */}
+          {(activeTab === "both" || activeTab === "summary") && (
+            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-2">
+                  {visualizationMode === "chart" ? `Visual Distribution: ${chartDimension.label}` : `Aggregation Table: ${currentDimension.label}`}
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono">
+                  Sorted by {activeMeasure.label}
+                </span>
               </div>
 
-              {tableMode === "cyclic" && (
-                <button
-                  onClick={() => setCyclicIndex((prev) => (prev + 1) % CYCLIC_DIMENSIONS.length)}
-                  className="flex items-center gap-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer"
-                >
-                  <ArrowRightLeft className="w-3 h-3" />
-                  <span>Cycle: {currentDimension.label}</span>
-                </button>
-              )}
-
-              <button
-                onClick={cycleMeasure}
-                className="flex items-center gap-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer"
-                title="Click to cycle active measure"
-              >
-                <Layers className="w-3 h-3 text-emerald-400" />
-                <span>Measure: {activeMeasure.label} ⟳</span>
-              </button>
-
-              {tableMode === "drilldown" && drillLevel > 0 && (
-                <button
-                  onClick={handleDrillUp}
-                  className="flex items-center gap-1 text-[11px] bg-slate-800/60 hover:bg-slate-700/80 text-emerald-400 border border-slate-700/60 px-2.5 py-1 rounded-xl font-bold transition cursor-pointer"
-                >
-                  <CornerLeftUp className="w-3 h-3" />
-                  <span>Drill Up</span>
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Table vs Chart Switcher */}
-              <div className="flex items-center bg-slate-950/60 border border-slate-800/60 rounded-xl p-0.5 text-[11px]">
-                <button
-                  onClick={() => setVisualizationMode("table")}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-lg transition ${
-                    visualizationMode === "table" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <Table className="w-3 h-3" />
-                  <span>Table</span>
-                </button>
-                <button
-                  onClick={() => setVisualizationMode("chart")}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-lg transition ${
-                    visualizationMode === "chart" ? "bg-slate-800/80 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <BarChart2 className="w-3 h-3" />
-                  <span>Chart</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1 bg-slate-950/60 border border-slate-800/60 rounded-xl p-0.5 text-[11px]">
-                <button
-                  onClick={() => setActiveTab("both")}
-                  className={`px-2.5 py-1 rounded-lg transition ${
-                    activeTab === "both" ? "bg-slate-800/80 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Split View
-                </button>
-                <button
-                  onClick={() => setActiveTab("summary")}
-                  className={`px-2.5 py-1 rounded-lg transition ${
-                    activeTab === "summary" ? "bg-slate-800/80 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Summary
-                </button>
-                <button
-                  onClick={() => setActiveTab("details")}
-                  className={`px-2.5 py-1 rounded-lg transition ${
-                    activeTab === "details" ? "bg-slate-800/80 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Products ({filteredProducts.length})
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Drill Breadcrumbs */}
-          {tableMode === "drilldown" && (
-            <div className="bg-slate-900/30 backdrop-blur-md px-3.5 py-2 rounded-xl border border-slate-800/40 flex items-center gap-1 text-[11px]">
-              <span
-                onClick={() => handleBreadcrumbClick(0)}
-                className={`cursor-pointer hover:underline ${
-                  drillLevel === 0 ? "text-emerald-400 font-bold" : "text-slate-400"
-                }`}
-              >
-                All Stores
-              </span>
-
-              {drillBreadcrumbs.map((bc, idx) => (
-                <div key={idx} className="flex items-center gap-1">
-                  <ChevronRight className="w-3 h-3 text-slate-600" />
-                  <span
-                    onClick={() => handleBreadcrumbClick(idx + 1)}
-                    className={`cursor-pointer hover:underline ${
-                      idx + 1 === drillLevel ? "text-emerald-400 font-bold" : "text-slate-400"
-                    }`}
-                  >
-                    {bc.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* TABLES / CHARTS GRID */}
-          <div className={`grid gap-3 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
-            
-            {/* TABLE 1 OR INDEPENDENT CHART VIEW */}
-            {(activeTab === "both" || activeTab === "summary") && (
-              <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-                <div className="px-3.5 py-2.5 bg-slate-950/40 border-b border-slate-800/40 flex items-center justify-between">
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    {visualizationMode === "chart" ? `Chart: ${chartDimension.label}` : currentDimension.label}
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-mono">
-                    Sorted by {activeMeasure.label}
-                  </span>
-                </div>
-
-                {visualizationMode === "table" ? (
-                  <div className="overflow-x-auto max-h-[460px]">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800/40 sticky top-0 backdrop-blur-md">
-                        <tr>
-                          <th className="px-3.5 py-2">{currentDimension.label}</th>
-                          <th className="px-3 py-2 text-right">Logs</th>
-                          <th className="px-3 py-2 text-right">Units</th>
-                          <th className="px-3.5 py-2 text-right">
-                            <span
-                              onClick={cycleMeasure}
-                              className="cursor-pointer hover:text-emerald-400 underline decoration-dotted"
-                            >
-                              {activeMeasure.label} ⟳
-                            </span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/30 text-[11px]">
-                        {loading ? (
-                          <tr>
-                            <td colSpan={4} className="p-6 text-center text-slate-500">
-                              Loading aggregations...
-                            </td>
-                          </tr>
-                        ) : tableRows.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="p-6 text-center text-slate-500">
-                              No records in active state.
-                            </td>
-                          </tr>
-                        ) : (
-                          tableRows.map((row) => {
-                            const displayVal =
-                              activeMeasure.key === "units"
-                                ? `${row.units.toLocaleString()} pcs`
-                                : activeMeasure.key === "transactions"
-                                ? `${row.count.toLocaleString()} logs`
-                                : activeMeasure.key === "aur"
-                                ? `₱${row.aur.toFixed(2)}`
-                                : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-
-                            return (
-                              <tr
-                                key={row.label}
-                                className="hover:bg-slate-800/30 transition-colors cursor-pointer group"
-                                onClick={() => handleRowClick(row.label)}
-                              >
-                                <td className="px-3.5 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
-                                  {row.label}
-                                </td>
-                                <td className="px-3 py-2 text-right text-slate-400 font-mono">
-                                  {row.count}
-                                </td>
-                                <td className="px-3 py-2 text-right text-slate-300 font-mono">
-                                  {row.units}
-                                </td>
-                                <td className="px-3.5 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
-                                  {displayVal}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  /* INTERACTIVE BAR CHART VIEW */
-                  <div className="p-3.5 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800/50 text-[11px]">
-                      <span className="text-slate-400 font-semibold">Viewing Dimension:</span>
-                      <select
-                        value={chartDimensionIndex}
-                        onChange={(e) => setChartDimensionIndex(Number(e.target.value))}
-                        className="bg-slate-900 border border-slate-800 text-emerald-400 font-bold px-2.5 py-1 rounded-lg focus:outline-none cursor-pointer"
-                      >
-                        {CYCLIC_DIMENSIONS.map((dim, idx) => (
-                          <option key={dim.key} value={idx}>
-                            {dim.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="max-h-[390px] overflow-y-auto space-y-2.5 pr-1">
-                      {chartRows.length === 0 ? (
-                        <div className="p-6 text-center text-slate-500 text-xs">No chart data available.</div>
-                      ) : (
-                        chartRows.map((row) => {
-                          const pct = Math.max(6, (row.measureValue / maxChartMeasureValue) * 100);
-                          const displayVal =
-                            activeMeasure.key === "units"
-                              ? `${row.units.toLocaleString()} pcs`
-                              : activeMeasure.key === "transactions"
-                              ? `${row.count.toLocaleString()} logs`
-                              : activeMeasure.key === "aur"
-                              ? `₱${row.aur.toFixed(2)}`
-                              : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-
-                          return (
-                            <div
-                              key={row.label}
-                              onClick={() => handleRowClick(row.label)}
-                              className="bg-slate-950/40 border border-slate-800/40 hover:border-emerald-500/40 p-2.5 rounded-xl cursor-pointer transition space-y-1.5 group"
-                              title={`Drill / Filter by ${row.label}`}
-                            >
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
-                                  {row.label}
-                                </span>
-                                <div className="flex items-center gap-2 font-mono shrink-0">
-                                  <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
-                                  <span className="font-bold text-emerald-400">{displayVal}</span>
-                                </div>
-                              </div>
-
-                              <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                                <div
-                                  style={{ width: `${pct}%` }}
-                                  className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500"
-                                />
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TABLE 2: ITEMIZED PRODUCTS WITH ABC MERCHANDISING TAGS */}
-            {(activeTab === "both" || activeTab === "details") && (
-              <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-                <div className="px-3.5 py-2 bg-slate-950/40 border-b border-slate-800/40 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Package className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-xs font-bold text-white">Itemized Products (ABC Classified)</span>
-                    <span className="text-[10px] bg-slate-800/80 text-slate-300 px-1.5 py-0.2 rounded-lg font-mono">
-                      {filteredProducts.length}
-                    </span>
-                  </div>
-
-                  <div className="relative w-32 sm:w-40">
-                    <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Search style/sku..."
-                      value={detailSearch}
-                      onChange={(e) => setDetailSearch(e.target.value)}
-                      className="w-full bg-slate-950/60 border border-slate-800/60 text-[10px] pl-7 pr-2.5 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto max-h-[300px]">
+              {visualizationMode === "table" ? (
+                <div className="overflow-x-auto max-h-[480px]">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800/40 sticky top-0 backdrop-blur-md">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
-                        <th className="px-3.5 py-2">Style / SKU</th>
-                        <th className="px-3 py-2">Class</th>
-                        <th className="px-3 py-2">Color / Size</th>
-                        <th className="px-3 py-2 text-right">Price</th>
-                        <th className="px-3 py-2 text-right">Sold</th>
-                        <th className="px-3.5 py-2 text-right">Amount</th>
+                        <th className="px-4 py-3">{currentDimension.label}</th>
+                        <th className="px-3 py-3 text-right">Logs</th>
+                        <th className="px-3 py-3 text-right">Units</th>
+                        <th className="px-4 py-3 text-right">
+                          <span onClick={cycleMeasure} className="cursor-pointer hover:text-emerald-400 underline decoration-dotted">
+                            {activeMeasure.label} ⟳
+                          </span>
+                        </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/30 text-[11px]">
-                      {filteredProducts.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-6 text-center text-slate-500">
-                            No product records in selection.
-                          </td>
-                        </tr>
+                    <tbody className="divide-y divide-slate-900 text-xs">
+                      {loading ? (
+                        <tr><td colSpan={4} className="p-8 text-center text-slate-500">Loading dataset...</td></tr>
+                      ) : tableRows.length === 0 ? (
+                        <tr><td colSpan={4} className="p-8 text-center text-slate-500">No records found matching active state.</td></tr>
                       ) : (
-                        filteredProducts.map((prod: any) => (
-                          <tr key={prod.key} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="px-3.5 py-2 font-mono whitespace-nowrap">
-                              <span className="font-bold text-emerald-400 block text-[11px]">
-                                {prod.styleCode}
-                              </span>
-                              <span className="text-blue-400 text-[10px] block">
-                                {prod.sku !== "-" ? prod.sku : ""}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
-                                  prod.abcClass === "A"
-                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                    : prod.abcClass === "B"
-                                    ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-                                    : "bg-slate-800/50 text-slate-400 border-slate-700/50"
-                                }`}
-                                title={`Class ${prod.abcClass}: Pareto Contribution Tier`}
-                              >
-                                Class {prod.abcClass}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 max-w-[120px] truncate">
-                              <span className="text-white block truncate text-[11px]" title={prod.styleName}>
-                                {prod.styleName}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                {prod.color} • <strong className="text-slate-200">{prod.size}</strong>
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
-                              ₱{prod.price.toFixed(0)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">
-                              {prod.units}
-                            </td>
-                            <td className="px-3.5 py-2 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
-                              ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        ))
+                        tableRows.map((row) => {
+                          const displayVal =
+                            activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
+                            activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
+                            activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
+                            `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                          return (
+                            <tr
+                              key={row.label}
+                              className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
+                              onClick={() => handleRowClick(row.label)}
+                            >
+                              <td className="px-4 py-2.5 font-bold text-white group-hover:text-emerald-400 truncate max-w-[200px]">
+                                {row.label}
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-slate-400 font-mono">{row.count}</td>
+                              <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{row.units}</td>
+                              <td className="px-4 py-2.5 text-right font-black text-emerald-400 font-mono whitespace-nowrap">
+                                {displayVal}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
                 </div>
+              ) : (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-xs">
+                    <span className="text-slate-400 font-bold">Chart Dimension:</span>
+                    <select
+                      value={chartDimensionIndex}
+                      onChange={(e) => setChartDimensionIndex(Number(e.target.value))}
+                      className="bg-slate-950 border border-slate-800 text-emerald-400 font-bold px-3 py-1 rounded-lg focus:outline-none cursor-pointer text-xs"
+                    >
+                      {CYCLIC_DIMENSIONS.map((dim, idx) => (
+                        <option key={dim.key} value={idx}>{dim.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Nested Mini-Chart */}
-                {topProductsForMiniChart.list.length > 0 && (
-                  <div className="p-3.5 bg-slate-950/40 border-t border-slate-800/40 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Top Product Revenue Distribution</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {topProductsForMiniChart.list.length} variants
-                      </span>
-                    </div>
+                  <div className="max-h-[410px] overflow-y-auto space-y-2 pr-1">
+                    {chartRows.length === 0 ? (
+                      <div className="p-8 text-center text-slate-500 text-xs">No chart data available.</div>
+                    ) : (
+                      chartRows.map((row) => {
+                        const pct = Math.max(6, (row.measureValue / maxChartMeasureValue) * 100);
+                        const displayVal =
+                          activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
+                          activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
+                          activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
+                          `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {topProductsForMiniChart.list.map((item) => {
-                        const pct = Math.min(
-                          100,
-                          Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100)
-                        );
                         return (
                           <div
-                            key={item.key}
-                            onClick={() => toggleSelection("style_code", item.styleCode)}
-                            className="bg-slate-900/40 border border-slate-800/40 hover:border-emerald-500/40 p-2.5 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1.5 shadow-sm"
-                            title={`Click to filter by ${item.styleCode}`}
+                            key={row.label}
+                            onClick={() => handleRowClick(row.label)}
+                            className="bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 p-3 rounded-xl cursor-pointer transition space-y-1.5 group"
                           >
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-mono font-bold text-slate-200 truncate mr-1">
-                                {item.styleCode}
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
+                                {row.label}
                               </span>
-                              <span className="font-mono text-emerald-400 font-semibold shrink-0">
-                                ₱{item.revenue.toLocaleString()}
-                              </span>
+                              <div className="flex items-center gap-2 font-mono shrink-0">
+                                <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
+                                <span className="font-bold text-emerald-400">{displayVal}</span>
+                              </div>
                             </div>
-
-                            <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${pct}%` }}
-                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full"
-                              />
+                            <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
+                              <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500" />
                             </div>
-
-                            <span className="text-[9px] text-slate-500 truncate block">
-                              {item.color} • {item.size} ({item.units} pcs)
-                            </span>
                           </div>
                         );
-                      })}
-                    </div>
+                      })
+                    )}
                   </div>
-                )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ITEMIZED PRODUCTS TABLE */}
+          {(activeTab === "both" || activeTab === "details") && (
+            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-white">Itemized Product Catalog (ABC Classified)</span>
+                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-lg font-mono font-bold">
+                    {filteredProducts.length} items
+                  </span>
+                </div>
+
+                <div className="relative w-40 sm:w-48">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search style or SKU..."
+                    value={detailSearch}
+                    onChange={(e) => setDetailSearch(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs pl-8 pr-3 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="overflow-x-auto max-h-[340px]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                    <tr>
+                      <th className="px-4 py-2.5">Style / SKU</th>
+                      <th className="px-3 py-2.5">Pareto Class</th>
+                      <th className="px-3 py-2.5">Color & Size</th>
+                      <th className="px-3 py-2.5 text-right">Unit Price</th>
+                      <th className="px-3 py-2.5 text-right">Sold</th>
+                      <th className="px-4 py-2.5 text-right">Total Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-900 text-xs">
+                    {filteredProducts.length === 0 ? (
+                      <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
+                    ) : (
+                      filteredProducts.map((prod: any) => (
+                        <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
+                          <td className="px-4 py-2 font-mono whitespace-nowrap">
+                            <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
+                            <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-lg border ${
+                              prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                              prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                              "bg-slate-800 text-slate-400 border-slate-700"
+                            }`}>
+                              Class {prod.abcClass}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 max-w-[130px] truncate">
+                            <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
+                            <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
+                          <td className="px-4 py-2 text-right font-mono font-black text-emerald-400 whitespace-nowrap">
+                            ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Nested Mini-Chart Distribution */}
+              {topProductsForMiniChart.list.length > 0 && (
+                <div className="p-3.5 bg-slate-900 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Top Product Revenue Distribution</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">{topProductsForMiniChart.list.length} leading variants</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {topProductsForMiniChart.list.map((item) => {
+                      const pct = Math.min(100, Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100));
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => toggleSelection("style_code", item.styleCode)}
+                          className="bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-mono font-bold text-slate-200 truncate mr-1">{item.styleCode}</span>
+                            <span className="font-mono text-emerald-400 font-bold shrink-0">₱{item.revenue.toLocaleString()}</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                            <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full" />
+                          </div>
+                          <span className="text-[9px] text-slate-500 truncate block">{item.color} • {item.size} ({item.units} pcs)</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* BOOKMARKS MODAL */}
+      {/* BOOKMARKS MANAGER MODAL */}
       {isBookmarkModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
+          <div className="bg-[#111827] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
@@ -1928,10 +1454,7 @@ export default function QlikViewAnalyticsPage() {
                 </span>
                 <h2 className="text-lg font-bold text-white mt-1">Bookmarks Manager</h2>
               </div>
-              <button
-                onClick={() => setIsBookmarkModalOpen(false)}
-                className="text-slate-500 hover:text-white cursor-pointer"
-              >
+              <button onClick={() => setIsBookmarkModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1943,15 +1466,12 @@ export default function QlikViewAnalyticsPage() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. Makati Underwear Audit..."
+                  placeholder="e.g. Q3 Metro Gaisano Audit..."
                   value={newBookmarkName}
                   onChange={(e) => setNewBookmarkName(e.target.value)}
                   className="flex-1 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
-                <button
-                  type="submit"
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
-                >
+                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer">
                   Save Preset
                 </button>
               </div>
@@ -1976,19 +1496,12 @@ export default function QlikViewAnalyticsPage() {
                     className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-3 rounded-xl flex items-center justify-between cursor-pointer transition group"
                   >
                     <div>
-                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition">
-                        {bm.name}
-                      </p>
+                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition">{bm.name}</p>
                       <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                        {bm.startDate && bm.endDate ? `${bm.startDate} to ${bm.endDate}` : "All Time"} • Stores: {bm.selection.stores.length > 0 ? bm.selection.stores.join(", ") : "All"}
+                        {bm.startDate && bm.endDate ? `${bm.startDate} to ${bm.endDate}` : "All Time"}
                       </p>
                     </div>
-
-                    <button
-                      onClick={(e) => deleteBookmark(bm.id, e)}
-                      className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer"
-                      title="Delete preset"
-                    >
+                    <button onClick={(e) => deleteBookmark(bm.id, e)} className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
