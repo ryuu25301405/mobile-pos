@@ -26,6 +26,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   BarChart2,
+  PieChart,
+  Table,
   ChevronDown,
   ChevronUp,
   Bookmark,
@@ -338,6 +340,7 @@ export default function QlikViewAnalyticsPage() {
   const [drillLevel, setDrillLevel] = useState<number>(0);
 
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
+  const [visualizationMode, setVisualizationMode] = useState<"table" | "chart">("table");
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
   >([]);
@@ -652,13 +655,41 @@ export default function QlikViewAnalyticsPage() {
       r.aur = r.units > 0 ? r.revenue / r.units : 0;
     });
 
-    return Object.values(map).sort((a, b) => {
+    const rows = Object.values(map).sort((a, b) => {
       if (activeMeasure.key === "units") return b.units - a.units;
       if (activeMeasure.key === "transactions") return b.count - a.count;
       if (activeMeasure.key === "aur") return b.aur - a.aur;
       return b.revenue - a.revenue;
     });
+
+    const totalVal = rows.reduce((sum, r) => {
+      if (activeMeasure.key === "units") return sum + r.units;
+      if (activeMeasure.key === "transactions") return sum + r.count;
+      if (activeMeasure.key === "aur") return sum + r.aur;
+      return sum + r.revenue;
+    }, 0);
+
+    return rows.map((r) => {
+      const val =
+        activeMeasure.key === "units"
+          ? r.units
+          : activeMeasure.key === "transactions"
+          ? r.count
+          : activeMeasure.key === "aur"
+          ? r.aur
+          : r.revenue;
+      return {
+        ...r,
+        measureValue: val,
+        share: totalVal > 0 ? (val / totalVal) * 100 : 0,
+      };
+    });
   }, [currentSubset, currentDimension, activeMeasure]);
+
+  const maxMeasureValue = useMemo(() => {
+    if (tableRows.length === 0) return 1;
+    return Math.max(...tableRows.map((r) => r.measureValue), 1);
+  }, [tableRows]);
 
   // Granular Product Details with Automatic ABC / Pareto Classification
   const filteredProducts = useMemo(() => {
@@ -700,13 +731,10 @@ export default function QlikViewAnalyticsPage() {
       map[prodKey].revenue += item.revenue;
     });
 
-    // Sort descending by revenue for Pareto calculation
     const list = Object.values(map).sort((a, b) => b.revenue - a.revenue);
-
     const totalSubRevenue = list.reduce((sum, p) => sum + p.revenue, 0);
     let cumulativeRevenue = 0;
 
-    // Assign ABC Class based on cumulative contribution
     const classifiedList = list.map((p) => {
       cumulativeRevenue += p.revenue;
       const cumulativePct = totalSubRevenue > 0 ? (cumulativeRevenue / totalSubRevenue) * 100 : 100;
@@ -1449,31 +1477,55 @@ export default function QlikViewAnalyticsPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
-              <button
-                onClick={() => setActiveTab("both")}
-                className={`px-2 py-0.5 rounded transition ${
-                  activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Split View
-              </button>
-              <button
-                onClick={() => setActiveTab("summary")}
-                className={`px-2 py-0.5 rounded transition ${
-                  activeTab === "summary" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Dimension Table
-              </button>
-              <button
-                onClick={() => setActiveTab("details")}
-                className={`px-2 py-0.5 rounded transition ${
-                  activeTab === "details" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Products ({filteredProducts.length})
-              </button>
+            <div className="flex items-center gap-3">
+              {/* Table vs Chart Switcher */}
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+                <button
+                  onClick={() => setVisualizationMode("table")}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded transition ${
+                    visualizationMode === "table" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Table className="w-3 h-3" />
+                  <span>Table</span>
+                </button>
+                <button
+                  onClick={() => setVisualizationMode("chart")}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded transition ${
+                    visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <BarChart2 className="w-3 h-3" />
+                  <span>Chart</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+                <button
+                  onClick={() => setActiveTab("both")}
+                  className={`px-2 py-0.5 rounded transition ${
+                    activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Split View
+                </button>
+                <button
+                  onClick={() => setActiveTab("summary")}
+                  className={`px-2 py-0.5 rounded transition ${
+                    activeTab === "summary" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Summary
+                </button>
+                <button
+                  onClick={() => setActiveTab("details")}
+                  className={`px-2 py-0.5 rounded transition ${
+                    activeTab === "details" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Products ({filteredProducts.length})
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1505,91 +1557,134 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* TABLES GRID */}
+          {/* TABLES / CHARTS GRID */}
           <div className={`grid gap-3 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
-            {/* TABLE 1: SUMMARY / DRILL / CYCLIC */}
+            
+            {/* TABLE 1 OR VISUAL BAR CHART */}
             {(activeTab === "both" || activeTab === "summary") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    {currentDimension.label}
-                    {tableMode === "drilldown" && drillLevel < DRILL_HIERARCHY.length - 1 && (
-                      <span className="text-[9px] lowercase bg-slate-800 text-slate-400 px-1 py-0.5 rounded font-normal">
-                        click to drill
-                      </span>
-                    )}
+                    {currentDimension.label} ({visualizationMode === "chart" ? "Visual Chart" : "Table View"})
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
                     Sorted by {activeMeasure.label}
                   </span>
                 </div>
 
-                <div className="overflow-x-auto max-h-[460px]">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
-                      <tr>
-                        <th className="px-3 py-2">{currentDimension.label}</th>
-                        <th className="px-2 py-2 text-right">Logs</th>
-                        <th className="px-2 py-2 text-right">Units</th>
-                        <th className="px-3 py-2 text-right">
-                          <span
-                            onClick={cycleMeasure}
-                            className="cursor-pointer hover:text-emerald-400 underline decoration-dotted"
-                          >
-                            {activeMeasure.label} ⟳
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-[11px]">
-                      {loading ? (
+                {visualizationMode === "table" ? (
+                  <div className="overflow-x-auto max-h-[460px]">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                         <tr>
-                          <td colSpan={4} className="p-6 text-center text-slate-500">
-                            Loading aggregations...
-                          </td>
-                        </tr>
-                      ) : tableRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="p-6 text-center text-slate-500">
-                            No records in active state.
-                          </td>
-                        </tr>
-                      ) : (
-                        tableRows.map((row) => {
-                          const displayVal =
-                            activeMeasure.key === "units"
-                              ? `${row.units.toLocaleString()} pcs`
-                              : activeMeasure.key === "transactions"
-                              ? `${row.count.toLocaleString()} logs`
-                              : activeMeasure.key === "aur"
-                              ? `₱${row.aur.toFixed(2)}`
-                              : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-
-                          return (
-                            <tr
-                              key={row.label}
-                              className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
-                              onClick={() => handleRowClick(row.label)}
+                          <th className="px-3 py-2">{currentDimension.label}</th>
+                          <th className="px-2 py-2 text-right">Logs</th>
+                          <th className="px-2 py-2 text-right">Units</th>
+                          <th className="px-3 py-2 text-right">
+                            <span
+                              onClick={cycleMeasure}
+                              className="cursor-pointer hover:text-emerald-400 underline decoration-dotted"
                             >
-                              <td className="px-3 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
+                              {activeMeasure.label} ⟳
+                            </span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                        {loading ? (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-slate-500">
+                              Loading aggregations...
+                            </td>
+                          </tr>
+                        ) : tableRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-slate-500">
+                              No records in active state.
+                            </td>
+                          </tr>
+                        ) : (
+                          tableRows.map((row) => {
+                            const displayVal =
+                              activeMeasure.key === "units"
+                                ? `${row.units.toLocaleString()} pcs`
+                                : activeMeasure.key === "transactions"
+                                ? `${row.count.toLocaleString()} logs`
+                                : activeMeasure.key === "aur"
+                                ? `₱${row.aur.toFixed(2)}`
+                                : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                            return (
+                              <tr
+                                key={row.label}
+                                className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                                onClick={() => handleRowClick(row.label)}
+                              >
+                                <td className="px-3 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
+                                  {row.label}
+                                </td>
+                                <td className="px-2 py-2 text-right text-slate-400 font-mono">
+                                  {row.count}
+                                </td>
+                                <td className="px-2 py-2 text-right text-slate-300 font-mono">
+                                  {row.units}
+                                </td>
+                                <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
+                                  {displayVal}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  /* INTERACTIVE BAR CHART VIEW */
+                  <div className="p-4 max-h-[460px] overflow-y-auto space-y-3">
+                    {tableRows.length === 0 ? (
+                      <div className="p-6 text-center text-slate-500 text-xs">No chart data available.</div>
+                    ) : (
+                      tableRows.map((row) => {
+                        const pct = Math.max(6, (row.measureValue / maxMeasureValue) * 100);
+                        const displayVal =
+                          activeMeasure.key === "units"
+                            ? `${row.units.toLocaleString()} pcs`
+                            : activeMeasure.key === "transactions"
+                            ? `${row.count.toLocaleString()} logs`
+                            : activeMeasure.key === "aur"
+                            ? `₱${row.aur.toFixed(2)}`
+                            : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                        return (
+                          <div
+                            key={row.label}
+                            onClick={() => handleRowClick(row.label)}
+                            className="bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition space-y-1.5 group"
+                            title={`Drill / Filter by ${row.label}`}
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
                                 {row.label}
-                              </td>
-                              <td className="px-2 py-2 text-right text-slate-400 font-mono">
-                                {row.count}
-                              </td>
-                              <td className="px-2 py-2 text-right text-slate-300 font-mono">
-                                {row.units}
-                              </td>
-                              <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
-                                {displayVal}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                              </span>
+                              <div className="flex items-center gap-2 font-mono shrink-0">
+                                <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
+                                <span className="font-bold text-emerald-400">{displayVal}</span>
+                              </div>
+                            </div>
+
+                            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${pct}%` }}
+                                className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
