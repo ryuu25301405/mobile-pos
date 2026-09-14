@@ -660,6 +660,7 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [currentSubset, currentDimension, activeMeasure]);
 
+  // Granular Product Details with Automatic ABC / Pareto Classification
   const filteredProducts = useMemo(() => {
     const map: Record<
       string,
@@ -699,11 +700,35 @@ export default function QlikViewAnalyticsPage() {
       map[prodKey].revenue += item.revenue;
     });
 
+    // Sort descending by revenue for Pareto calculation
     const list = Object.values(map).sort((a, b) => b.revenue - a.revenue);
 
-    if (!detailSearch.trim()) return list;
+    const totalSubRevenue = list.reduce((sum, p) => sum + p.revenue, 0);
+    let cumulativeRevenue = 0;
+
+    // Assign ABC Class based on cumulative contribution
+    const classifiedList = list.map((p) => {
+      cumulativeRevenue += p.revenue;
+      const cumulativePct = totalSubRevenue > 0 ? (cumulativeRevenue / totalSubRevenue) * 100 : 100;
+
+      let abcClass: "A" | "B" | "C" = "C";
+      if (cumulativePct <= 80) {
+        abcClass = "A";
+      } else if (cumulativePct <= 95) {
+        abcClass = "B";
+      } else {
+        abcClass = "C";
+      }
+
+      return {
+        ...p,
+        abcClass,
+      };
+    });
+
+    if (!detailSearch.trim()) return classifiedList;
     const q = detailSearch.toLowerCase();
-    return list.filter(
+    return classifiedList.filter(
       (p) =>
         p.styleCode.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
@@ -1478,13 +1503,13 @@ export default function QlikViewAnalyticsPage() {
               </div>
             )}
 
-            {/* TABLE 2: ITEMIZED PRODUCT DETAILS WITH MINI-CHART */}
+            {/* TABLE 2: ITEMIZED PRODUCTS WITH ABC MERCHANDISING TAGS */}
             {(activeTab === "both" || activeTab === "details") && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
                 <div className="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <Package className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-xs font-bold text-white">Itemized Products</span>
+                    <span className="text-xs font-bold text-white">Itemized Products (ABC Classified)</span>
                     <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-mono">
                       {filteredProducts.length}
                     </span>
@@ -1507,6 +1532,7 @@ export default function QlikViewAnalyticsPage() {
                     <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
                         <th className="px-3 py-2">Style / SKU</th>
+                        <th className="px-2 py-2">Class</th>
                         <th className="px-2 py-2">Color / Size</th>
                         <th className="px-2 py-2 text-right">Price</th>
                         <th className="px-2 py-2 text-right">Sold</th>
@@ -1516,12 +1542,12 @@ export default function QlikViewAnalyticsPage() {
                     <tbody className="divide-y divide-slate-800/60 text-[11px]">
                       {filteredProducts.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-slate-500">
+                          <td colSpan={6} className="p-6 text-center text-slate-500">
                             No product records in selection.
                           </td>
                         </tr>
                       ) : (
-                        filteredProducts.map((prod) => (
+                        filteredProducts.map((prod: any) => (
                           <tr key={prod.key} className="hover:bg-slate-800/30 transition-colors">
                             <td className="px-3 py-2 font-mono whitespace-nowrap">
                               <span className="font-bold text-emerald-400 block text-[11px]">
@@ -1531,7 +1557,21 @@ export default function QlikViewAnalyticsPage() {
                                 {prod.sku !== "-" ? prod.sku : ""}
                               </span>
                             </td>
-                            <td className="px-2 py-2 max-w-[130px] truncate">
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                                  prod.abcClass === "A"
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                    : prod.abcClass === "B"
+                                    ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30"
+                                    : "bg-slate-800 text-slate-400 border-slate-700"
+                                }`}
+                                title={`Class ${prod.abcClass}: Pareto Contribution Tier`}
+                              >
+                                Class {prod.abcClass}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 max-w-[120px] truncate">
                               <span className="text-white block truncate text-[11px]" title={prod.styleName}>
                                 {prod.styleName}
                               </span>
@@ -1552,21 +1592,6 @@ export default function QlikViewAnalyticsPage() {
                         ))
                       )}
                     </tbody>
-                    {filteredProducts.length > 0 && (
-                      <tfoot className="bg-slate-950 text-slate-300 font-bold border-t border-slate-800 text-[11px]">
-                        <tr>
-                          <td colSpan={3} className="px-3 py-1.5 text-right uppercase text-[10px] text-slate-500">
-                            Total:
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono text-white">
-                            {metricsA.units}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
-                            ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
                   </table>
                 </div>
 
