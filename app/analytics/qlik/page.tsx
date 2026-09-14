@@ -388,7 +388,6 @@ export default function QlikViewAnalyticsPage() {
 
   useEffect(() => {
     fetchData();
-    // Load saved bookmarks from localStorage
     const saved = localStorage.getItem("qlik_analytics_bookmarks");
     if (saved) {
       try {
@@ -824,17 +823,14 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Bookmark Dropdown / Manager */}
-          <div className="relative group">
-            <button
-              onClick={() => setIsBookmarkModalOpen(true)}
-              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
-              title="Saved Selection Presets"
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-              <span>Presets ({bookmarks.length})</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setIsBookmarkModalOpen(true)}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
+            title="Saved Selection Presets"
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span>Presets ({bookmarks.length})</span>
+          </button>
 
           <button
             onClick={() => setIsComparativeMode(!isComparativeMode)}
@@ -1042,7 +1038,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* Current Selections Bar with Quick Bookmark Save Button */}
+      {/* Current Selections Bar */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1">
@@ -1232,10 +1228,10 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* Main Workspace */}
-      <div className="grid grid-cols-12 gap-3.5">
-        {/* Left: Modern List Boxes */}
-        <div className="col-span-12 md:col-span-3 space-y-2.5">
+      {/* Main Workspace with Sticky Sidebar Layout */}
+      <div className="grid grid-cols-12 gap-4 items-start">
+        {/* Left: Sticky List Boxes Sidebar */}
+        <div className="col-span-12 md:col-span-3 space-y-2.5 sticky top-4">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>Filter Dimensions {isComparativeMode && `(${activeEditingState})`}</span>
             <div className="flex items-center gap-1 text-[9px] lowercase text-slate-400">
@@ -1670,13 +1666,12 @@ export default function QlikViewAnalyticsPage() {
               </div>
               <button
                 onClick={() => setIsBookmarkModalOpen(false)}
-                className="text-slate-500 hover:text-white"
+                className="text-slate-500 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Save Current Filter State Form */}
             <form onSubmit={saveBookmark} className="space-y-3">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                 Save Current Filter State
@@ -1698,7 +1693,6 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </form>
 
-            {/* Saved Bookmarks List */}
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2">
                 Your Saved Presets ({bookmarks.length})
@@ -1728,7 +1722,7 @@ export default function QlikViewAnalyticsPage() {
 
                     <button
                       onClick={(e) => deleteBookmark(bm.id, e)}
-                      className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900"
+                      className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer"
                       title="Delete preset"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
