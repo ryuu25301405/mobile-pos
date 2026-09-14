@@ -494,16 +494,24 @@ export default function InventoryMonitoringPage() {
     setManualErrorMsg("");
 
     try {
+      // Pull complete historical metadata from scanned_logs if available
+      const { data: pastLog } = await supabase
+        .from("scanned_logs")
+        .select("description, category, department, color, size, style_name")
+        .eq("style_code", selectedManualItem.style_code)
+        .limit(1)
+        .maybeSingle();
+
       const payload = {
         store: manualStore || selectedManualItem.store,
         style_code: selectedManualItem.style_code,
         sku: selectedManualItem.sku || "-",
-        style_name: selectedManualItem.style_name || selectedManualItem.style_code,
-        description: selectedManualItem.department || "Manual Sale",
-        color: selectedManualItem.color || "Default",
-        size: selectedManualItem.size || "Free Size",
-        category: "General",
-        department: selectedManualItem.department || "General",
+        style_name: pastLog?.style_name || selectedManualItem.style_name || selectedManualItem.style_code,
+        description: pastLog?.description || selectedManualItem.department || "Manual Sale Record",
+        color: pastLog?.color || selectedManualItem.color || "Default",
+        size: pastLog?.size || selectedManualItem.size || "Free Size",
+        category: pastLog?.category || selectedManualItem.department || "Apparel",
+        department: pastLog?.department || selectedManualItem.department || "General",
         price: finalPrice,
         quantity: finalQty,
         scanned_at: new Date().toISOString(),
@@ -527,7 +535,7 @@ export default function InventoryMonitoringPage() {
           .eq("id", invRow.id);
       }
 
-      setManualSuccessMsg("Manual sale logged successfully!");
+      setManualSuccessMsg("Manual sale logged successfully with full product details!");
       setTimeout(() => {
         setIsManualModalOpen(false);
         fetchInventory();
@@ -1039,7 +1047,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* MODAL 3: Manual Sales Encoding Modal (Fixed with Dropdown & Auto-Price) */}
+      {/* MODAL 3: Manual Sales Encoding Modal (Pulling full historical metadata) */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left text-slate-100">
