@@ -28,6 +28,9 @@ import {
   BarChart2,
   ChevronDown,
   ChevronUp,
+  Bookmark,
+  BookmarkPlus,
+  Trash2,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -112,6 +115,14 @@ interface StateSelection {
   colors: string[];
   sizes: string[];
   styles: string[];
+}
+
+interface BookmarkPreset {
+  id: string;
+  name: string;
+  selection: StateSelection;
+  startDate: string;
+  endDate: string;
 }
 
 const EMPTY_SELECTIONS: StateSelection = {
@@ -314,6 +325,11 @@ export default function QlikViewAnalyticsPage() {
   const [stateA, setStateA] = useState<StateSelection>(EMPTY_SELECTIONS);
   const [stateB, setStateB] = useState<StateSelection>(EMPTY_SELECTIONS);
 
+  // Bookmarks State
+  const [bookmarks, setBookmarks] = useState<BookmarkPreset[]>([]);
+  const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
+  const [newBookmarkName, setNewBookmarkName] = useState("");
+
   const [activeMeasureIndex, setActiveMeasureIndex] = useState<number>(0);
 
   const [startDate, setStartDate] = useState<string>("");
@@ -372,7 +388,49 @@ export default function QlikViewAnalyticsPage() {
 
   useEffect(() => {
     fetchData();
+    // Load saved bookmarks from localStorage
+    const saved = localStorage.getItem("qlik_analytics_bookmarks");
+    if (saved) {
+      try {
+        setBookmarks(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse bookmarks", e);
+      }
+    }
   }, [fetchData]);
+
+  const saveBookmark = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBookmarkName.trim()) return;
+
+    const newBm: BookmarkPreset = {
+      id: Date.now().toString(),
+      name: newBookmarkName.trim(),
+      selection: activeSelection,
+      startDate,
+      endDate,
+    };
+
+    const updated = [newBm, ...bookmarks];
+    setBookmarks(updated);
+    localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
+    setNewBookmarkName("");
+    setIsBookmarkModalOpen(false);
+  };
+
+  const loadBookmark = (bm: BookmarkPreset) => {
+    setActiveSelection(() => bm.selection);
+    setStartDate(bm.startDate);
+    setEndDate(bm.endDate);
+    setDatePreset("custom");
+  };
+
+  const deleteBookmark = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = bookmarks.filter((b) => b.id !== id);
+    setBookmarks(updated);
+    localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
+  };
 
   const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "30days" | "all") => {
     setDatePreset(preset);
@@ -766,6 +824,18 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Bookmark Dropdown / Manager */}
+          <div className="relative group">
+            <button
+              onClick={() => setIsBookmarkModalOpen(true)}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
+              title="Saved Selection Presets"
+            >
+              <Bookmark className="w-3.5 h-3.5" />
+              <span>Presets ({bookmarks.length})</span>
+            </button>
+          </div>
+
           <button
             onClick={() => setIsComparativeMode(!isComparativeMode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
@@ -972,7 +1042,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* Current Selections Bar */}
+      {/* Current Selections Bar with Quick Bookmark Save Button */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1">
@@ -1058,20 +1128,31 @@ export default function QlikViewAnalyticsPage() {
           )}
         </div>
 
-        {(activeSelection.stores.length > 0 ||
-          activeSelection.departments.length > 0 ||
-          activeSelection.categories.length > 0 ||
-          activeSelection.colors.length > 0 ||
-          activeSelection.sizes.length > 0 ||
-          activeSelection.styles.length > 0) && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={clearCurrentStateSelections}
-            className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
+            onClick={() => setIsBookmarkModalOpen(true)}
+            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
+            title="Save current filters as preset"
           >
-            <RotateCcw className="w-3 h-3" />
-            <span>Clear State</span>
+            <BookmarkPlus className="w-3 h-3" />
+            <span>Save Preset</span>
           </button>
-        )}
+
+          {(activeSelection.stores.length > 0 ||
+            activeSelection.departments.length > 0 ||
+            activeSelection.categories.length > 0 ||
+            activeSelection.colors.length > 0 ||
+            activeSelection.sizes.length > 0 ||
+            activeSelection.styles.length > 0) && (
+            <button
+              onClick={clearCurrentStateSelections}
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Clear State</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Ribbon */}
@@ -1575,6 +1656,90 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Bookmarks / Saved Presets Modal */}
+      {isBookmarkModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                  Saved Selection Presets
+                </span>
+                <h2 className="text-lg font-bold text-white mt-1">Bookmarks Manager</h2>
+              </div>
+              <button
+                onClick={() => setIsBookmarkModalOpen(false)}
+                className="text-slate-500 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Save Current Filter State Form */}
+            <form onSubmit={saveBookmark} className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Save Current Filter State
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. Makati Underwear Audit..."
+                  value={newBookmarkName}
+                  onChange={(e) => setNewBookmarkName(e.target.value)}
+                  className="flex-1 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                >
+                  Save Preset
+                </button>
+              </div>
+            </form>
+
+            {/* Saved Bookmarks List */}
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2">
+                Your Saved Presets ({bookmarks.length})
+              </p>
+              {bookmarks.length === 0 ? (
+                <div className="p-6 text-center text-slate-500 text-xs border border-slate-800 border-dashed rounded-xl">
+                  No bookmarks saved yet. Configure your filters and save a preset!
+                </div>
+              ) : (
+                bookmarks.map((bm) => (
+                  <div
+                    key={bm.id}
+                    onClick={() => {
+                      loadBookmark(bm);
+                      setIsBookmarkModalOpen(false);
+                    }}
+                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-3 rounded-xl flex items-center justify-between cursor-pointer transition group"
+                  >
+                    <div>
+                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition">
+                        {bm.name}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                        {bm.startDate && bm.endDate ? `${bm.startDate} to ${bm.endDate}` : "All Time"} • Stores: {bm.selection.stores.length > 0 ? bm.selection.stores.join(", ") : "All"}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={(e) => deleteBookmark(bm.id, e)}
+                      className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900"
+                      title="Delete preset"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
