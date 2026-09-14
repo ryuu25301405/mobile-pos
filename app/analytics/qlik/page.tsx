@@ -26,6 +26,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   BarChart2,
+  PieChart as PieChartIcon,
   Table,
   ChevronDown,
   ChevronUp,
@@ -138,6 +139,17 @@ const EMPTY_SELECTIONS: StateSelection = {
   styles: [],
 };
 
+const CHART_COLORS = [
+  "#10B981", // Emerald
+  "#6366F1", // Indigo
+  "#3B82F6", // Blue
+  "#F59E0B", // Amber
+  "#EC4899", // Pink
+  "#8B5CF6", // Purple
+  "#14B8A6", // Teal
+  "#F43F5E", // Rose
+];
+
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,11 +174,11 @@ export default function QlikViewAnalyticsPage() {
   const [drillLevel, setDrillLevel] = useState<number>(0);
 
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
-  const [visualizationMode, setVisualizationMode] = useState<"table" | "chart">("table");
+  const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
   const [chartDimensionIndex, setChartDimensionIndex] = useState<number>(0);
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
-  >([0 as any]);
+  >([]);
 
   const [detailSearch, setDetailSearch] = useState("");
   const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
@@ -524,7 +536,7 @@ export default function QlikViewAnalyticsPage() {
       return sum + r.revenue;
     }, 0);
 
-    return rows.map((r) => {
+    return rows.map((r, idx) => {
       const val =
         activeMeasure.key === "units"
           ? r.units
@@ -537,6 +549,7 @@ export default function QlikViewAnalyticsPage() {
         ...r,
         measureValue: val,
         share: totalVal > 0 ? (val / totalVal) * 100 : 0,
+        color: CHART_COLORS[idx % CHART_COLORS.length],
       };
     });
   }, [currentSubset, chartDimension, activeMeasure]);
@@ -544,6 +557,21 @@ export default function QlikViewAnalyticsPage() {
   const maxChartMeasureValue = useMemo(() => {
     if (chartRows.length === 0) return 1;
     return Math.max(...chartRows.map((r) => r.measureValue), 1);
+  }, [chartRows]);
+
+  // SVG Donut Path Calculator Helper
+  const donutSlices = useMemo(() => {
+    let cumulativePercent = 0;
+    return chartRows.map((row) => {
+      const startAngle = (cumulativePercent / 100) * 360;
+      cumulativePercent += row.share;
+      const endAngle = (cumulativePercent / 100) * 360;
+      return {
+        ...row,
+        startAngle,
+        endAngle,
+      };
+    });
   }, [chartRows]);
 
   const filteredProducts = useMemo(() => {
@@ -799,29 +827,29 @@ export default function QlikViewAnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#090D16] text-slate-100 p-4 sm:p-6 space-y-4">
+    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans">
       
-      {/* 1. TOP HEADER & GLOBAL NAVIGATION DECK */}
-      <nav className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
+      {/* GLOBAL NAVIGATION BAR */}
+      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
             <LayoutDashboard className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black tracking-tight text-white">RETAIL CONTROL CENTER</span>
+              <span className="text-xs font-black tracking-tight text-white">RETAIL CONTROL DECK</span>
               <span className="text-[9px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                QlikView Active
+                QlikView Engine
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono">Multi-Branch Associative Analytics Suite</p>
+            <p className="text-[11px] text-slate-400 font-mono">Multi-Branch Associative Visual Analytics</p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/analytics/qlik"
-            className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition"
+            className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition"
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>Analytics Hub</span>
@@ -829,7 +857,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/inventory"
-            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <Boxes className="w-3.5 h-3.5 text-indigo-400" />
             <span>Store Inventory</span>
@@ -837,7 +865,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/scanview"
-            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" />
             <span>Scanner</span>
@@ -845,7 +873,7 @@ export default function QlikViewAnalyticsPage() {
 
           <Link
             href="/reports/daily-sales"
-            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition"
           >
             <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
             <span>Daily Sales Report</span>
@@ -853,9 +881,10 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </nav>
 
-      {/* 2. EXECUTIVE KPI CARDS (Full Width Top Deck) */}
+      {/* EXECUTIVE KPI STRIP */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
@@ -872,7 +901,8 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State B Revenue" : "Units Sold"}
@@ -893,7 +923,8 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State A Units" : "Transactions"}
@@ -912,7 +943,8 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-[#111827]/60 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Average Unit Retail (AUR)
@@ -930,15 +962,14 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* 3. TOP-DOCKED HORIZONTAL FACET BAR (Interactive Qlik Filter Drawer Trigger Hub) */}
-      <div className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      {/* TOP-DOCKED FACET FILTER BAR */}
+      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-2">
             <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
             <span>Associative Facets:</span>
           </div>
 
-          {/* Dimension Toggle Buttons */}
           {CYCLIC_DIMENSIONS.map((dim) => {
             const fieldKeyMap: Record<string, keyof StateSelection> = {
               store: "stores",
@@ -954,9 +985,9 @@ export default function QlikViewAnalyticsPage() {
               <button
                 key={dim.key}
                 onClick={() => setActiveFilterDrawer(activeFilterDrawer === dim.key ? null : dim.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                   count > 0
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
                     : activeFilterDrawer === dim.key
                     ? "bg-slate-800 text-white border-slate-700"
                     : "bg-slate-950/80 text-slate-300 border-slate-800 hover:border-slate-700"
@@ -977,7 +1008,7 @@ export default function QlikViewAnalyticsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <Bookmark className="w-3.5 h-3.5" />
             <span>Presets ({bookmarks.length})</span>
@@ -985,7 +1016,7 @@ export default function QlikViewAnalyticsPage() {
 
           <button
             onClick={() => setIsComparativeMode(!isComparativeMode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
               isComparativeMode
                 ? "bg-purple-600 text-white border-purple-500 shadow-lg"
                 : "bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800"
@@ -1003,18 +1034,18 @@ export default function QlikViewAnalyticsPage() {
             activeSelection.styles.length > 0) && (
             <button
               onClick={clearCurrentStateSelections}
-              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs"
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Filters</span>
+              <span>Reset</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* FILTER DRAWER / POPUP LISTBOX WHEN ACTIVE */}
+      {/* FILTER DRAWER POPUP */}
       {activeFilterDrawer && (
-        <div className="bg-[#111827] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
+        <div className="bg-[#0E1526] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-emerald-400" />
@@ -1092,11 +1123,11 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSTAGE (Full Width Workspace) */}
-      <div className="bg-[#111827]/80 backdrop-blur-xl border border-slate-800/70 rounded-2xl p-4 shadow-2xl space-y-4">
+      {/* 4. MAIN ANALYTICS WORKSPACE WITH GRAPH VIEWS */}
+      <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4">
         
-        {/* Workspace Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
+        {/* Workspace Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs font-semibold">
               <button
@@ -1147,7 +1178,26 @@ export default function QlikViewAnalyticsPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Visual View Switcher (Bar Chart, Donut Ring, Table) */}
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+              <button
+                onClick={() => setVisualizationMode("chart")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                  visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5" />
+                <span>Bars</span>
+              </button>
+              <button
+                onClick={() => setVisualizationMode("donut")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
+                  visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <PieChartIcon className="w-3.5 h-3.5" />
+                <span>Proportion Ring</span>
+              </button>
               <button
                 onClick={() => setVisualizationMode("table")}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
@@ -1157,15 +1207,6 @@ export default function QlikViewAnalyticsPage() {
                 <Table className="w-3.5 h-3.5" />
                 <span>Table</span>
               </button>
-              <button
-                onClick={() => setVisualizationMode("chart")}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition ${
-                  visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <BarChart2 className="w-3.5 h-3.5" />
-                <span>Chart</span>
-              </button>
             </div>
 
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
@@ -1173,7 +1214,7 @@ export default function QlikViewAnalyticsPage() {
                 onClick={() => setActiveTab("both")}
                 className={`px-3 py-1 rounded-lg transition ${activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"}`}
               >
-                Split View
+                Split
               </button>
               <button
                 onClick={() => setActiveTab("summary")}
@@ -1214,71 +1255,85 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* TABLES / CHARTS STAGE */}
+        {/* MAIN DISPLAY GRID */}
         <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
           
-          {/* SUMMARY TABLE OR CHART */}
+          {/* VISUAL GRAPH STAGE (Bar Chart / Proportion Donut / Table) */}
           {(activeTab === "both" || activeTab === "summary") && (
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-2">
-                  {visualizationMode === "chart" ? `Visual Distribution: ${chartDimension.label}` : `Aggregation Table: ${currentDimension.label}`}
+                  {visualizationMode === "donut" ? <PieChartIcon className="w-4 h-4 text-emerald-400" /> : <BarChart2 className="w-4 h-4 text-emerald-400" />}
+                  {visualizationMode === "donut" ? `Proportion Share: ${chartDimension.label}` : visualizationMode === "chart" ? `Bar Chart Breakdown: ${chartDimension.label}` : `Table: ${currentDimension.label}`}
                 </span>
                 <span className="text-[10px] text-emerald-400 font-mono">
                   Sorted by {activeMeasure.label}
                 </span>
               </div>
 
-              {visualizationMode === "table" ? (
-                <div className="overflow-x-auto max-h-[480px]">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
-                      <tr>
-                        <th className="px-4 py-3">{currentDimension.label}</th>
-                        <th className="px-3 py-3 text-right">Logs</th>
-                        <th className="px-3 py-3 text-right">Units</th>
-                        <th className="px-4 py-3 text-right">
-                          <span onClick={cycleMeasure} className="cursor-pointer hover:text-emerald-400 underline decoration-dotted">
-                            {activeMeasure.label} ⟳
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-900 text-xs">
-                      {loading ? (
-                        <tr><td colSpan={4} className="p-8 text-center text-slate-500">Loading dataset...</td></tr>
-                      ) : tableRows.length === 0 ? (
-                        <tr><td colSpan={4} className="p-8 text-center text-slate-500">No records found matching active state.</td></tr>
-                      ) : (
-                        tableRows.map((row) => {
-                          const displayVal =
-                            activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
-                            activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
-                            activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
-                            `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+              {visualizationMode === "donut" ? (
+                /* DONUT RING VISUALIZATION */
+                <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-8 min-h-[380px]">
+                  <div className="relative w-48 h-48 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
+                      {donutSlices.map((slice, idx) => {
+                        const circumference = 2 * Math.PI * 40;
+                        const strokeDasharray = `${(slice.share / 100) * circumference} ${circumference}`;
+                        const strokeDashoffset = -((donutSlices.slice(0, idx).reduce((acc, s) => acc + s.share, 0)) / 100) * circumference;
 
-                          return (
-                            <tr
-                              key={row.label}
-                              className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
-                              onClick={() => handleRowClick(row.label)}
-                            >
-                              <td className="px-4 py-2.5 font-bold text-white group-hover:text-emerald-400 truncate max-w-[200px]">
-                                {row.label}
-                              </td>
-                              <td className="px-3 py-2.5 text-right text-slate-400 font-mono">{row.count}</td>
-                              <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{row.units}</td>
-                              <td className="px-4 py-2.5 text-right font-black text-emerald-400 font-mono whitespace-nowrap">
-                                {displayVal}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                        return (
+                          <circle
+                            key={slice.label}
+                            cx="50"
+                            cy="50"
+                            r="40"
+                            fill="transparent"
+                            stroke={slice.color}
+                            strokeWidth="16"
+                            strokeDasharray={strokeDasharray}
+                            strokeDashoffset={strokeDashoffset}
+                            onClick={() => handleRowClick(slice.label)}
+                            className="cursor-pointer hover:opacity-80 transition-all duration-300"
+                          />
+                        );
+                      })}
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Total</span>
+                      <span className="text-sm font-black text-white">
+                        {chartRows.length} items
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-2 w-full sm:w-56">
+                    {chartRows.map((row) => {
+                      const displayVal =
+                        activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
+                        activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
+                        activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
+                        `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                      return (
+                        <div
+                          key={row.label}
+                          onClick={() => handleRowClick(row.label)}
+                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 cursor-pointer transition"
+                        >
+                          <div className="flex items-center gap-2 truncate mr-2">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                            <span className="font-semibold text-white truncate">{row.label}</span>
+                          </div>
+                          <div className="font-mono text-emerald-400 font-bold shrink-0">{row.share.toFixed(1)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ) : (
+              ) : visualizationMode === "chart" ? (
+                /* BAR CHART VISUALIZATION */
                 <div className="p-4 space-y-3">
                   <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-xs">
                     <span className="text-slate-400 font-bold">Chart Dimension:</span>
@@ -1293,7 +1348,7 @@ export default function QlikViewAnalyticsPage() {
                     </select>
                   </div>
 
-                  <div className="max-h-[410px] overflow-y-auto space-y-2 pr-1">
+                  <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1">
                     {chartRows.length === 0 ? (
                       <div className="p-8 text-center text-slate-500 text-xs">No chart data available.</div>
                     ) : (
@@ -1320,8 +1375,11 @@ export default function QlikViewAnalyticsPage() {
                                 <span className="font-bold text-emerald-400">{displayVal}</span>
                               </div>
                             </div>
-                            <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                              <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500" />
+                            <div className="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${pct}%`, backgroundColor: row.color }}
+                                className="h-full rounded-full transition-all duration-500"
+                              />
                             </div>
                           </div>
                         );
@@ -1329,14 +1387,50 @@ export default function QlikViewAnalyticsPage() {
                     )}
                   </div>
                 </div>
+              ) : (
+                /* STANDARD TABLE VIEW */
+                <div className="overflow-x-auto max-h-[440px]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                      <tr>
+                        <th className="px-4 py-3">{currentDimension.label}</th>
+                        <th className="px-3 py-3 text-right">Logs</th>
+                        <th className="px-3 py-3 text-right">Units</th>
+                        <th className="px-4 py-3 text-right">
+                          <span onClick={cycleMeasure} className="cursor-pointer hover:text-emerald-400 underline decoration-dotted">
+                            {activeMeasure.label} ⟳
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900 text-xs">
+                      {tableRows.map((row) => {
+                        const displayVal =
+                          activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
+                          activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
+                          activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
+                          `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+                        return (
+                          <tr key={row.label} onClick={() => handleRowClick(row.label)} className="hover:bg-slate-900/60 transition-colors cursor-pointer group">
+                            <td className="px-4 py-2.5 font-bold text-white group-hover:text-emerald-400">{row.label}</td>
+                            <td className="px-3 py-2.5 text-right text-slate-400 font-mono">{row.count}</td>
+                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{row.units}</td>
+                            <td className="px-4 py-2.5 text-right font-black text-emerald-400 font-mono">{displayVal}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}
 
           {/* ITEMIZED PRODUCTS TABLE */}
           {(activeTab === "both" || activeTab === "details") && (
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white">Itemized Product Catalog (ABC Classified)</span>
@@ -1446,7 +1540,7 @@ export default function QlikViewAnalyticsPage() {
       {/* BOOKMARKS MANAGER MODAL */}
       {isBookmarkModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111827] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
+          <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
