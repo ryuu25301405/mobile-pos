@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import {
   Filter,
   RotateCcw,
@@ -805,25 +805,115 @@ export default function QlikViewAnalyticsPage() {
 
     const rows = filteredProducts.map((p) => ({
       "Style Code": p.styleCode,
-      SKU: p.sku,
+      "SKU": p.sku !== "-" ? p.sku : "",
       "Product Name": p.styleName,
-      Department: p.department,
-      Category: p.category,
-      Color: p.color,
-      Size: p.size,
-      "Unit Price": p.price,
+      "Department": p.department,
+      "Category": p.category,
+      "Color": p.color,
+      "Size": p.size,
+      "ABC Class": `Class ${p.abcClass}`,
+      "Unit Price (₱)": p.price,
       "Units Sold": p.units,
-      "Total Revenue": p.revenue,
+      "Total Revenue (₱)": p.revenue,
     }));
 
+    const totalUnits = filteredProducts.reduce((sum, p) => sum + p.units, 0);
+    const totalRev = filteredProducts.reduce((sum, p) => sum + p.revenue, 0);
+
+    rows.push({
+      "Style Code": "TOTAL",
+      "SKU": "",
+      "Product Name": `Filtered Items Count: ${filteredProducts.length}`,
+      "Department": "",
+      "Category": "",
+      "Color": "",
+      "Size": "",
+      "ABC Class": "",
+      "Unit Price (₱)": 0,
+      "Units Sold": totalUnits,
+      "Total Revenue (₱)": totalRev,
+    });
+
+    if (format === "csv") {
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "QlikView_Export");
+      const stateTag = isComparativeMode ? `State_${activeEditingState}` : "Selection";
+      XLSX.writeFile(workbook, `Qlik_Export_${stateTag}_${new Date().toISOString().split("T")[0]}.csv`, { bookType: "csv" });
+      return;
+    }
+
     const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    const headerStyle = {
+      font: { name: "Arial", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "064E3B" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "022C22" } },
+        bottom: { style: "thin", color: { rgb: "022C22" } },
+        left: { style: "thin", color: { rgb: "022C22" } },
+        right: { style: "thin", color: { rgb: "022C22" } },
+      },
+    };
+
+    const cellStyle = {
+      font: { name: "Arial", sz: 10, color: { rgb: "334155" } },
+      alignment: { vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "E2E8F0" } },
+        bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+        left: { style: "thin", color: { rgb: "E2E8F0" } },
+        right: { style: "thin", color: { rgb: "E2E8F0" } },
+      },
+    };
+
+    const totalRowStyle = {
+      font: { name: "Arial", sz: 11, bold: true, color: { rgb: "0F172A" } },
+      fill: { fgColor: { rgb: "F1F5F9" } },
+      border: {
+        top: { style: "medium", color: { rgb: "022C22" } },
+        bottom: { style: "medium", color: { rgb: "022C22" } },
+      },
+    };
+
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellAddress]) continue;
+
+        if (R === 0) {
+          worksheet[cellAddress].s = headerStyle;
+        } else if (R === range.e.r) {
+          worksheet[cellAddress].s = totalRowStyle;
+        } else {
+          worksheet[cellAddress].s = cellStyle;
+        }
+      }
+    }
+
+    worksheet["!cols"] = [
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 30 },
+      { wch: 15 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 20 },
+    ];
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "QlikView_Export");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Executive_Sales_Report");
 
     const stateTag = isComparativeMode ? `State_${activeEditingState}` : "Selection";
-    const filename = `Qlik_Export_${stateTag}_${new Date().toISOString().split("T")[0]}.${format}`;
+    const filename = `Executive_Sales_Report_${stateTag}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
-    XLSX.writeFile(workbook, filename, { bookType: format });
+    XLSX.writeFile(workbook, filename);
   };
 
   return (
