@@ -201,8 +201,8 @@ function QlikListBox({
   const selectedCount = selectedItems.length;
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-sm transition-all duration-200 hover:border-slate-700">
-      <div className="bg-slate-950 px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
+    <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl overflow-hidden shadow-sm transition-all duration-200 hover:border-slate-700">
+      <div className="bg-slate-900/90 px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
           <button
             type="button"
@@ -289,7 +289,7 @@ function QlikListBox({
                     isSelected
                       ? "bg-emerald-600 text-white font-semibold shadow-xs"
                       : isPossible
-                      ? "bg-slate-900/60 text-slate-200 hover:bg-slate-800/90 hover:text-white"
+                      ? "bg-slate-900/40 text-slate-200 hover:bg-slate-800/90 hover:text-white"
                       : "bg-slate-950/70 text-slate-600 opacity-40 hover:opacity-60"
                   }`}
                 >
@@ -981,7 +981,7 @@ export default function QlikViewAnalyticsPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 space-y-4">
       
       {/* GLOBAL MASTER NAVIGATION BAR */}
-      <nav className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+      <nav className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
             <LayoutDashboard className="w-5 h-5" />
@@ -1028,7 +1028,7 @@ export default function QlikViewAnalyticsPage() {
       </nav>
 
       {/* 1. COMMAND HUB HEADER */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3.5 gap-4">
+      <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800/80 pb-3.5 gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
@@ -1046,7 +1046,7 @@ export default function QlikViewAnalyticsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
             title="Saved Selection Presets"
           >
             <Bookmark className="w-3.5 h-3.5" />
@@ -1055,7 +1055,7 @@ export default function QlikViewAnalyticsPage() {
 
           <button
             onClick={() => setIsComparativeMode(!isComparativeMode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
               isComparativeMode
                 ? "bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/20"
                 : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
@@ -1065,10 +1065,10 @@ export default function QlikViewAnalyticsPage() {
             <span>{isComparativeMode ? "Comparative: ON" : "Alternate States (A/B)"}</span>
           </button>
 
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-0.5 text-xs shadow-sm">
             <button
               onClick={() => exportToSpreadsheet("xlsx")}
-              className="flex items-center gap-1 text-emerald-400 hover:text-white px-2.5 py-1 rounded transition font-semibold cursor-pointer"
+              className="flex items-center gap-1 text-emerald-400 hover:text-white px-3 py-1 rounded-lg transition font-semibold cursor-pointer"
             >
               <Download className="w-3 h-3" />
               <span>Excel</span>
@@ -1076,7 +1076,7 @@ export default function QlikViewAnalyticsPage() {
             <span className="text-slate-700">|</span>
             <button
               onClick={() => exportToSpreadsheet("csv")}
-              className="text-slate-400 hover:text-white px-2 py-1 rounded transition font-semibold cursor-pointer"
+              className="text-slate-400 hover:text-white px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer"
             >
               CSV
             </button>
@@ -1085,17 +1085,17 @@ export default function QlikViewAnalyticsPage() {
       </header>
 
       {/* Date Range Toolbar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs shadow-md">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-wider text-[10px] mr-1">
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <span>Date Range:</span>
           </div>
 
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px]">
             <button
               onClick={() => applyDatePreset("all")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 datePreset === "all" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1103,7 +1103,7 @@ export default function QlikViewAnalyticsPage() {
             </button>
             <button
               onClick={() => applyDatePreset("today")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 datePreset === "today" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1111,7 +1111,7 @@ export default function QlikViewAnalyticsPage() {
             </button>
             <button
               onClick={() => applyDatePreset("yesterday")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 datePreset === "yesterday" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1119,7 +1119,7 @@ export default function QlikViewAnalyticsPage() {
             </button>
             <button
               onClick={() => applyDatePreset("7days")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 datePreset === "7days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1127,7 +1127,7 @@ export default function QlikViewAnalyticsPage() {
             </button>
             <button
               onClick={() => applyDatePreset("30days")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 datePreset === "30days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1137,7 +1137,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1">
             <span className="text-[10px] uppercase text-slate-500 font-bold">From</span>
             <input
               type="date"
@@ -1150,7 +1150,7 @@ export default function QlikViewAnalyticsPage() {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1">
             <span className="text-[10px] uppercase text-slate-500 font-bold">To</span>
             <input
               type="date"
@@ -1166,7 +1166,7 @@ export default function QlikViewAnalyticsPage() {
           {(startDate || endDate) && (
             <button
               onClick={() => applyDatePreset("all")}
-              className="text-[11px] text-slate-400 hover:text-rose-400 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg cursor-pointer"
+              className="text-[11px] text-slate-400 hover:text-rose-400 px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer"
             >
               Reset
             </button>
@@ -1176,17 +1176,17 @@ export default function QlikViewAnalyticsPage() {
 
       {/* Alternate States Selector Bar */}
       {isComparativeMode && (
-        <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-purple-950/30 border border-purple-500/30 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md">
           <div className="flex items-center gap-3">
             <span className="font-bold text-purple-300 flex items-center gap-1.5">
               <GitCompare className="w-4 h-4 text-purple-400" />
               Active Target State:
             </span>
 
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5">
               <button
                 onClick={() => setActiveEditingState("A")}
-                className={`px-3 py-1 rounded-md font-bold transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
                   activeEditingState === "A" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -1194,7 +1194,7 @@ export default function QlikViewAnalyticsPage() {
               </button>
               <button
                 onClick={() => setActiveEditingState("B")}
-                className={`px-3 py-1 rounded-md font-bold transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
                   activeEditingState === "B" ? "bg-purple-500 text-white" : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -1238,7 +1238,7 @@ export default function QlikViewAnalyticsPage() {
       )}
 
       {/* Current Selections Bar */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1">
             <Filter className="w-3 h-3 text-emerald-400" />
@@ -1258,7 +1258,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={s}
                   onClick={() => toggleSelection("store", s)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Store: {s} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1267,7 +1267,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={d}
                   onClick={() => toggleSelection("department", d)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Dept: {d} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1276,7 +1276,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={c}
                   onClick={() => toggleSelection("category", c)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Category: {c} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1285,7 +1285,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={cl}
                   onClick={() => toggleSelection("color", cl)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Color: {cl} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1294,7 +1294,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={sz}
                   onClick={() => toggleSelection("size", sz)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Size: {sz} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1303,7 +1303,7 @@ export default function QlikViewAnalyticsPage() {
                 <span
                   key={st}
                   onClick={() => toggleSelection("style_code", st)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
+                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-semibold text-[11px] flex items-center gap-1 cursor-pointer hover:bg-rose-500/20 transition"
                 >
                   Style: {st} <X className="w-2.5 h-2.5" />
                 </span>
@@ -1315,7 +1315,7 @@ export default function QlikViewAnalyticsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
+            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold transition px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-[11px]"
           >
             <BookmarkPlus className="w-3 h-3" />
             <span>Save Preset</span>
@@ -1329,7 +1329,7 @@ export default function QlikViewAnalyticsPage() {
             activeSelection.styles.length > 0) && (
             <button
               onClick={clearCurrentStateSelections}
-              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-md cursor-pointer text-[11px]"
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-[11px]"
             >
               <RotateCcw className="w-3 h-3" />
               <span>Clear State</span>
@@ -1338,82 +1338,89 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* 2. LAYOUT CONTAINER WITH NESTED LEFT FILTER COLUMN & RIGHT ANALYTICS STAGE */}
+      {/* 3. REDESIGNED WORKSPACE GRID ("Command Canvas" Architecture) */}
       <div className="grid grid-cols-12 gap-4 items-start pt-1">
         
-        {/* Left Column: Filter Dimensions (Starts at the top, perfectly nested alongside/underneath the KPI strip layout flow) */}
-        <div className="col-span-12 md:col-span-3 space-y-2.5">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
-            <span>Filter Dimensions {isComparativeMode && `(${activeEditingState})`}</span>
-            <div className="flex items-center gap-1 text-[9px] lowercase text-slate-400">
-              <span className="w-2 h-2 rounded bg-emerald-600 inline-block"></span> sel
-              <span className="w-2 h-2 rounded bg-slate-800 border border-slate-700 inline-block ml-1"></span> opt
-              <span className="w-2 h-2 rounded bg-slate-950/60 opacity-40 inline-block ml-1"></span> excl
+        {/* Left Column: Modern Master Facet Card Hub */}
+        <div className="col-span-12 md:col-span-3 space-y-3">
+          <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-3.5 space-y-3 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold uppercase tracking-wider text-white">
+                  Data Facets {isComparativeMode && `(${activeEditingState})`}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-800">
+                Assoc.
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              <QlikListBox
+                title="Store Location"
+                items={universe.stores}
+                selectedItems={activeSelection.stores}
+                possibleValues={possibleValues.stores}
+                frequencies={fieldFrequencies.stores}
+                onToggle={(val) => toggleSelection("store", val)}
+                onClear={() => setActiveSelection((prev) => ({ ...prev, stores: [] }))}
+                maxHeight="max-h-32"
+              />
+
+              <QlikListBox
+                title="Department"
+                items={universe.departments}
+                selectedItems={activeSelection.departments}
+                possibleValues={possibleValues.departments}
+                frequencies={fieldFrequencies.departments}
+                onToggle={(val) => toggleSelection("department", val)}
+                onClear={() => setActiveSelection((prev) => ({ ...prev, departments: [] }))}
+                maxHeight="max-h-24"
+              />
+
+              <QlikListBox
+                title="Category"
+                items={universe.categories}
+                selectedItems={activeSelection.categories}
+                possibleValues={possibleValues.categories}
+                frequencies={fieldFrequencies.categories}
+                onToggle={(val) => toggleSelection("category", val)}
+                onClear={() => setActiveSelection((prev) => ({ ...prev, categories: [] }))}
+                maxHeight="max-h-24"
+              />
+
+              <QlikListBox
+                title="Color"
+                items={universe.colors}
+                selectedItems={activeSelection.colors}
+                possibleValues={possibleValues.colors}
+                frequencies={fieldFrequencies.colors}
+                onToggle={(val) => toggleSelection("color", val)}
+                onClear={() => setActiveSelection((prev) => ({ ...prev, colors: [] }))}
+                maxHeight="max-h-28"
+              />
+
+              <QlikListBox
+                title="Size"
+                items={universe.sizes}
+                selectedItems={activeSelection.sizes}
+                possibleValues={possibleValues.sizes}
+                frequencies={fieldFrequencies.sizes}
+                onToggle={(val) => toggleSelection("size", val)}
+                onClear={() => setActiveSelection((prev) => ({ ...prev, sizes: [] }))}
+                maxHeight="max-h-28"
+              />
             </div>
           </div>
-
-          <QlikListBox
-            title="Store Location"
-            items={universe.stores}
-            selectedItems={activeSelection.stores}
-            possibleValues={possibleValues.stores}
-            frequencies={fieldFrequencies.stores}
-            onToggle={(val) => toggleSelection("store", val)}
-            onClear={() => setActiveSelection((prev) => ({ ...prev, stores: [] }))}
-            maxHeight="max-h-32"
-          />
-
-          <QlikListBox
-            title="Department"
-            items={universe.departments}
-            selectedItems={activeSelection.departments}
-            possibleValues={possibleValues.departments}
-            frequencies={fieldFrequencies.departments}
-            onToggle={(val) => toggleSelection("department", val)}
-            onClear={() => setActiveSelection((prev) => ({ ...prev, departments: [] }))}
-            maxHeight="max-h-24"
-          />
-
-          <QlikListBox
-            title="Category"
-            items={universe.categories}
-            selectedItems={activeSelection.categories}
-            possibleValues={possibleValues.categories}
-            frequencies={fieldFrequencies.categories}
-            onToggle={(val) => toggleSelection("category", val)}
-            onClear={() => setActiveSelection((prev) => ({ ...prev, categories: [] }))}
-            maxHeight="max-h-24"
-          />
-
-          <QlikListBox
-            title="Color"
-            items={universe.colors}
-            selectedItems={activeSelection.colors}
-            possibleValues={possibleValues.colors}
-            frequencies={fieldFrequencies.colors}
-            onToggle={(val) => toggleSelection("color", val)}
-            onClear={() => setActiveSelection((prev) => ({ ...prev, colors: [] }))}
-            maxHeight="max-h-28"
-          />
-
-          <QlikListBox
-            title="Size"
-            items={universe.sizes}
-            selectedItems={activeSelection.sizes}
-            possibleValues={possibleValues.sizes}
-            frequencies={fieldFrequencies.sizes}
-            onToggle={(val) => toggleSelection("size", val)}
-            onClear={() => setActiveSelection((prev) => ({ ...prev, sizes: [] }))}
-            maxHeight="max-h-28"
-          />
         </div>
 
         {/* Right Column: Executive KPIs & Analytics Stage */}
         <div className="col-span-12 md:col-span-9 space-y-3">
           
-          {/* Executive KPI Strip nested right above analytics tables */}
+          {/* Executive KPI Strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
@@ -1421,16 +1428,16 @@ export default function QlikViewAnalyticsPage() {
                 <h3 className="text-xl font-black text-white mt-0.5">
                   ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                 </h3>
-                <p className="text-[10px] text-emerald-400 font-mono">
+                <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
                   {metricsA.shareOfTotal.toFixed(1)}% of universe
                 </p>
               </div>
-              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg">
+              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
                 <DollarSign className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {isComparativeMode ? "State B Revenue" : "Units Sold"}
@@ -1440,18 +1447,18 @@ export default function QlikViewAnalyticsPage() {
                     ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
                     : `${metricsA.units.toLocaleString()} pcs`}
                 </h3>
-                <p className="text-[10px] text-indigo-400 font-mono">
+                <p className="text-[10px] text-indigo-400 font-mono mt-0.5">
                   {isComparativeMode
                     ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
                     : `out of ${universe.totalUnits.toLocaleString()} total units`}
                 </p>
               </div>
-              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
+              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
                 <ShoppingBag className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {isComparativeMode ? "State A Units" : "Transactions"}
@@ -1461,16 +1468,16 @@ export default function QlikViewAnalyticsPage() {
                     ? `${metricsA.units.toLocaleString()} pcs`
                     : `${metricsA.transactions.toLocaleString()} logs`}
                 </h3>
-                <p className="text-[10px] text-blue-400 font-mono">
+                <p className="text-[10px] text-blue-400 font-mono mt-0.5">
                   {isComparativeMode ? `State B: ${metricsB.units} pcs` : "matching state"}
                 </p>
               </div>
-              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg">
+              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
                 <TrendingUp className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Average Unit Retail (AUR)
@@ -1478,25 +1485,25 @@ export default function QlikViewAnalyticsPage() {
                 <h3 className="text-xl font-black text-white mt-0.5">
                   ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                 </h3>
-                <p className="text-[10px] text-purple-400 font-mono">
+                <p className="text-[10px] text-purple-400 font-mono mt-0.5">
                   {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail"}
                 </p>
               </div>
-              <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg">
+              <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
                 <Layers className="w-4 h-4" />
               </div>
             </div>
           </div>
 
           {/* Header Toolbar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md backdrop-blur-md">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-semibold">
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs font-semibold">
                 <button
                   onClick={() => setTableMode("drilldown")}
-                  className={`px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
+                  className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
                     tableMode === "drilldown"
-                      ? "bg-emerald-500 text-slate-950 font-bold"
+                      ? "bg-emerald-500 text-slate-950 font-bold shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -1504,9 +1511,9 @@ export default function QlikViewAnalyticsPage() {
                 </button>
                 <button
                   onClick={() => setTableMode("cyclic")}
-                  className={`px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
+                  className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
                     tableMode === "cyclic"
-                      ? "bg-indigo-600 text-white font-bold"
+                      ? "bg-indigo-600 text-white font-bold shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -1517,7 +1524,7 @@ export default function QlikViewAnalyticsPage() {
               {tableMode === "cyclic" && (
                 <button
                   onClick={() => setCyclicIndex((prev) => (prev + 1) % CYCLIC_DIMENSIONS.length)}
-                  className="flex items-center gap-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer"
+                  className="flex items-center gap-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer"
                 >
                   <ArrowRightLeft className="w-3 h-3" />
                   <span>Cycle: {currentDimension.label}</span>
@@ -1526,7 +1533,7 @@ export default function QlikViewAnalyticsPage() {
 
               <button
                 onClick={cycleMeasure}
-                className="flex items-center gap-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer"
+                className="flex items-center gap-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer"
                 title="Click to cycle active measure"
               >
                 <Layers className="w-3 h-3 text-emerald-400" />
@@ -1536,7 +1543,7 @@ export default function QlikViewAnalyticsPage() {
               {tableMode === "drilldown" && drillLevel > 0 && (
                 <button
                   onClick={handleDrillUp}
-                  className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 px-2 py-1 rounded-md font-bold transition cursor-pointer"
+                  className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 px-2.5 py-1 rounded-xl font-bold transition cursor-pointer"
                 >
                   <CornerLeftUp className="w-3 h-3" />
                   <span>Drill Up</span>
@@ -1546,10 +1553,10 @@ export default function QlikViewAnalyticsPage() {
 
             <div className="flex items-center gap-3">
               {/* Table vs Chart Switcher */}
-              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px]">
                 <button
                   onClick={() => setVisualizationMode("table")}
-                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded transition ${
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg transition ${
                     visualizationMode === "table" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1558,7 +1565,7 @@ export default function QlikViewAnalyticsPage() {
                 </button>
                 <button
                   onClick={() => setVisualizationMode("chart")}
-                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded transition ${
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg transition ${
                     visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1567,10 +1574,10 @@ export default function QlikViewAnalyticsPage() {
                 </button>
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px]">
                 <button
                   onClick={() => setActiveTab("both")}
-                  className={`px-2 py-0.5 rounded transition ${
+                  className={`px-2.5 py-1 rounded-lg transition ${
                     activeTab === "both" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1578,7 +1585,7 @@ export default function QlikViewAnalyticsPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab("summary")}
-                  className={`px-2 py-0.5 rounded transition ${
+                  className={`px-2.5 py-1 rounded-lg transition ${
                     activeTab === "summary" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1586,7 +1593,7 @@ export default function QlikViewAnalyticsPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab("details")}
-                  className={`px-2 py-0.5 rounded transition ${
+                  className={`px-2.5 py-1 rounded-lg transition ${
                     activeTab === "details" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1598,7 +1605,7 @@ export default function QlikViewAnalyticsPage() {
 
           {/* Drill Breadcrumbs */}
           {tableMode === "drilldown" && (
-            <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800/80 flex items-center gap-1 text-[11px]">
+            <div className="bg-slate-900/60 px-3.5 py-2 rounded-xl border border-slate-800/80 flex items-center gap-1 text-[11px]">
               <span
                 onClick={() => handleBreadcrumbClick(0)}
                 className={`cursor-pointer hover:underline ${
@@ -1629,8 +1636,8 @@ export default function QlikViewAnalyticsPage() {
             
             {/* TABLE 1 OR INDEPENDENT CHART VIEW */}
             {(activeTab === "both" || activeTab === "summary") && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
-                <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl flex flex-col backdrop-blur-md">
+                <div className="px-3.5 py-2.5 bg-slate-950/80 border-b border-slate-800/80 flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-1.5">
                     {visualizationMode === "chart" ? `Chart: ${chartDimension.label}` : currentDimension.label}
                   </span>
@@ -1642,12 +1649,12 @@ export default function QlikViewAnalyticsPage() {
                 {visualizationMode === "table" ? (
                   <div className="overflow-x-auto max-h-[460px]">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                      <thead className="bg-slate-950/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                         <tr>
-                          <th className="px-3 py-2">{currentDimension.label}</th>
-                          <th className="px-2 py-2 text-right">Logs</th>
-                          <th className="px-2 py-2 text-right">Units</th>
-                          <th className="px-3 py-2 text-right">
+                          <th className="px-3.5 py-2">{currentDimension.label}</th>
+                          <th className="px-3 py-2 text-right">Logs</th>
+                          <th className="px-3 py-2 text-right">Units</th>
+                          <th className="px-3.5 py-2 text-right">
                             <span
                               onClick={cycleMeasure}
                               className="cursor-pointer hover:text-emerald-400 underline decoration-dotted"
@@ -1657,7 +1664,7 @@ export default function QlikViewAnalyticsPage() {
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                      <tbody className="divide-y divide-slate-800/50 text-[11px]">
                         {loading ? (
                           <tr>
                             <td colSpan={4} className="p-6 text-center text-slate-500">
@@ -1687,16 +1694,16 @@ export default function QlikViewAnalyticsPage() {
                                 className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
                                 onClick={() => handleRowClick(row.label)}
                               >
-                                <td className="px-3 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
+                                <td className="px-3.5 py-2 font-semibold text-white group-hover:text-emerald-400 truncate max-w-[160px]">
                                   {row.label}
                                 </td>
-                                <td className="px-2 py-2 text-right text-slate-400 font-mono">
+                                <td className="px-3 py-2 text-right text-slate-400 font-mono">
                                   {row.count}
                                 </td>
-                                <td className="px-2 py-2 text-right text-slate-300 font-mono">
+                                <td className="px-3 py-2 text-right text-slate-300 font-mono">
                                   {row.units}
                                 </td>
-                                <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
+                                <td className="px-3.5 py-2 text-right font-bold text-emerald-400 font-mono whitespace-nowrap">
                                   {displayVal}
                                 </td>
                               </tr>
@@ -1708,13 +1715,13 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 ) : (
                   /* INTERACTIVE BAR CHART VIEW */
-                  <div className="p-3 space-y-3">
-                    <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-[11px]">
+                  <div className="p-3.5 space-y-3">
+                    <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px]">
                       <span className="text-slate-400 font-semibold">Viewing Dimension:</span>
                       <select
                         value={chartDimensionIndex}
                         onChange={(e) => setChartDimensionIndex(Number(e.target.value))}
-                        className="bg-slate-900 border border-slate-800 text-emerald-400 font-bold px-2 py-1 rounded-md focus:outline-none cursor-pointer"
+                        className="bg-slate-900 border border-slate-800 text-emerald-400 font-bold px-2.5 py-1 rounded-lg focus:outline-none cursor-pointer"
                       >
                         {CYCLIC_DIMENSIONS.map((dim, idx) => (
                           <option key={dim.key} value={idx}>
@@ -1774,41 +1781,41 @@ export default function QlikViewAnalyticsPage() {
 
             {/* TABLE 2: ITEMIZED PRODUCTS WITH ABC MERCHANDISING TAGS */}
             {(activeTab === "both" || activeTab === "details") && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow flex flex-col">
-                <div className="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-2">
+              <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl flex flex-col backdrop-blur-md">
+                <div className="px-3.5 py-2 bg-slate-950/80 border-b border-slate-800/80 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <Package className="w-3.5 h-3.5 text-emerald-400" />
                     <span className="text-xs font-bold text-white">Itemized Products (ABC Classified)</span>
-                    <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-mono">
+                    <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded-lg font-mono">
                       {filteredProducts.length}
                     </span>
                   </div>
 
                   <div className="relative w-32 sm:w-40">
-                    <Search className="w-3 h-3 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
+                    <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       placeholder="Search style/sku..."
                       value={detailSearch}
                       onChange={(e) => setDetailSearch(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 text-[10px] pl-6 pr-2 py-0.5 rounded text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-900 border border-slate-800 text-[10px] pl-7 pr-2.5 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                   </div>
                 </div>
 
                 <div className="overflow-x-auto max-h-[300px]">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
+                    <thead className="bg-slate-950/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
-                        <th className="px-3 py-2">Style / SKU</th>
-                        <th className="px-2 py-2">Class</th>
-                        <th className="px-2 py-2">Color / Size</th>
-                        <th className="px-2 py-2 text-right">Price</th>
-                        <th className="px-2 py-2 text-right">Sold</th>
-                        <th className="px-3 py-2 text-right">Amount</th>
+                        <th className="px-3.5 py-2">Style / SKU</th>
+                        <th className="px-3 py-2">Class</th>
+                        <th className="px-3 py-2">Color / Size</th>
+                        <th className="px-3 py-2 text-right">Price</th>
+                        <th className="px-3 py-2 text-right">Sold</th>
+                        <th className="px-3.5 py-2 text-right">Amount</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                    <tbody className="divide-y divide-slate-800/50 text-[11px]">
                       {filteredProducts.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="p-6 text-center text-slate-500">
@@ -1818,7 +1825,7 @@ export default function QlikViewAnalyticsPage() {
                       ) : (
                         filteredProducts.map((prod: any) => (
                           <tr key={prod.key} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="px-3 py-2 font-mono whitespace-nowrap">
+                            <td className="px-3.5 py-2 font-mono whitespace-nowrap">
                               <span className="font-bold text-emerald-400 block text-[11px]">
                                 {prod.styleCode}
                               </span>
@@ -1826,9 +1833,9 @@ export default function QlikViewAnalyticsPage() {
                                 {prod.sku !== "-" ? prod.sku : ""}
                               </span>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
                                   prod.abcClass === "A"
                                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                                     : prod.abcClass === "B"
@@ -1840,7 +1847,7 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-2 py-2 max-w-[120px] truncate">
+                            <td className="px-3 py-2 max-w-[120px] truncate">
                               <span className="text-white block truncate text-[11px]" title={prod.styleName}>
                                 {prod.styleName}
                               </span>
@@ -1848,13 +1855,13 @@ export default function QlikViewAnalyticsPage() {
                                 {prod.color} • <strong className="text-slate-200">{prod.size}</strong>
                               </span>
                             </td>
-                            <td className="px-2 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
+                            <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">
                               ₱{prod.price.toFixed(0)}
                             </td>
-                            <td className="px-2 py-2 text-right font-mono font-bold text-white whitespace-nowrap">
+                            <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">
                               {prod.units}
                             </td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
+                            <td className="px-3.5 py-2 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
                               ₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
                             </td>
                           </tr>
@@ -1866,7 +1873,7 @@ export default function QlikViewAnalyticsPage() {
 
                 {/* Nested Mini-Chart */}
                 {topProductsForMiniChart.list.length > 0 && (
-                  <div className="p-3 bg-slate-950/70 border-t border-slate-800/80 space-y-2">
+                  <div className="p-3.5 bg-slate-950/70 border-t border-slate-800/80 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
@@ -1887,7 +1894,7 @@ export default function QlikViewAnalyticsPage() {
                           <div
                             key={item.key}
                             onClick={() => toggleSelection("style_code", item.styleCode)}
-                            className="bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-2 rounded-lg cursor-pointer transition flex flex-col justify-between space-y-1.5"
+                            className="bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-2.5 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1.5 shadow-sm"
                             title={`Click to filter by ${item.styleCode}`}
                           >
                             <div className="flex items-center justify-between text-[10px]">
