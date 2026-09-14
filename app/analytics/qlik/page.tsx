@@ -1415,10 +1415,10 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* 3. ASSOCIATIVE WORKSPACE (Split-Pane Grid) */}
+      {/* 3. ASSOCIATIVE WORKSPACE (Split-Pane Grid nested directly underneath KPIs) */}
       <div className="grid grid-cols-12 gap-4 items-start pt-1">
         
-        {/* Left Pane: Sticky Filter Hub */}
+        {/* Left Pane: Nested Filter Hub (Aligned precisely under Filtered Revenue & KPIs) */}
         <div className="col-span-12 md:col-span-3 space-y-2.5 sticky top-4 z-20">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>Filter Dimensions {isComparativeMode && `(${activeEditingState})`}</span>
