@@ -34,6 +34,7 @@ interface ProductDetails {
   size: string;
   price: number;
   quantity: number;
+  barcode?: string;
 }
 
 interface SessionScannedProduct extends ProductDetails {
@@ -58,11 +59,25 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Manual Add Product Modal State
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [manualForm, setManualForm] = useState({
+    styleName: "",
+    styleCode: "",
+    sku: "",
+    category: "UNDERWEAR",
+    department: "MEN",
+    color: "BLACK",
+    size: "Free Size",
+    price: "150.00",
+    description: "Newly registered item",
+  });
+  const [savingManual, setSavingManual] = useState(false);
+
   // Local state for current active session scans
   const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
-
-  // Real-time stock status of the item just scanned
   const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
 
   // Open scanner handler
@@ -130,6 +145,13 @@ export default function Home() {
     if (error || !data) {
       setLoading(false);
       triggerScanFeedback("error");
+      setManualCode(cleanCode);
+      setManualForm((prev) => ({
+        ...prev,
+        styleCode: cleanCode,
+        sku: cleanCode,
+        styleName: `Item ${cleanCode}`,
+      }));
       setErrorMessage(`Code "${cleanCode}" not found in database.`);
       return;
     }
@@ -147,6 +169,7 @@ export default function Home() {
       size: data.size || "-",
       price: Number(data.price) || 0,
       quantity: 1,
+      barcode: data.barcode || cleanCode,
     };
 
     setLastScannedItem(fetchedProduct);
@@ -159,7 +182,6 @@ export default function Home() {
       second: "2-digit",
     });
 
-    // Add to session list view instantly
     const newSessionItem: SessionScannedProduct = {
       ...fetchedProduct,
       id: `${cleanCode}-${Date.now()}`,
@@ -169,7 +191,6 @@ export default function Home() {
 
     setSessionScans((prev) => [newSessionItem, ...prev]);
 
-    // Save scan entry to Supabase (this triggers automatic stock deduction)
     await supabase.from("scanned_logs").insert([
       {
         store: selectedStore,
@@ -187,7 +208,6 @@ export default function Home() {
       },
     ]);
 
-    // Check store_inventory for remaining stock balance
     try {
       const cleanStyle = fetchedProduct.styleCode?.trim() || "";
       const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
@@ -210,23 +230,11 @@ export default function Home() {
         const safetyThreshold = Number(invData.safety_stock ?? 5);
 
         if (remaining <= 0) {
-          setStockAlert({
-            type: "out",
-            remainingStock: remaining,
-            safetyStock: safetyThreshold,
-          });
+          setStockAlert({ type: "out", remainingStock: remaining, safetyStock: safetyThreshold });
         } else if (remaining <= safetyThreshold) {
-          setStockAlert({
-            type: "low",
-            remainingStock: remaining,
-            safetyStock: safetyThreshold,
-          });
+          setStockAlert({ type: "low", remainingStock: remaining, safetyStock: safetyThreshold });
         } else {
-          setStockAlert({
-            type: "normal",
-            remainingStock: remaining,
-            safetyStock: safetyThreshold,
-          });
+          setStockAlert({ type: "normal", remainingStock: remaining, safetyStock: safetyThreshold });
         }
       }
     } catch (err) {
@@ -234,6 +242,39 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handler to save manually added product to Supabase
+  const handleSaveManualProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingManual(true);
+
+    const newProductPayload = {
+      barcode: manualCode,
+      style_code: manualForm.styleCode || manualCode,
+      sku: manualForm.sku || manualCode,
+      style_name: manualForm.styleName,
+      description: manualForm.description,
+      color: manualForm.color,
+      category: manualForm.category,
+      department: manualForm.department,
+      size: manualForm.size,
+      price: parseFloat(manualForm.price) || 0.0,
+    };
+
+    const { error } = await supabase.from("products").insert([newProductPayload]);
+
+    setSavingManual(false);
+
+    if (error) {
+      alert("Failed to save product: " + error.message);
+      return;
+    }
+
+    // Close manual modal and process scan immediately
+    setIsManualModalOpen(false);
+    setErrorMessage(null);
+    await handleScan(manualCode);
   };
 
   const handleScanNext = () => {
@@ -434,12 +475,19 @@ export default function Home() {
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
                   {errorMessage ? (
-                    <div className="space-y-2 my-auto">
+                    <div className="space-y-3 my-auto">
                       <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
                         ✕
                       </div>
                       <h3 className="text-base font-bold text-white">Item Not Found</h3>
                       <p className="text-xs text-red-300/80 max-w-xs">{errorMessage}</p>
+
+                      <button
+                        onClick={() => setIsManualModalOpen(true)}
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 mt-2"
+                      >
+                        + Add Manually & Register
+                      </button>
                     </div>
                   ) : (
                     lastScannedItem && (
@@ -563,6 +611,142 @@ export default function Home() {
             >
               Close Camera View
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Product Registration Modal */}
+      {isManualModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-left">
+            <div>
+              <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                New Product Registration
+              </span>
+              <h2 className="text-lg font-black text-white mt-1">Add Unlisted Barcode</h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">Code: {manualCode}</p>
+            </div>
+
+            <form onSubmit={handleSaveManualProduct} className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Product / Style Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={manualForm.styleName}
+                  onChange={(e) => setManualForm({ ...manualForm, styleName: e.target.value })}
+                  placeholder="e.g. Classic Men Boxer Brief"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Style Code
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.styleCode}
+                    onChange={(e) => setManualForm({ ...manualForm, styleCode: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    SKU
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.sku}
+                    onChange={(e) => setManualForm({ ...manualForm, sku: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.department}
+                    onChange={(e) => setManualForm({ ...manualForm, department: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.category}
+                    onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Color
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.color}
+                    onChange={(e) => setManualForm({ ...manualForm, color: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Size
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.size}
+                    onChange={(e) => setManualForm({ ...manualForm, size: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Price (₱)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={manualForm.price}
+                    onChange={(e) => setManualForm({ ...manualForm, price: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-amber-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-2 pt-3">
+                <button
+                  type="submit"
+                  disabled={savingManual}
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                >
+                  {savingManual ? "Saving to Database..." : "Save & Process Scan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
