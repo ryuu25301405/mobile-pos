@@ -1338,88 +1338,11 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* 2. KPI EXECUTIVE STRIP */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
-            </p>
-            <h3 className="text-xl font-black text-white mt-0.5">
-              ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-            </h3>
-            <p className="text-[10px] text-emerald-400 font-mono">
-              {metricsA.shareOfTotal.toFixed(1)}% of universe
-            </p>
-          </div>
-          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg">
-            <DollarSign className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              {isComparativeMode ? "State B Revenue" : "Units Sold"}
-            </p>
-            <h3 className="text-xl font-black text-white mt-0.5">
-              {isComparativeMode
-                ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                : `${metricsA.units.toLocaleString()} pcs`}
-            </h3>
-            <p className="text-[10px] text-indigo-400 font-mono">
-              {isComparativeMode
-                ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
-                : `out of ${universe.totalUnits.toLocaleString()} total units`}
-            </p>
-          </div>
-          <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
-            <ShoppingBag className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              {isComparativeMode ? "State A Units" : "Transactions"}
-            </p>
-            <h3 className="text-xl font-black text-white mt-0.5">
-              {isComparativeMode
-                ? `${metricsA.units.toLocaleString()} pcs`
-                : `${metricsA.transactions.toLocaleString()} logs`}
-            </h3>
-            <p className="text-[10px] text-blue-400 font-mono">
-              {isComparativeMode ? `State B: ${metricsB.units} pcs` : "matching state"}
-            </p>
-          </div>
-          <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Average Unit Retail (AUR)
-            </p>
-            <h3 className="text-xl font-black text-white mt-0.5">
-              ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-            </h3>
-            <p className="text-[10px] text-purple-400 font-mono">
-              {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail"}
-            </p>
-          </div>
-          <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg">
-            <Layers className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
-
-      {/* 3. ASSOCIATIVE WORKSPACE (Split-Pane Grid nested directly underneath KPIs) */}
+      {/* 2. LAYOUT CONTAINER WITH NESTED LEFT FILTER COLUMN & RIGHT ANALYTICS STAGE */}
       <div className="grid grid-cols-12 gap-4 items-start pt-1">
         
-        {/* Left Pane: Nested Filter Hub (Aligned precisely under Filtered Revenue & KPIs) */}
-        <div className="col-span-12 md:col-span-3 space-y-2.5 sticky top-4 z-20">
+        {/* Left Column: Filter Dimensions (Starts at the top, perfectly nested alongside/underneath the KPI strip layout flow) */}
+        <div className="col-span-12 md:col-span-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1">
             <span>Filter Dimensions {isComparativeMode && `(${activeEditingState})`}</span>
             <div className="flex items-center gap-1 text-[9px] lowercase text-slate-400">
@@ -1485,8 +1408,86 @@ export default function QlikViewAnalyticsPage() {
           />
         </div>
 
-        {/* Right Pane: Dynamic Analytics Stage */}
+        {/* Right Column: Executive KPIs & Analytics Stage */}
         <div className="col-span-12 md:col-span-9 space-y-3">
+          
+          {/* Executive KPI Strip nested right above analytics tables */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
+                </p>
+                <h3 className="text-xl font-black text-white mt-0.5">
+                  ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-emerald-400 font-mono">
+                  {metricsA.shareOfTotal.toFixed(1)}% of universe
+                </p>
+              </div>
+              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {isComparativeMode ? "State B Revenue" : "Units Sold"}
+                </p>
+                <h3 className="text-xl font-black text-white mt-0.5">
+                  {isComparativeMode
+                    ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                    : `${metricsA.units.toLocaleString()} pcs`}
+                </h3>
+                <p className="text-[10px] text-indigo-400 font-mono">
+                  {isComparativeMode
+                    ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
+                    : `out of ${universe.totalUnits.toLocaleString()} total units`}
+                </p>
+              </div>
+              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
+                <ShoppingBag className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {isComparativeMode ? "State A Units" : "Transactions"}
+                </p>
+                <h3 className="text-xl font-black text-white mt-0.5">
+                  {isComparativeMode
+                    ? `${metricsA.units.toLocaleString()} pcs`
+                    : `${metricsA.transactions.toLocaleString()} logs`}
+                </h3>
+                <p className="text-[10px] text-blue-400 font-mono">
+                  {isComparativeMode ? `State B: ${metricsB.units} pcs` : "matching state"}
+                </p>
+              </div>
+              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Average Unit Retail (AUR)
+                </p>
+                <h3 className="text-xl font-black text-white mt-0.5">
+                  ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-purple-400 font-mono">
+                  {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail"}
+                </p>
+              </div>
+              <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg">
+                <Layers className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
           {/* Header Toolbar */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex flex-wrap items-center gap-2">
