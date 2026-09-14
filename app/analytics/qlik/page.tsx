@@ -37,6 +37,8 @@ import {
   SlidersHorizontal,
   Eye,
   Store as StoreIcon,
+  Grid,
+  List,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -164,6 +166,7 @@ interface ProductSummaryItem {
   units: number;
   revenue: number;
   abcClass: "A" | "B" | "C";
+  storeBreakdown: Record<string, number>;
 }
 
 export default function QlikViewAnalyticsPage() {
@@ -192,6 +195,7 @@ export default function QlikViewAnalyticsPage() {
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
   >([]);
@@ -608,10 +612,12 @@ export default function QlikViewAnalyticsPage() {
           units: 0,
           revenue: 0,
           abcClass: "C",
+          storeBreakdown: {},
         };
       }
       map[prodKey].units += item.quantity;
       map[prodKey].revenue += item.revenue;
+      map[prodKey].storeBreakdown[item.store] = (map[prodKey].storeBreakdown[item.store] || 0) + item.quantity;
     });
 
     const list = Object.values(map).sort((a, b) => b.revenue - a.revenue);
@@ -1025,7 +1031,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSPACE - EQUAL HEIGHT AND WIDTH COLUMNS */}
+      {/* 4. MAIN ANALYTICS WORKSPACE */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4">
         
         {/* Workspace Controls */}
@@ -1060,6 +1066,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Visual View Switcher (Bar Chart, Donut Ring, Table) */}
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
               <button
                 onClick={() => setVisualizationMode("chart")}
@@ -1289,81 +1296,146 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT ITEMIZED PRODUCTS TABLE (Fixed height matching left panel, bottom mini-chart removed) */}
+          {/* RIGHT ITEMIZED PRODUCTS TABLE WITH VIEW MODE TOGGLE (Consolidated vs Store Breakdown) */}
           {(activeTab === "both" || activeTab === "details") && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
               <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">Itemized Product Catalog (ABC Classified)</span>
-                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-lg font-mono font-bold">
-                    {filteredProducts.length} items
-                  </span>
+                  <span className="text-xs font-bold text-white">Product Catalog ({filteredProducts.length})</span>
                 </div>
 
-                <div className="relative w-40 sm:w-48">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Search style or SKU..."
-                    value={detailSearch}
-                    onChange={(e) => setDetailSearch(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-xs pl-8 pr-3 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
+                <div className="flex items-center gap-2">
+                  {/* View Mode Toggle: Consolidated vs Per-Store Breakdown */}
+                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px]">
+                    <button
+                      onClick={() => setProductViewMode("consolidated")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                        productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="View total stocks across stores"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>Total Stock</span>
+                    </button>
+                    <button
+                      onClick={() => setProductViewMode("store_breakdown")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                        productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="View stock breakdown per store"
+                    >
+                      <Grid className="w-3.5 h-3.5" />
+                      <span>Store Breakdown</span>
+                    </button>
+                  </div>
+
+                  <div className="relative w-36 sm:w-40">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search style..."
+                      value={detailSearch}
+                      onChange={(e) => setDetailSearch(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-xs pl-8 pr-2.5 py-1 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
-                    <tr>
-                      <th className="px-4 py-2">Style / SKU</th>
-                      <th className="px-3 py-2">Pareto Class</th>
-                      <th className="px-3 py-2">Color & Size</th>
-                      <th className="px-3 py-2 text-right">Unit Price</th>
-                      <th className="px-3 py-2 text-right">Sold</th>
-                      <th className="px-4 py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-900/80 text-xs">
-                    {filteredProducts.length === 0 ? (
-                      <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
-                    ) : (
-                      filteredProducts.map((prod) => (
-                        <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                          <td className="px-4 py-2 font-mono whitespace-nowrap">
-                            <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
-                            <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <span className={`text-[10px] font-black px-2 py-0.2 rounded-lg border ${
-                              prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
-                              prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
-                              "bg-slate-800 text-slate-400 border-slate-700"
-                            }`}>
-                              Class {prod.abcClass}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 max-w-[130px] truncate">
-                            <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
-                            <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
-                          <td className="px-4 py-2 text-right whitespace-nowrap">
-                            <button
-                              onClick={() => setInspectedProduct(prod)}
-                              className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            >
-                              <Eye className="w-3 h-3" />
-                              <span>Inspect</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                {productViewMode === "consolidated" ? (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+                      <tr>
+                        <th className="px-4 py-2">Style / SKU</th>
+                        <th className="px-3 py-2">Class</th>
+                        <th className="px-3 py-2">Color & Size</th>
+                        <th className="px-3 py-2 text-right">Price</th>
+                        <th className="px-3 py-2 text-right">Total Stock</th>
+                        <th className="px-4 py-2 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900/80 text-xs">
+                      {filteredProducts.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
+                      ) : (
+                        filteredProducts.map((prod) => (
+                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
+                            <td className="px-4 py-1.5 font-mono whitespace-nowrap">
+                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
+                              <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
+                            </td>
+                            <td className="px-3 py-1.5 whitespace-nowrap">
+                              <span className={`text-[10px] font-black px-2 py-0.2 rounded-lg border ${
+                                prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                                prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                                "bg-slate-800 text-slate-400 border-slate-700"
+                              }`}>
+                                Class {prod.abcClass}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 max-w-[120px] truncate">
+                              <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
+                              <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">{prod.units} pcs</td>
+                            <td className="px-4 py-1.5 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => setInspectedProduct(prod)}
+                                className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Inspect</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* PER-STORE BREAKDOWN MATRIX TABLE */
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
+                      <tr>
+                        <th className="px-4 py-2">Style / Variant</th>
+                        {universe.stores.map((st) => (
+                          <th key={st} className="px-2 py-2 text-right truncate max-w-[90px]" title={st}>
+                            {st}
+                          </th>
+                        ))}
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900/80 text-xs">
+                      {filteredProducts.length === 0 ? (
+                        <tr><td colSpan={universe.stores.length + 2} className="p-8 text-center text-slate-500">No product records.</td></tr>
+                      ) : (
+                        filteredProducts.map((prod) => (
+                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
+                            <td className="px-4 py-1.5 font-mono whitespace-nowrap">
+                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
+                              <span className="text-[10px] text-slate-400">{prod.color} / {prod.size}</span>
+                            </td>
+                            {universe.stores.map((st) => {
+                              const storeQty = prod.storeBreakdown[st] || 0;
+                              return (
+                                <td key={st} className={`px-2 py-1.5 text-right font-mono ${storeQty > 0 ? "text-white font-semibold" : "text-slate-700"}`}>
+                                  {storeQty > 0 ? `${storeQty}` : "-"}
+                                </td>
+                              );
+                            })}
+                            <td className="px-3 py-1.5 text-right font-mono font-black text-emerald-400 whitespace-nowrap">
+                              {prod.units} pcs
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
