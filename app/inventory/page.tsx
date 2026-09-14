@@ -507,7 +507,6 @@ export default function InventoryMonitoringPage() {
         price: finalPrice,
         quantity: finalQty,
         scanned_at: new Date().toISOString(),
-        entry_method: "manual",
       };
 
       const { error: logError } = await supabase.from("scanned_logs").insert([payload]);
@@ -1040,7 +1039,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* MODAL 3: Manual Sales Encoding Modal (With Auto-Price & Store Dropdown) */}
+      {/* MODAL 3: Manual Sales Encoding Modal (Fixed with Dropdown & Auto-Price) */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left text-slate-100">
