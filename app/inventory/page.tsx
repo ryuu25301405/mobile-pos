@@ -25,6 +25,9 @@ import {
   GripVertical,
   SlidersHorizontal,
   RotateCcw,
+  DollarSign,
+  Hash,
+  Check,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -37,6 +40,11 @@ interface StoreInventoryItem {
   safety_stock: number;
   last_replenished_at: string;
   total_out: number;
+  price?: number;
+  style_name?: string;
+  color?: string;
+  size?: string;
+  department?: string;
 }
 
 interface BulkImportItem {
@@ -124,6 +132,18 @@ export default function InventoryMonitoringPage() {
   const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
   const [bulkPreview, setBulkPreview] = useState<BulkImportItem[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
+
+  // Manual Sales Modal State
+  const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
+  const [manualSearchQuery, setManualSearchQuery] = useState<string>("");
+  const [selectedManualItem, setSelectedManualItem] = useState<StoreInventoryItem | null>(null);
+  const [manualQty, setManualQty] = useState<number>(1);
+  const [manualPrice, setManualPrice] = useState<string>("");
+  const [manualStore, setManualStore] = useState<string>("");
+  const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
+  const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
+  const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const customizerRef = useRef<HTMLDivElement>(null);
 
@@ -207,6 +227,11 @@ export default function InventoryMonitoringPage() {
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
+            price: Number(row.price) || 299.00, // fallback default price if missing
+            style_name: row.style_name || row.style_code || "Standard Item",
+            color: row.color || "Default",
+            size: row.size || "Free Size",
+            department: row.department || "General",
           };
         });
 
@@ -284,7 +309,6 @@ export default function InventoryMonitoringPage() {
     setDragOverColIndex(null);
   };
 
-  // Move Column Up/Down via Dropdown
   const moveColumn = (currentIndex: number, targetIndex: number) => {
     if (targetIndex < 0 || targetIndex >= columns.length) return;
     const updated = [...columns];
@@ -415,6 +439,107 @@ export default function InventoryMonitoringPage() {
       alert(`Bulk intake failed: ${err.message || "Unknown error"}`);
     } finally {
       setBulkSubmitting(false);
+    }
+  };
+
+  // Manual Sales Modal Handlers
+  const openManualSalesModal = () => {
+    setManualSearchQuery("");
+    setSelectedManualItem(null);
+    setManualQty(1);
+    setManualPrice("");
+    setManualStore(selectedStore !== "All Stores" ? selectedStore : STORES[1]);
+    setManualSuccessMsg("");
+    setManualErrorMsg("");
+    setIsManualModalOpen(true);
+  };
+
+  const filteredManualItems = useMemo(() => {
+    if (!manualSearchQuery.trim()) return items.slice(0, 8);
+    const q = manualSearchQuery.toLowerCase();
+    return items.filter(
+      (item) =>
+        item.style_code.toLowerCase().includes(q) ||
+        (item.style_name && item.style_name.toLowerCase().includes(q)) ||
+        (item.sku && item.sku.toLowerCase().includes(q))
+    ).slice(0, 10);
+  }, [items, manualSearchQuery]);
+
+  const handleSelectManualItem = (item: StoreInventoryItem) => {
+    setSelectedManualItem(item);
+    setManualStore(item.store);
+    setManualPrice(item.price ? item.price.toString() : "299.00");
+    setManualSearchQuery("");
+  };
+
+  const handleManualSaleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManualItem) {
+      setManualErrorMsg("Please select a product from your inventory catalog.");
+      return;
+    }
+
+    const finalPrice = parseFloat(manualPrice);
+    const finalQty = parseInt(String(manualQty), 10);
+
+    if (isNaN(finalPrice) || finalPrice < 0) {
+      setManualErrorMsg("Please enter a valid price.");
+      return;
+    }
+    if (isNaN(finalQty) || finalQty < 1) {
+      setManualErrorMsg("Quantity must be at least 1.");
+      return;
+    }
+
+    setManualSubmitting(true);
+    setManualErrorMsg("");
+
+    try {
+      // 1. Insert into scanned_logs with entry_method: 'manual'
+      const payload = {
+        store: manualStore || selectedManualItem.store,
+        style_code: selectedManualItem.style_code,
+        sku: selectedManualItem.sku || "-",
+        style_name: selectedManualItem.style_name || selectedManualItem.style_code,
+        description: selectedManualItem.department || "Manual Sale",
+        color: selectedManualItem.color || "Default",
+        size: selectedManualItem.size || "Free Size",
+        category: "General",
+        department: selectedManualItem.department || "General",
+        price: finalPrice,
+        quantity: finalQty,
+        scanned_at: new Date().toISOString(),
+        entry_method: "manual",
+      };
+
+      const { error: logError } = await supabase.from("scanned_logs").insert([payload]);
+      if (logError) throw logError;
+
+      // 2. Decrement current_stock in store_inventory table accordingly
+      const { data: invRow } = await supabase
+        .from("store_inventory")
+        .select("id, current_stock")
+        .eq("store", manualStore || selectedManualItem.store)
+        .eq("style_code", selectedManualItem.style_code)
+        .maybeSingle();
+
+      if (invRow) {
+        const updatedStock = Math.max(0, invRow.current_stock - finalQty);
+        await supabase
+          .from("store_inventory")
+          .update({ current_stock: updatedStock })
+          .eq("id", invRow.id);
+      }
+
+      setManualSuccessMsg("Manual sale logged successfully!");
+      setTimeout(() => {
+        setIsManualModalOpen(false);
+        fetchInventory();
+      }, 1000);
+    } catch (err: any) {
+      setManualErrorMsg(`Failed to save manual sale: ${err.message || "Unknown error"}`);
+    } finally {
+      setManualSubmitting(false);
     }
   };
 
@@ -579,6 +704,16 @@ export default function InventoryMonitoringPage() {
             <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
             <span>Sales Report</span>
           </Link>
+
+          {/* MANUAL SALE BUTTON */}
+          <button
+            onClick={openManualSalesModal}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-800 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer"
+            title="Manually encode a sale (fallback)"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>+ Manual Sale</span>
+          </button>
 
           <button
             onClick={() => setIsBulkOpen(true)}
@@ -1118,6 +1253,160 @@ export default function InventoryMonitoringPage() {
                   {restockSubmitting ? "Saving..." : "Confirm Intake"}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Manual Sales Encoding Modal (Fallback) */}
+      {isManualModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left text-slate-100">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  Fallback Encoding
+                </span>
+                <h2 className="text-lg font-bold text-white mt-1">Manual Sales Entry</h2>
+              </div>
+              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">
+                ✕
+              </button>
+            </div>
+
+            {manualSuccessMsg && (
+              <div className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl flex items-center gap-2 text-xs font-bold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{manualSuccessMsg}</span>
+              </div>
+            )}
+
+            {manualErrorMsg && (
+              <div className="bg-rose-950/60 border border-rose-500/30 text-rose-400 p-3 rounded-xl flex items-center gap-2 text-xs font-bold">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{manualErrorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleManualSaleSubmit} className="space-y-4 text-xs">
+              
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  1. Search Product Catalog
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Type style code, name, or SKU..."
+                    value={manualSearchQuery}
+                    onChange={(e) => setManualSearchQuery(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs pl-8 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {manualSearchQuery.trim() && (
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-900 text-xs shadow-lg">
+                    {filteredManualItems.length === 0 ? (
+                      <div className="p-3 text-slate-500 text-center italic">No items found matching "{manualSearchQuery}"</div>
+                    ) : (
+                      filteredManualItems.map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handleSelectManualItem(item)}
+                          className="p-2.5 hover:bg-slate-900 cursor-pointer transition flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-bold text-white">{item.style_name} <span className="text-emerald-400 font-mono text-[10px]">({item.style_code})</span></p>
+                            <p className="text-[10px] text-slate-400">{item.store} • Color: {item.color} • Stock: {item.current_stock}</p>
+                          </div>
+                          <span className="font-mono font-bold text-emerald-400">₱{item.price || 299}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {selectedManualItem && (
+                <div className="bg-emerald-950/20 border border-emerald-500/30 p-3 rounded-xl flex items-center justify-between text-xs">
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-emerald-400">Selected Product</p>
+                    <p className="font-bold text-white mt-0.5">{selectedManualItem.style_name} <span className="font-mono text-slate-300">[{selectedManualItem.style_code}]</span></p>
+                    <p className="text-[10px] text-slate-400">Available: {selectedManualItem.current_stock} pcs • {selectedManualItem.store}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedManualItem(null)}
+                    className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <DollarSign className="w-3 h-3 text-emerald-400" /> Unit Price (₱)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={manualPrice}
+                    onChange={(e) => setManualPrice(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white font-mono focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Hash className="w-3 h-3 text-indigo-400" /> Quantity
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={manualQty}
+                    onChange={(e) => setManualQty(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white font-mono focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Store className="w-3 h-3 text-amber-400" /> Store Branch
+                </label>
+                <input
+                  type="text"
+                  value={manualStore}
+                  onChange={(e) => setManualStore(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-emerald-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualSubmitting || !selectedManualItem}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>{manualSubmitting ? "Encoding..." : "Log Manual Sale"}</span>
+                </button>
+              </div>
+
             </form>
           </div>
         </div>
