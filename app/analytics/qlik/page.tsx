@@ -29,7 +29,6 @@ import {
   PieChart as PieChartIcon,
   Table,
   ChevronDown,
-  ChevronUp,
   Bookmark,
   BookmarkPlus,
   Trash2,
@@ -175,10 +174,10 @@ export default function QlikViewAnalyticsPage() {
 
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
-  const [chartDimensionIndex, setChartDimensionIndex] = useState<number>(0);
+  const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
   const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<
     { dim: DimensionConfig; value: string }[]
-  >([]);
+  >([0 as any]);
 
   const [detailSearch, setDetailSearch] = useState("");
   const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
@@ -500,16 +499,15 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [currentSubset, currentDimension, activeMeasure]);
 
-  const chartDimension = CYCLIC_DIMENSIONS[chartDimensionIndex];
-
-  const chartRows = useMemo(() => {
+  // Dynamic Graph Rows based on graphDimensionKey
+  const graphRows = useMemo(() => {
     const map: Record<
       string,
       { label: string; revenue: number; units: number; count: number; aur: number }
     > = {};
 
     currentSubset.forEach((item) => {
-      const keyVal = item[chartDimension.key] || "Unknown";
+      const keyVal = item[graphDimensionKey] || "Unknown";
       if (!map[keyVal]) {
         map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0, aur: 0 };
       }
@@ -552,17 +550,16 @@ export default function QlikViewAnalyticsPage() {
         color: CHART_COLORS[idx % CHART_COLORS.length],
       };
     });
-  }, [currentSubset, chartDimension, activeMeasure]);
+  }, [currentSubset, graphDimensionKey, activeMeasure]);
 
-  const maxChartMeasureValue = useMemo(() => {
-    if (chartRows.length === 0) return 1;
-    return Math.max(...chartRows.map((r) => r.measureValue), 1);
-  }, [chartRows]);
+  const maxGraphMeasureValue = useMemo(() => {
+    if (graphRows.length === 0) return 1;
+    return Math.max(...graphRows.map((r) => r.measureValue), 1);
+  }, [graphRows]);
 
-  // SVG Donut Path Calculator Helper
   const donutSlices = useMemo(() => {
     let cumulativePercent = 0;
-    return chartRows.map((row) => {
+    return graphRows.map((row) => {
       const startAngle = (cumulativePercent / 100) * 360;
       cumulativePercent += row.share;
       const endAngle = (cumulativePercent / 100) * 360;
@@ -572,7 +569,7 @@ export default function QlikViewAnalyticsPage() {
         endAngle,
       };
     });
-  }, [chartRows]);
+  }, [graphRows]);
 
   const filteredProducts = useMemo(() => {
     const map: Record<
@@ -664,6 +661,10 @@ export default function QlikViewAnalyticsPage() {
         setDrillLevel((prev) => prev + 1);
       }
     }
+  };
+
+  const handleGraphSliceClick = (label: string) => {
+    toggleSelection(graphDimensionKey, label);
   };
 
   const handleDrillUp = () => {
@@ -1123,7 +1124,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSPACE WITH GRAPH VIEWS */}
+      {/* 4. MAIN ANALYTICS WORKSPACE WITH DYNAMIC GRAPH DIMENSION SELECTOR */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4">
         
         {/* Workspace Controls */}
@@ -1148,16 +1149,6 @@ export default function QlikViewAnalyticsPage() {
               </button>
             </div>
 
-            {tableMode === "cyclic" && (
-              <button
-                onClick={() => setCyclicIndex((prev) => (prev + 1) % CYCLIC_DIMENSIONS.length)}
-                className="flex items-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                <span>Dimension: {currentDimension.label}</span>
-              </button>
-            )}
-
             <button
               onClick={cycleMeasure}
               className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
@@ -1165,16 +1156,6 @@ export default function QlikViewAnalyticsPage() {
               <Layers className="w-3.5 h-3.5 text-emerald-400" />
               <span>Measure: {activeMeasure.label} ⟳</span>
             </button>
-
-            {tableMode === "drilldown" && drillLevel > 0 && (
-              <button
-                onClick={handleDrillUp}
-                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                <CornerLeftUp className="w-3.5 h-3.5" />
-                <span>Drill Up</span>
-              </button>
-            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -1232,43 +1213,31 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        {/* Drill Breadcrumbs */}
-        {tableMode === "drilldown" && (
-          <div className="bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-1.5 text-xs">
-            <span
-              onClick={() => handleBreadcrumbClick(0)}
-              className={`cursor-pointer hover:underline ${drillLevel === 0 ? "text-emerald-400 font-bold" : "text-slate-400"}`}
-            >
-              All Stores
-            </span>
-            {drillBreadcrumbs.map((bc, idx) => (
-              <div key={idx} className="flex items-center gap-1.5">
-                <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-                <span
-                  onClick={() => handleBreadcrumbClick(idx + 1)}
-                  className={`cursor-pointer hover:underline ${idx + 1 === drillLevel ? "text-emerald-400 font-bold" : "text-slate-400"}`}
-                >
-                  {bc.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* MAIN DISPLAY GRID */}
         <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
           
-          {/* VISUAL GRAPH STAGE (Bar Chart / Proportion Donut / Table) */}
+          {/* VISUAL GRAPH STAGE WITH DYNAMIC DIMENSION SELECTOR */}
           {(activeTab === "both" || activeTab === "summary") && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-white flex items-center gap-2">
                   {visualizationMode === "donut" ? <PieChartIcon className="w-4 h-4 text-emerald-400" /> : <BarChart2 className="w-4 h-4 text-emerald-400" />}
-                  {visualizationMode === "donut" ? `Proportion Share: ${chartDimension.label}` : visualizationMode === "chart" ? `Bar Chart Breakdown: ${chartDimension.label}` : `Table: ${currentDimension.label}`}
+                  <span>{visualizationMode === "donut" ? "Proportion Share" : visualizationMode === "chart" ? "Bar Chart Breakdown" : "Aggregation Table"}</span>
                 </span>
-                <span className="text-[10px] text-emerald-400 font-mono">
-                  Sorted by {activeMeasure.label}
-                </span>
+
+                {/* UNIVERSAL GRAPH DIMENSION SELECTOR */}
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-xl text-[11px]">
+                  <span className="text-slate-400">Analyze by:</span>
+                  <select
+                    value={graphDimensionKey}
+                    onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)}
+                    className="bg-slate-900 text-emerald-400 font-bold focus:outline-none cursor-pointer"
+                  >
+                    {CYCLIC_DIMENSIONS.map((dim) => (
+                      <option key={dim.key} value={dim.key}>{dim.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {visualizationMode === "donut" ? (
@@ -1293,8 +1262,9 @@ export default function QlikViewAnalyticsPage() {
                             strokeWidth="16"
                             strokeDasharray={strokeDasharray}
                             strokeDashoffset={strokeDashoffset}
-                            onClick={() => handleRowClick(slice.label)}
+                            onClick={() => handleGraphSliceClick(slice.label)}
                             className="cursor-pointer hover:opacity-80 transition-all duration-300"
+                            title={`Filter by ${slice.label}`}
                           />
                         );
                       })}
@@ -1302,58 +1272,37 @@ export default function QlikViewAnalyticsPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
                       <span className="text-[10px] uppercase font-bold text-slate-400">Total</span>
                       <span className="text-sm font-black text-white">
-                        {chartRows.length} items
+                        {graphRows.length} items
                       </span>
                     </div>
                   </div>
 
                   {/* Legend */}
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 w-full sm:w-56">
-                    {chartRows.map((row) => {
-                      const displayVal =
-                        activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
-                        activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
-                        activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` :
-                        `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-
-                      return (
-                        <div
-                          key={row.label}
-                          onClick={() => handleRowClick(row.label)}
-                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 cursor-pointer transition"
-                        >
-                          <div className="flex items-center gap-2 truncate mr-2">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                            <span className="font-semibold text-white truncate">{row.label}</span>
-                          </div>
-                          <div className="font-mono text-emerald-400 font-bold shrink-0">{row.share.toFixed(1)}%</div>
+                    {graphRows.map((row) => (
+                      <div
+                        key={row.label}
+                        onClick={() => handleGraphSliceClick(row.label)}
+                        className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 cursor-pointer transition"
+                      >
+                        <div className="flex items-center gap-2 truncate mr-2">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                          <span className="font-semibold text-white truncate">{row.label}</span>
                         </div>
-                      );
-                    })}
+                        <div className="font-mono text-emerald-400 font-bold shrink-0">{row.share.toFixed(1)}%</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : visualizationMode === "chart" ? (
                 /* BAR CHART VISUALIZATION */
                 <div className="p-4 space-y-3">
-                  <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-400 font-bold">Chart Dimension:</span>
-                    <select
-                      value={chartDimensionIndex}
-                      onChange={(e) => setChartDimensionIndex(Number(e.target.value))}
-                      className="bg-slate-950 border border-slate-800 text-emerald-400 font-bold px-3 py-1 rounded-lg focus:outline-none cursor-pointer text-xs"
-                    >
-                      {CYCLIC_DIMENSIONS.map((dim, idx) => (
-                        <option key={dim.key} value={idx}>{dim.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1">
-                    {chartRows.length === 0 ? (
+                  <div className="max-h-[410px] overflow-y-auto space-y-2 pr-1">
+                    {graphRows.length === 0 ? (
                       <div className="p-8 text-center text-slate-500 text-xs">No chart data available.</div>
                     ) : (
-                      chartRows.map((row) => {
-                        const pct = Math.max(6, (row.measureValue / maxChartMeasureValue) * 100);
+                      graphRows.map((row) => {
+                        const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
                         const displayVal =
                           activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
                           activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
@@ -1363,7 +1312,7 @@ export default function QlikViewAnalyticsPage() {
                         return (
                           <div
                             key={row.label}
-                            onClick={() => handleRowClick(row.label)}
+                            onClick={() => handleGraphSliceClick(row.label)}
                             className="bg-slate-900/60 border border-slate-800 hover:border-emerald-500/50 p-3 rounded-xl cursor-pointer transition space-y-1.5 group"
                           >
                             <div className="flex items-center justify-between text-xs">
@@ -1393,18 +1342,14 @@ export default function QlikViewAnalyticsPage() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
-                        <th className="px-4 py-3">{currentDimension.label}</th>
+                        <th className="px-4 py-3">Dimension Item</th>
                         <th className="px-3 py-3 text-right">Logs</th>
                         <th className="px-3 py-3 text-right">Units</th>
-                        <th className="px-4 py-3 text-right">
-                          <span onClick={cycleMeasure} className="cursor-pointer hover:text-emerald-400 underline decoration-dotted">
-                            {activeMeasure.label} ⟳
-                          </span>
-                        </th>
+                        <th className="px-4 py-3 text-right">{activeMeasure.label}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-900 text-xs">
-                      {tableRows.map((row) => {
+                      {graphRows.map((row) => {
                         const displayVal =
                           activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` :
                           activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` :
@@ -1412,7 +1357,7 @@ export default function QlikViewAnalyticsPage() {
                           `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
 
                         return (
-                          <tr key={row.label} onClick={() => handleRowClick(row.label)} className="hover:bg-slate-900/60 transition-colors cursor-pointer group">
+                          <tr key={row.label} onClick={() => handleGraphSliceClick(row.label)} className="hover:bg-slate-900/60 transition-colors cursor-pointer group">
                             <td className="px-4 py-2.5 font-bold text-white group-hover:text-emerald-400">{row.label}</td>
                             <td className="px-3 py-2.5 text-right text-slate-400 font-mono">{row.count}</td>
                             <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{row.units}</td>
