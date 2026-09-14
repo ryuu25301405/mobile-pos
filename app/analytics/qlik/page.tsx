@@ -675,12 +675,6 @@ export default function QlikViewAnalyticsPage() {
     };
   }, [currentSubset, inspectedProduct]);
 
-  const topProductsForMiniChart = useMemo(() => {
-    const list = filteredProducts.slice(0, 6);
-    const maxRev = Math.max(...list.map((p) => p.revenue), 1);
-    return { list, maxRev };
-  }, [filteredProducts]);
-
   const handleRowClick = (label: string) => {
     if (tableMode === "cyclic") {
       toggleSelection(currentDimension.key, label);
@@ -736,125 +730,6 @@ export default function QlikViewAnalyticsPage() {
     }
     setDrillBreadcrumbs((prev) => prev.slice(0, targetIndex));
     setDrillLevel(targetIndex);
-  };
-
-  const exportToSpreadsheet = (format: "xlsx" | "csv") => {
-    if (filteredProducts.length === 0) {
-      alert("No data available to export under active selections.");
-      return;
-    }
-
-    const rows = filteredProducts.map((p) => ({
-      "Style Code": p.styleCode,
-      "SKU": p.sku !== "-" ? p.sku : "",
-      "Product Name": p.styleName,
-      "Department": p.department,
-      "Category": p.category,
-      "Color": p.color,
-      "Size": p.size,
-      "ABC Class": `Class ${p.abcClass}`,
-      "Unit Price (₱)": p.price,
-      "Units Sold": p.units,
-      "Total Revenue (₱)": p.revenue,
-    }));
-
-    const totalUnits = filteredProducts.reduce((sum, p) => sum + p.units, 0);
-    const totalRev = filteredProducts.reduce((sum, p) => sum + p.revenue, 0);
-
-    rows.push({
-      "Style Code": "TOTAL",
-      "SKU": "",
-      "Product Name": `Filtered Items Count: ${filteredProducts.length}`,
-      "Department": "",
-      "Category": "",
-      "Color": "",
-      "Size": "",
-      "ABC Class": "",
-      "Unit Price (₱)": 0,
-      "Units Sold": totalUnits,
-      "Total Revenue (₱)": totalRev,
-    });
-
-    if (format === "csv") {
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "QlikView_Export");
-      const stateTag = isComparativeMode ? `State_${activeEditingState}` : "Selection";
-      XLSX.writeFile(workbook, `Qlik_Export_${stateTag}_${new Date().toISOString().split("T")[0]}.csv`, { bookType: "csv" });
-      return;
-    }
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-
-    const headerStyle = {
-      font: { name: "Arial", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
-      fill: { fgColor: { rgb: "064E3B" } },
-      alignment: { horizontal: "center", vertical: "center" },
-      border: {
-        top: { style: "thin", color: { rgb: "022C22" } },
-        bottom: { style: "thin", color: { rgb: "022C22" } },
-        left: { style: "thin", color: { rgb: "022C22" } },
-        right: { style: "thin", color: { rgb: "022C22" } },
-      },
-    };
-
-    const cellStyle = {
-      font: { name: "Arial", sz: 10, color: { rgb: "334155" } },
-      alignment: { vertical: "center" },
-      border: {
-        top: { style: "thin", color: { rgb: "E2E8F0" } },
-        bottom: { style: "thin", color: { rgb: "E2E8F0" } },
-        left: { style: "thin", color: { rgb: "E2E8F0" } },
-        right: { style: "thin", color: { rgb: "E2E8F0" } },
-      },
-    };
-
-    const totalRowStyle = {
-      font: { name: "Arial", sz: 11, bold: true, color: { rgb: "0F172A" } },
-      fill: { fgColor: { rgb: "F1F5F9" } },
-      border: {
-        top: { style: "medium", color: { rgb: "022C22" } },
-        bottom: { style: "medium", color: { rgb: "022C22" } },
-      },
-    };
-
-    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
-    for (let R = range.s.r; R <= range.e.r; ++R) {
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-        if (!worksheet[cellAddress]) continue;
-
-        if (R === 0) {
-          worksheet[cellAddress].s = headerStyle;
-        } else if (R === range.e.r) {
-          worksheet[cellAddress].s = totalRowStyle;
-        } else {
-          worksheet[cellAddress].s = cellStyle;
-        }
-      }
-    }
-
-    worksheet["!cols"] = [
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 30 },
-      { wch: 15 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 20 },
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Executive_Sales_Report");
-
-    const stateTag = isComparativeMode ? `State_${activeEditingState}` : "Selection";
-    const filename = `Executive_Sales_Report_${stateTag}_${new Date().toISOString().split("T")[0]}.xlsx`;
-
-    XLSX.writeFile(workbook, filename);
   };
 
   return (
@@ -915,7 +790,6 @@ export default function QlikViewAnalyticsPage() {
       {/* EXECUTIVE KPI STRIP */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
@@ -933,7 +807,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State B Revenue" : "Units Sold"}
@@ -955,7 +828,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {isComparativeMode ? "State A Units" : "Transactions"}
@@ -975,7 +847,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl pointer-events-none"></div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Average Unit Retail (AUR)
@@ -1076,7 +947,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* FILTER DRAWER POPUP */}
       {activeFilterDrawer && (
-        <div className="bg-[#0E1526] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
+        <div className="bg-[#0E1526] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-emerald-400" />
@@ -1154,7 +1025,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSPACE */}
+      {/* 4. MAIN ANALYTICS WORKSPACE - EQUAL HEIGHT AND WIDTH COLUMNS */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4">
         
         {/* Workspace Controls */}
@@ -1189,7 +1060,6 @@ export default function QlikViewAnalyticsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Visual View Switcher (Bar Chart, Donut Ring, Table) */}
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
               <button
                 onClick={() => setVisualizationMode("chart")}
@@ -1243,13 +1113,36 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        {/* MAIN DISPLAY GRID */}
+        {/* Drill Breadcrumbs */}
+        {tableMode === "drilldown" && (
+          <div className="bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-1.5 text-xs">
+            <span
+              onClick={() => handleBreadcrumbClick(0)}
+              className={`cursor-pointer hover:underline ${drillLevel === 0 ? "text-emerald-400 font-bold" : "text-slate-400"}`}
+            >
+              All Stores
+            </span>
+            {drillBreadcrumbs.map((bc, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
+                <span
+                  onClick={() => handleBreadcrumbClick(idx + 1)}
+                  className={`cursor-pointer hover:underline ${idx + 1 === drillLevel ? "text-emerald-400 font-bold" : "text-slate-400"}`}
+                >
+                  {bc.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* MAIN DISPLAY GRID - EQUAL HEIGHT MATCHING COLUMNS */}
         <div className={`grid gap-4 ${activeTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
           
-          {/* VISUAL GRAPH STAGE */}
+          {/* LEFT GRAPH STAGE (Fixed height matching right panel) */}
           {(activeTab === "both" || activeTab === "summary") && (
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
                 <span className="text-xs font-bold text-white flex items-center gap-2">
                   {visualizationMode === "donut" ? <PieChartIcon className="w-4 h-4 text-emerald-400" /> : <BarChart2 className="w-4 h-4 text-emerald-400" />}
                   <span>{visualizationMode === "donut" ? "Proportion Share" : visualizationMode === "chart" ? "Bar Chart Breakdown" : "Aggregation Table"}</span>
@@ -1270,8 +1163,8 @@ export default function QlikViewAnalyticsPage() {
               </div>
 
               {visualizationMode === "donut" ? (
-                <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-8 min-h-[380px]">
-                  <div className="relative w-48 h-48 flex items-center justify-center">
+                <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-8 flex-1 overflow-hidden">
+                  <div className="relative w-48 h-48 flex items-center justify-center shrink-0">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
                       {donutSlices.map((slice, idx) => {
@@ -1304,7 +1197,7 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-2 w-full sm:w-56">
+                  <div className="space-y-2 overflow-y-auto pr-2 w-full sm:w-56 max-h-[420px] [scrollbar-width:thin]">
                     {graphRows.map((row) => (
                       <div
                         key={row.label}
@@ -1321,8 +1214,8 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
               ) : visualizationMode === "chart" ? (
-                <div className="p-4 space-y-3">
-                  <div className="max-h-[410px] overflow-y-auto space-y-2 pr-1">
+                <div className="p-4 space-y-3 flex-1 overflow-hidden flex flex-col">
+                  <div className="overflow-y-auto space-y-2 pr-1 flex-1 [scrollbar-width:thin]">
                     {graphRows.length === 0 ? (
                       <div className="p-8 text-center text-slate-500 text-xs">No chart data available.</div>
                     ) : (
@@ -1362,7 +1255,7 @@ export default function QlikViewAnalyticsPage() {
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto max-h-[440px]">
+                <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md">
                       <tr>
@@ -1396,10 +1289,10 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* ITEMIZED PRODUCTS TABLE WITH MAXIMIZED SPACE */}
+          {/* RIGHT ITEMIZED PRODUCTS TABLE (Fixed height matching left panel, bottom mini-chart removed) */}
           {(activeTab === "both" || activeTab === "details") && (
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
+              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white">Itemized Product Catalog (ABC Classified)</span>
@@ -1420,7 +1313,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto max-h-[520px]">
+              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800 sticky top-0 backdrop-blur-md z-10">
                     <tr>
@@ -1438,11 +1331,11 @@ export default function QlikViewAnalyticsPage() {
                     ) : (
                       filteredProducts.map((prod) => (
                         <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                          <td className="px-4 py-1.5 font-mono whitespace-nowrap">
+                          <td className="px-4 py-2 font-mono whitespace-nowrap">
                             <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
                             <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
                           </td>
-                          <td className="px-3 py-1.5 whitespace-nowrap">
+                          <td className="px-3 py-2 whitespace-nowrap">
                             <span className={`text-[10px] font-black px-2 py-0.2 rounded-lg border ${
                               prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                               prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
@@ -1451,13 +1344,13 @@ export default function QlikViewAnalyticsPage() {
                               Class {prod.abcClass}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 max-w-[130px] truncate">
+                          <td className="px-3 py-2 max-w-[130px] truncate">
                             <span className="text-white block truncate font-medium" title={prod.styleName}>{prod.styleName}</span>
                             <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
                           </td>
-                          <td className="px-3 py-1.5 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
-                          <td className="px-4 py-1.5 text-right whitespace-nowrap">
+                          <td className="px-3 py-2 text-right text-slate-300 font-mono whitespace-nowrap">₱{prod.price.toFixed(0)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-white whitespace-nowrap">{prod.units} pcs</td>
+                          <td className="px-4 py-2 text-right whitespace-nowrap">
                             <button
                               onClick={() => setInspectedProduct(prod)}
                               className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
@@ -1472,40 +1365,6 @@ export default function QlikViewAnalyticsPage() {
                   </tbody>
                 </table>
               </div>
-
-              {/* Nested Mini-Chart Distribution */}
-              {topProductsForMiniChart.list.length > 0 && (
-                <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Top Product Revenue Distribution</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">{topProductsForMiniChart.list.length} leading variants</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {topProductsForMiniChart.list.map((item) => {
-                      const pct = Math.min(100, Math.max(8, (item.revenue / topProductsForMiniChart.maxRev) * 100));
-                      return (
-                        <div
-                          key={item.key}
-                          onClick={() => toggleSelection("style_code", item.styleCode)}
-                          className="bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-1"
-                        >
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-bold text-slate-200 truncate mr-1">{item.styleCode}</span>
-                            <span className="font-mono text-emerald-400 font-bold shrink-0">₱{item.revenue.toLocaleString()}</span>
-                          </div>
-                          <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden">
-                            <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1514,7 +1373,7 @@ export default function QlikViewAnalyticsPage() {
       {/* CLICK-TO-INSPECT PRODUCT MODAL DRAWER */}
       {inspectedProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
