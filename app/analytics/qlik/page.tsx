@@ -187,11 +187,13 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  
-  // Re-architected view mode: "consolidated" (Clean Catalog) or "stores_grid" (Modern Branch Cards)
   const [productViewMode, setProductViewMode] = useState<"consolidated" | "stores_grid">("consolidated");
-  const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
   
+  // Branch Modal States with Search & Filter
+  const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
+  const [branchModalSearch, setBranchModalSearch] = useState<string>("");
+  const [branchModalTierFilter, setBranchModalTierFilter] = useState<"ALL" | "A" | "B" | "C">("ALL");
+
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
   const [detailSearch, setDetailSearch] = useState("");
@@ -612,17 +614,16 @@ export default function QlikViewAnalyticsPage() {
     );
   }, [currentSubset, detailSearch]);
 
-  // Aggregate stats per store for the modern branch breakdown cards
   const storeCardsSummary = useMemo(() => {
-    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number; topItemsCount: number }> = {};
+    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
     
     universe.stores.forEach((st) => {
-      map[st] = { store: st, totalUnits: 0, totalRevenue: 0, topItemsCount: 0 };
+      map[st] = { store: st, totalUnits: 0, totalRevenue: 0 };
     });
 
     currentSubset.forEach((item) => {
       if (!map[item.store]) {
-        map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0, topItemsCount: 0 };
+        map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0 };
       }
       map[item.store].totalUnits += item.quantity;
       map[item.store].totalRevenue += item.revenue;
@@ -631,12 +632,32 @@ export default function QlikViewAnalyticsPage() {
     return Object.values(map).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }, [currentSubset, universe.stores]);
 
+  // Filtered products specifically for the selected branch modal with search & tier filter
   const selectedBranchProducts = useMemo(() => {
     if (!selectedBranchDetail) return [];
-    return filteredProducts
+    
+    let list = filteredProducts
       .filter((p) => (p.storeBreakdown[selectedBranchDetail] || 0) > 0)
       .sort((a, b) => (b.storeBreakdown[selectedBranchDetail] || 0) - (a.storeBreakdown[selectedBranchDetail] || 0));
-  }, [filteredProducts, selectedBranchDetail]);
+
+    if (branchModalTierFilter !== "ALL") {
+      list = list.filter((p) => p.abcClass === branchModalTierFilter);
+    }
+
+    if (branchModalSearch.trim()) {
+      const q = branchModalSearch.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.styleCode.toLowerCase().includes(q) ||
+          p.styleName.toLowerCase().includes(q) ||
+          p.color.toLowerCase().includes(q) ||
+          p.size.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
 
   const inspectedProductBreakdown = useMemo(() => {
     if (!inspectedProduct) return { stores: [], totalLogs: 0 };
@@ -1085,7 +1106,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT PANEL: REDESIGNED MODERN STORE BREAKDOWN & CATALOG */}
+          {/* RIGHT PANEL: PRODUCT CATALOG & MODERN BRANCH CARDS */}
           {expandedPanel !== "graph" && (
             <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[580px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
@@ -1127,7 +1148,6 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              {/* MODERN REDESIGNED VIEW MODES */}
               <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin] p-3">
                 {productViewMode === "consolidated" ? (
                   <table className="w-full text-left text-xs border-collapse">
@@ -1147,16 +1167,16 @@ export default function QlikViewAnalyticsPage() {
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-3 py-2 font-mono space-y-0.5">
-                              <span className="font-bold text-emerald-400 block text-xs">
+                            <td className="px-3 py-2.5 font-mono space-y-0.5">
+                              <span className="font-bold text-emerald-400 block text-sm">
                                 {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
                               </span>
-                              <div className="text-[10px] text-slate-300 font-sans font-medium flex items-center gap-1.5">
+                              <div className="text-[11px] text-slate-300 font-sans font-medium flex items-center gap-1.5">
                                 <span className="text-emerald-300 font-bold">Code: {prod.styleCode}</span>
                                 {prod.sku !== "-" && <span className="text-blue-400">• SKU: {prod.sku}</span>}
                               </div>
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-3 py-2.5 whitespace-nowrap">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                                 prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                 prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
@@ -1165,13 +1185,13 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-3 py-2 max-w-[130px]">
+                            <td className="px-3 py-2.5 max-w-[140px]">
                               <span className="text-white block font-medium truncate">{prod.color}</span>
                               <span className="text-[10px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
                             </td>
-                            <td className="px-3 py-2 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
-                            <td className="px-3 py-2 text-right print:hidden">
+                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
+                            <td className="px-3 py-2.5 text-right print:hidden">
                               <button
                                 onClick={() => setInspectedProduct(prod)}
                                 className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer"
@@ -1186,12 +1206,15 @@ export default function QlikViewAnalyticsPage() {
                     </tbody>
                   </table>
                 ) : (
-                  /* MODERN BRANCH CARDS LAYOUT (Replaces overwhelming multi-column matrix) */
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {storeCardsSummary.map((storeCard) => (
                       <div
                         key={storeCard.store}
-                        onClick={() => setSelectedBranchDetail(storeCard.store)}
+                        onClick={() => {
+                          setSelectedBranchDetail(storeCard.store);
+                          setBranchModalSearch("");
+                          setBranchModalTierFilter("ALL");
+                        }}
                         className="bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-lg"
                       >
                         <div className="flex items-center justify-between">
@@ -1224,7 +1247,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* BRANCH DEEP-DIVE MODAL */}
+      {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH SEARCH & FILTER */}
       {selectedBranchDetail && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 text-left">
@@ -1243,14 +1266,55 @@ export default function QlikViewAnalyticsPage() {
               </button>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+            {/* SEARCH & FILTER CONTROLS INSIDE MODAL */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search style code, name, color..."
+                  value={branchModalSearch}
+                  onChange={(e) => setBranchModalSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+                <span className="text-[10px] uppercase text-slate-500 font-bold px-2">Tier:</span>
+                {(["ALL", "A", "B", "C"] as const).map((tier) => (
+                  <button
+                    key={tier}
+                    onClick={() => setBranchModalTierFilter(tier)}
+                    className={`px-2.5 py-1 rounded-lg transition font-bold text-xs ${
+                      branchModalTierFilter === tier
+                        ? "bg-emerald-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {tier}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1 [scrollbar-width:thin]">
               {selectedBranchProducts.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">No active stock recorded for this branch.</div>
+                <div className="p-8 text-center text-slate-500 text-xs">No matching product records found for this branch.</div>
               ) : (
                 selectedBranchProducts.map((prod) => (
                   <div key={prod.key} className="bg-slate-950/80 border border-slate-800 p-3 rounded-2xl flex items-center justify-between text-xs">
                     <div className="space-y-0.5">
-                      <span className="font-bold text-white block text-sm">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white block text-sm">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                          prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                          prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                          "bg-slate-800 text-slate-400 border-slate-700"
+                        }`}>
+                          Class {prod.abcClass}
+                        </span>
+                      </div>
                       <span className="text-[11px] text-slate-400 font-mono">Code: {prod.styleCode} • {prod.color} ({prod.size})</span>
                     </div>
                     <div className="text-right font-mono">
@@ -1262,10 +1326,11 @@ export default function QlikViewAnalyticsPage() {
               )}
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+              <span>Showing {selectedBranchProducts.length} items</span>
               <button
                 onClick={() => setSelectedBranchDetail(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl transition cursor-pointer"
               >
                 Close Branch View
               </button>
