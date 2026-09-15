@@ -227,7 +227,7 @@ export default function InventoryMonitoringPage() {
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
             price: Number(row.price) || 299.00,
-            style_name: row.style_name || row.style_code || "Standard Item",
+            style_name: row.style_name || row.sku || row.style_code || "Standard Item",
             color: row.color || "Default",
             size: row.size || "Free Size",
             department: row.department || "General",
@@ -316,236 +316,6 @@ export default function InventoryMonitoringPage() {
     persistColumns(updated);
   };
 
-  // Single Item Restock
-  const handleStockIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const styleCode = restockStyleCode.trim();
-    if (!styleCode || restockQty <= 0) return;
-
-    setRestockSubmitting(true);
-    try {
-      const { data: existing } = await supabase
-        .from("store_inventory")
-        .select("id, current_stock, initial_stock")
-        .eq("store", restockStore)
-        .eq("style_code", styleCode)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase
-          .from("store_inventory")
-          .update({
-            initial_stock: existing.initial_stock + restockQty,
-            current_stock: existing.current_stock + restockQty,
-            sku: restockSku.trim() || undefined,
-            last_replenished_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-      } else {
-        await supabase.from("store_inventory").insert([
-          {
-            store: restockStore,
-            style_code: styleCode,
-            sku: restockSku.trim() || null,
-            initial_stock: restockQty,
-            current_stock: restockQty,
-            safety_stock: 5,
-          },
-        ]);
-      }
-
-      await supabase.from("inventory_movements").insert([
-        {
-          store: restockStore,
-          sku: styleCode,
-          type: "DELIVERY",
-          quantity: restockQty,
-        },
-      ]);
-
-      setIsRestockOpen(false);
-      setRestockStyleCode("");
-      setRestockSku("");
-      fetchInventory();
-    } catch (err) {
-      alert("Failed to save incoming delivery.");
-    } finally {
-      setRestockSubmitting(false);
-    }
-  };
-
-  // Bulk File Upload Parser
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: "binary" });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data: any[] = XLSX.utils.sheet_to_json(ws);
-
-      const parsed: BulkImportItem[] = data
-        .map((row) => {
-          const store =
-            row["Store"] || row["store"] || row["Store Location"] || bulkDefaultStore;
-          const style =
-            row["Style Code"] ||
-            row["style_code"] ||
-            row["Style"] ||
-            row["style"] ||
-            "";
-          const sku =
-            row["SKU"] || row["sku"] || row["Barcode"] || row["barcode"] || "";
-          const qty = Number(
-            row["Quantity"] || row["quantity"] || row["Qty"] || row["qty"] || 0
-          );
-
-          return {
-            store: String(store).trim(),
-            style_code: String(style).trim(),
-            sku: String(sku).trim(),
-            quantity: Math.max(0, qty),
-          };
-        })
-        .filter((item) => item.quantity > 0 && (item.style_code || item.sku));
-
-      setBulkPreview(parsed);
-    };
-
-    reader.readAsBinaryString(file);
-  };
-
-  const handleConfirmBulkDelivery = async () => {
-    if (bulkPreview.length === 0) return;
-    setBulkSubmitting(true);
-
-    try {
-      const { error } = await supabase.rpc("bulk_receive_delivery", {
-        p_items: bulkPreview,
-      });
-
-      if (error) throw error;
-
-      alert(`Successfully processed ${bulkPreview.length} delivery items!`);
-      setIsBulkOpen(false);
-      setBulkPreview([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      fetchInventory();
-    } catch (err: any) {
-      alert(`Bulk intake failed: ${err.message || "Unknown error"}`);
-    } finally {
-      setBulkSubmitting(false);
-    }
-  };
-
-  // Manual Sales Modal Handlers
-  const openManualSalesModal = () => {
-    setManualSearchQuery("");
-    setSelectedManualItem(null);
-    setManualQty(1);
-    setManualPrice("");
-    setManualStore(selectedStore !== "All Stores" ? selectedStore : STORES[1]);
-    setManualSuccessMsg("");
-    setManualErrorMsg("");
-    setIsManualModalOpen(true);
-  };
-
-  const filteredManualItems = useMemo(() => {
-    if (!manualSearchQuery.trim()) return items.slice(0, 8);
-    const q = manualSearchQuery.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.style_code.toLowerCase().includes(q) ||
-        (item.style_name && item.style_name.toLowerCase().includes(q)) ||
-        (item.sku && item.sku.toLowerCase().includes(q))
-    ).slice(0, 10);
-  }, [items, manualSearchQuery]);
-
-  const handleSelectManualItem = (item: StoreInventoryItem) => {
-    setSelectedManualItem(item);
-    setManualStore(item.store);
-    setManualPrice(item.price ? item.price.toString() : "299.00");
-    setManualSearchQuery("");
-  };
-
-  const handleManualSaleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedManualItem) {
-      setManualErrorMsg("Please select a product from your inventory catalog.");
-      return;
-    }
-
-    const finalPrice = parseFloat(manualPrice);
-    const finalQty = parseInt(String(manualQty), 10);
-
-    if (isNaN(finalPrice) || finalPrice < 0) {
-      setManualErrorMsg("Please enter a valid price.");
-      return;
-    }
-    if (isNaN(finalQty) || finalQty < 1) {
-      setManualErrorMsg("Quantity must be at least 1.");
-      return;
-    }
-
-    setManualSubmitting(true);
-    setManualErrorMsg("");
-
-    try {
-      const { data: pastLog } = await supabase
-        .from("scanned_logs")
-        .select("description, category, department, color, size, style_name")
-        .eq("style_code", selectedManualItem.style_code)
-        .limit(1)
-        .maybeSingle();
-
-      const payload = {
-        store: manualStore || selectedManualItem.store,
-        style_code: selectedManualItem.style_code,
-        sku: selectedManualItem.sku || "-",
-        style_name: pastLog?.style_name || selectedManualItem.style_name || selectedManualItem.style_code,
-        description: pastLog?.description || selectedManualItem.department || "Manual Sale Record",
-        color: pastLog?.color || selectedManualItem.color || "Default",
-        size: pastLog?.size || selectedManualItem.size || "Free Size",
-        category: pastLog?.category || selectedManualItem.department || "Apparel",
-        department: pastLog?.department || selectedManualItem.department || "General",
-        price: finalPrice,
-        quantity: finalQty,
-        scanned_at: new Date().toISOString(),
-      };
-
-      const { error: logError } = await supabase.from("scanned_logs").insert([payload]);
-      if (logError) throw logError;
-
-      const { data: invRow } = await supabase
-        .from("store_inventory")
-        .select("id, current_stock")
-        .eq("store", manualStore || selectedManualItem.store)
-        .eq("style_code", selectedManualItem.style_code)
-        .maybeSingle();
-
-      if (invRow) {
-        const updatedStock = Math.max(0, invRow.current_stock - finalQty);
-        await supabase
-          .from("store_inventory")
-          .update({ current_stock: updatedStock })
-          .eq("id", invRow.id);
-      }
-
-      setManualSuccessMsg("Manual sale logged successfully with full product details!");
-      setTimeout(() => {
-        setIsManualModalOpen(false);
-        fetchInventory();
-      }, 1000);
-    } catch (err: any) {
-      setManualErrorMsg(`Failed to log manual sale: ${err.message || "Unknown error"}`);
-    } finally {
-      setManualSubmitting(false);
-    }
-  };
-
   // Filter and Sort Data
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
@@ -627,17 +397,14 @@ export default function InventoryMonitoringPage() {
       case "style_code":
         return (
           <div className="space-y-1 font-mono">
-            <span className="font-black text-emerald-400 block text-sm tracking-wide">
-              {item.style_name && item.style_name !== "Standard Item" ? item.style_name : item.style_code}
+            <span className="font-black text-white block text-sm tracking-wide">
+              {item.sku && item.sku !== "-" ? item.sku : (item.style_name !== "-" ? item.style_name : item.style_code)}
             </span>
             <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
-              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {item.style_code}</span>
-              {item.color && item.color !== "Default" && <span className="text-slate-400">• Color: {item.color}</span>}
-              {item.size && item.size !== "Free Size" && <span className="text-slate-400">• Size: {item.size}</span>}
+              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-400 border border-slate-800 font-mono font-bold">Code: {item.style_code}</span>
+              {item.color && item.color !== "Default" && <span className="text-slate-400">• {item.color}</span>}
+              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• {item.size}</span>}
             </div>
-            {item.department && item.department !== "General" && (
-              <p className="text-[10px] text-slate-400 italic">Dept: {item.department}</p>
-            )}
           </div>
         );
       case "sku":
@@ -721,31 +488,6 @@ export default function InventoryMonitoringPage() {
             <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
             <span>Sales Report</span>
           </Link>
-
-          <button
-            onClick={openManualSalesModal}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-800 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer"
-            title="Manually encode a sale (fallback)"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>+ Manual Sale</span>
-          </button>
-
-          <button
-            onClick={() => setIsBulkOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-indigo-600/10"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Bulk Delivery</span>
-          </button>
-
-          <button
-            onClick={() => setIsRestockOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-emerald-600/10"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>+ Single Item</span>
-          </button>
         </div>
       </div>
 
@@ -844,7 +586,7 @@ export default function InventoryMonitoringPage() {
             </button>
 
             {isColumnCustomizerOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-2 text-xs">
+              <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-2 text-xs" ref={customizerRef}>
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <span className="font-bold text-white">Reorder Columns</span>
                   <button
@@ -1060,164 +802,6 @@ export default function InventoryMonitoringPage() {
           </div>
         </div>
       </div>
-
-      {/* MODAL 3: Manual Sales Encoding Modal */}
-      {isManualModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left text-slate-100">
-            
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  Fallback Encoding
-                </span>
-                <h2 className="text-lg font-bold text-white mt-1">Manual Sales Entry</h2>
-              </div>
-              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">
-                ✕
-              </button>
-            </div>
-
-            {manualSuccessMsg && (
-              <div className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl flex items-center gap-2 text-xs font-bold">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{manualSuccessMsg}</span>
-              </div>
-            )}
-
-            {manualErrorMsg && (
-              <div className="bg-rose-950/60 border border-rose-500/30 text-rose-400 p-3 rounded-xl flex items-center gap-2 text-xs font-bold">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{manualErrorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleManualSaleSubmit} className="space-y-4 text-xs">
-              
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  1. Search Product Catalog
-                </label>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Type style code, name, or SKU..."
-                    value={manualSearchQuery}
-                    onChange={(e) => setManualSearchQuery(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 text-xs pl-8 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                {manualSearchQuery.trim() && (
-                  <div className="bg-slate-950 border border-slate-800 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-900 text-xs shadow-lg">
-                    {filteredManualItems.length === 0 ? (
-                      <div className="p-3 text-slate-500 text-center italic">No items found matching "{manualSearchQuery}"</div>
-                    ) : (
-                      filteredManualItems.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => handleSelectManualItem(item)}
-                          className="p-2.5 hover:bg-slate-900 cursor-pointer transition flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="font-bold text-white">{item.style_name} <span className="text-emerald-400 font-mono text-[10px]">({item.style_code})</span></p>
-                            <p className="text-[10px] text-slate-400">{item.store} • Color: {item.color} • Stock: {item.current_stock}</p>
-                          </div>
-                          <span className="font-mono font-bold text-emerald-400">₱{item.price || 299}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {selectedManualItem && (
-                <div className="bg-emerald-950/20 border border-emerald-500/30 p-3 rounded-xl flex items-center justify-between text-xs">
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-emerald-400">Selected Product</p>
-                    <p className="font-bold text-white mt-0.5">{selectedManualItem.style_name} <span className="font-mono text-slate-300">[{selectedManualItem.style_code}]</span></p>
-                    <p className="text-[10px] text-slate-400">Available: {selectedManualItem.current_stock} pcs • {selectedManualItem.store}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedManualItem(null)}
-                    className="text-[10px] text-rose-400 hover:underline cursor-pointer"
-                  >
-                    Change
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <DollarSign className="w-3 h-3 text-emerald-400" /> Unit Price (₱)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={manualPrice}
-                    onChange={(e) => setManualPrice(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white font-mono focus:outline-none focus:border-emerald-500"
-                    placeholder="Auto-pulls on select"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <Hash className="w-3 h-3 text-indigo-400" /> Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={manualQty}
-                    onChange={(e) => setManualQty(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white font-mono focus:outline-none focus:border-emerald-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                  <Store className="w-3 h-3 text-amber-400" /> Store Branch
-                </label>
-                <select
-                  value={manualStore}
-                  onChange={(e) => setManualStore(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  required
-                >
-                  {STORES.filter((s) => s !== "All Stores").map((s) => (
-                    <option key={s} value={s} className="bg-slate-900">{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsManualModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={manualSubmitting || !selectedManualItem}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>{manualSubmitting ? "Encoding..." : "Log Manual Sale"}</span>
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
