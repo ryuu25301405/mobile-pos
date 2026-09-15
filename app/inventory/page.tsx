@@ -211,28 +211,42 @@ export default function InventoryMonitoringPage() {
       const { data, error } = await query;
       if (error) throw error;
 
+      // Fetch matching log metadata to pull rich product descriptions/names if available
+      const { data: logsData } = await supabase
+        .from("scanned_logs")
+        .select("style_code, style_name, description, color, size, department");
+
+      const logMap: Record<string, any> = {};
+      if (logsData) {
+        logsData.forEach((l: any) => {
+          if (l.style_code) {
+            logMap[l.style_code] = l;
+          }
+        });
+      }
+
       if (data) {
         const enriched: StoreInventoryItem[] = data.map((row: any) => {
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
           const calculatedOut = Math.max(0, initial - current);
+          const matchedLog = logMap[row.style_code] || {};
 
           return {
             id: row.id,
             store: row.store,
             style_code: row.style_code || "-",
-            sku: row.sku || null,
+            sku: row.sku || matchedLog.sku || null,
             initial_stock: initial,
             current_stock: current,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
             price: Number(row.price) || 299.00,
-            style_name: row.style_name || row.style_code || "Standard Item",
-            color: row.color || "Default",
-            size: row.size || "Free Size",
-            department: row.department || "General",
-            description: row.description || "",
+            style_name: row.style_name || matchedLog.style_name || matchedLog.description || row.style_code,
+            color: row.color || matchedLog.color || "Default",
+            size: row.size || matchedLog.size || "Free Size",
+            department: row.department || matchedLog.department || "General",
           };
         });
 
@@ -325,9 +339,7 @@ export default function InventoryMonitoringPage() {
       const matchesSearch =
         item.style_code?.toLowerCase().includes(q) ||
         (item.style_name && item.style_name.toLowerCase().includes(q)) ||
-        (item.color && item.color.toLowerCase().includes(q)) ||
-        (item.size && item.size.toLowerCase().includes(q)) ||
-        item.sku?.toLowerCase().includes(q) ||
+        (item.sku && item.sku.toLowerCase().includes(q)) ||
         item.store.toLowerCase().includes(q);
 
       if (!matchesSearch) return false;
@@ -401,27 +413,16 @@ export default function InventoryMonitoringPage() {
       case "style_code":
         return (
           <div className="space-y-1 font-mono">
-            <span className="font-bold text-white block text-sm">
-              {item.style_code}
+            {/* Display the rich product description/name as the prominent title */}
+            <span className="font-black text-emerald-400 block text-sm tracking-wide">
+              {item.style_name && item.style_name !== item.style_code ? item.style_name : (item.sku || item.style_code)}
             </span>
-            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-1.5">
-              {item.style_name && item.style_name !== "Standard Item" && (
-                <span className="text-emerald-400 font-bold">{item.style_name}</span>
-              )}
-              {item.color && item.color !== "Default" && (
-                <span className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300 border border-slate-800">
-                  {item.color}
-                </span>
-              )}
-              {item.size && item.size !== "Free Size" && (
-                <span className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300 border border-slate-800 font-bold">
-                  Size: {item.size}
-                </span>
-              )}
+            {/* Nest the Style Code and variant details beneath */}
+            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
+              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-white border border-slate-800 font-mono font-bold">Code: {item.style_code}</span>
+              {item.color && item.color !== "Default" && <span className="text-slate-400">• {item.color}</span>}
+              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• {item.size}</span>}
             </div>
-            {item.department && item.department !== "General" && (
-              <p className="text-[10px] text-slate-400 italic">Dept: {item.department}</p>
-            )}
           </div>
         );
       case "sku":
