@@ -211,7 +211,6 @@ export default function InventoryMonitoringPage() {
       const { data, error } = await query;
       if (error) throw error;
 
-      // Fetch matching log metadata to pull rich product descriptions/names if available
       const { data: logsData } = await supabase
         .from("scanned_logs")
         .select("style_code, style_name, description, color, size, department");
@@ -409,50 +408,52 @@ export default function InventoryMonitoringPage() {
 
     switch (colId) {
       case "store":
-        return <span className="font-medium text-slate-300">{item.store}</span>;
+        return <span className="font-medium text-slate-300 text-left block">{item.store}</span>;
       case "style_code":
         return (
-          <div className="space-y-1 font-mono">
-            {/* Display the rich product description/name as the prominent title */}
-            <span className="font-black text-emerald-400 block text-sm tracking-wide">
+          <div className="space-y-1 font-mono text-left">
+            <span className="font-bold text-emerald-400 block text-sm tracking-wide">
               {item.style_name && item.style_name !== item.style_code ? item.style_name : (item.sku || item.style_code)}
             </span>
-            {/* Nest the Style Code and variant details beneath */}
-            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
+            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center justify-start gap-1.5">
               <span className="bg-slate-900 px-1.5 py-0.5 rounded text-white border border-slate-800 font-mono font-bold">Code: {item.style_code}</span>
               {item.color && item.color !== "Default" && <span className="text-slate-400">• {item.color}</span>}
-              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• {item.size}</span>}
+              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• Size: {item.size}</span>}
             </div>
           </div>
         );
       case "sku":
-        return <span className="text-blue-400 font-mono">{item.sku || "-"}</span>;
+        return <span className="text-blue-400 font-mono text-left block">{item.sku || "-"}</span>;
       case "status":
-        return isOut ? (
-          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-            Out of Stock
-          </span>
-        ) : isLow ? (
-          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-            Low Stock
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-            In Stock
-          </span>
+        return (
+          <div className="text-center w-full flex justify-center">
+            {isOut ? (
+              <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                Out of Stock
+              </span>
+            ) : isLow ? (
+              <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                Low Stock
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                In Stock
+              </span>
+            )}
+          </div>
         );
       case "initial_stock":
-        return <span className="font-mono text-slate-200">{item.initial_stock}</span>;
+        return <span className="font-mono text-slate-200 text-right block">{item.initial_stock}</span>;
       case "total_out":
         return (
-          <span className="font-mono font-bold text-rose-400">
+          <span className="font-mono font-bold text-rose-400 text-right block">
             {item.total_out > 0 ? `-${item.total_out}` : "0"}
           </span>
         );
       case "current_stock":
         return (
           <span
-            className={`font-bold font-mono text-sm ${
+            className={`font-bold font-mono text-sm text-right block ${
               isOut ? "text-rose-400" : isLow ? "text-amber-400" : "text-emerald-400"
             }`}
           >
@@ -460,10 +461,10 @@ export default function InventoryMonitoringPage() {
           </span>
         );
       case "safety_stock":
-        return <span className="text-slate-400 font-mono">{item.safety_stock}</span>;
+        return <span className="text-slate-400 font-mono text-right block">{item.safety_stock}</span>;
       case "last_replenished_at":
         return (
-          <span className="text-slate-400 font-mono text-[11px]">
+          <span className="text-slate-400 font-mono text-[11px] text-right block">
             {item.last_replenished_at
               ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
               : "N/A"}
@@ -723,7 +724,7 @@ export default function InventoryMonitoringPage() {
                                 <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
                               )
                             ) : (
-                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 opacity-60" />
+                              <ArrowUpDown className="w-3 h-3 text-slate-600 group-hover:text-slate-400 opacity-60" />
                             )}
                           </button>
                         )}
