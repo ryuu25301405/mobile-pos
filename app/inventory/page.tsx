@@ -74,7 +74,7 @@ interface ColumnDef {
 
 const DEFAULT_COLUMNS: ColumnDef[] = [
   { id: "store", label: "Store Location", align: "left", sortable: true },
-  { id: "style_code", label: "Style Code", align: "left", sortable: true },
+  { id: "style_code", label: "Style Code & Details", align: "left", sortable: true },
   { id: "sku", label: "SKU", align: "left", sortable: true },
   { id: "status", label: "Status", align: "center", sortable: true },
   { id: "initial_stock", label: "Delivered / In", align: "right", sortable: true, headerBg: "bg-slate-800/30" },
@@ -494,7 +494,6 @@ export default function InventoryMonitoringPage() {
     setManualErrorMsg("");
 
     try {
-      // Pull complete historical metadata from scanned_logs if available
       const { data: pastLog } = await supabase
         .from("scanned_logs")
         .select("description, category, department, color, size, style_name")
@@ -541,7 +540,7 @@ export default function InventoryMonitoringPage() {
         fetchInventory();
       }, 1000);
     } catch (err: any) {
-      setManualErrorMsg(`Failed to save manual sale: ${err.message || "Unknown error"}`);
+      setManualErrorMsg(`Failed to log manual sale: ${err.message || "Unknown error"}`);
     } finally {
       setManualSubmitting(false);
     }
@@ -553,6 +552,7 @@ export default function InventoryMonitoringPage() {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         item.style_code?.toLowerCase().includes(q) ||
+        (item.style_name && item.style_name.toLowerCase().includes(q)) ||
         item.sku?.toLowerCase().includes(q) ||
         item.store.toLowerCase().includes(q);
 
@@ -625,7 +625,21 @@ export default function InventoryMonitoringPage() {
       case "store":
         return <span className="font-medium text-slate-300">{item.store}</span>;
       case "style_code":
-        return <span className="font-semibold text-white">{item.style_code}</span>;
+        return (
+          <div className="space-y-1 font-mono">
+            <span className="font-black text-emerald-400 block text-sm tracking-wide">
+              {item.style_name && item.style_name !== "Standard Item" ? item.style_name : item.style_code}
+            </span>
+            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
+              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {item.style_code}</span>
+              {item.color && item.color !== "Default" && <span className="text-slate-400">• Color: {item.color}</span>}
+              {item.size && item.size !== "Free Size" && <span className="text-slate-400">• Size: {item.size}</span>}
+            </div>
+            {item.department && item.department !== "General" && (
+              <p className="text-[10px] text-slate-400 italic">Dept: {item.department}</p>
+            )}
+          </div>
+        );
       case "sku":
         return <span className="text-blue-400 font-mono">{item.sku || "-"}</span>;
       case "status":
@@ -1047,7 +1061,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* MODAL 3: Manual Sales Encoding Modal (Pulling full historical metadata) */}
+      {/* MODAL 3: Manual Sales Encoding Modal */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left text-slate-100">
@@ -1166,7 +1180,6 @@ export default function InventoryMonitoringPage() {
                 </div>
               </div>
 
-              {/* STORE BRANCH DROPDOWN */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                   <Store className="w-3 h-3 text-amber-400" /> Store Branch
