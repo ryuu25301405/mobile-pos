@@ -291,6 +291,40 @@ export default function QlikViewAnalyticsPage() {
     localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
   };
 
+  const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "30days" | "all") => {
+    setDatePreset(preset);
+    const today = new Date();
+    const formatDate = (d: Date) => d.toISOString().split("T")[0];
+
+    if (preset === "all") {
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+
+    if (preset === "today") {
+      const s = formatDate(today);
+      setStartDate(s);
+      setEndDate(s);
+    } else if (preset === "yesterday") {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const s = formatDate(y);
+      setStartDate(s);
+      setEndDate(s);
+    } else if (preset === "7days") {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 6);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(today));
+    } else if (preset === "30days") {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 29);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(today));
+    }
+  };
+
   const dateFilteredData = useMemo(() => {
     if (!startDate && !endDate) return data;
     return data.filter((row) => {
@@ -434,6 +468,7 @@ export default function QlikViewAnalyticsPage() {
   const clearCurrentStateSelections = () => {
     setActiveSelection(() => EMPTY_SELECTIONS);
     setDrillLevel(0);
+    setDrillBreadcrumbs([]);
   };
 
   const calcMetrics = (subset: SalesRecord[]) => {
@@ -746,6 +781,96 @@ export default function QlikViewAnalyticsPage() {
           <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl">
             <Layers className="w-5 h-5" />
           </div>
+        </div>
+      </div>
+
+      {/* DATE RANGE TOOLBAR */}
+      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs shadow-xl">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-1">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Date Range:</span>
+          </div>
+
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+            <button
+              onClick={() => applyDatePreset("all")}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                datePreset === "all" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              All Time
+            </button>
+            <button
+              onClick={() => applyDatePreset("today")}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                datePreset === "today" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => applyDatePreset("yesterday")}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                datePreset === "yesterday" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Yesterday
+            </button>
+            <button
+              onClick={() => applyDatePreset("7days")}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                datePreset === "7days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Last 7 Days
+            </button>
+            <button
+              onClick={() => applyDatePreset("30days")}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                datePreset === "30days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Last 30 Days
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+            <span className="text-[10px] uppercase text-slate-500 font-bold">From</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+            <span className="text-[10px] uppercase text-slate-500 font-bold">To</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+            />
+          </div>
+
+          {(startDate || endDate) && (
+            <button
+              onClick={() => applyDatePreset("all")}
+              className="text-xs text-slate-400 hover:text-rose-400 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
