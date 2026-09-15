@@ -184,7 +184,7 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("store_breakdown");
   
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
@@ -900,7 +900,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN WORKSPACE: SIDE-BY-SIDE ANALYTICS & CATALOG */}
+      {/* 4. MAIN WORKSPACE */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
@@ -1054,7 +1054,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN MATRIX */}
+          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN MATRIX WITH PROPERLY NESTED DETAILS */}
           {expandedPanel !== "graph" && (
             <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[580px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
@@ -1115,11 +1115,16 @@ export default function QlikViewAnalyticsPage() {
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-4 py-2 font-mono">
-                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
-                              <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
+                            <td className="px-4 py-2.5 font-mono space-y-0.5">
+                              <span className="font-bold text-emerald-400 block text-sm">
+                                {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
+                              </span>
+                              <div className="text-[11px] text-slate-300 font-sans font-medium flex items-center gap-1.5">
+                                <span className="text-emerald-300 font-bold">Code: {prod.styleCode}</span>
+                                {prod.sku !== "-" && <span className="text-blue-400">• SKU: {prod.sku}</span>}
+                              </div>
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-3 py-2.5 whitespace-nowrap">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                                 prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                 prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
@@ -1128,13 +1133,13 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-3 py-2 max-w-[140px]">
-                              <span className="text-white block font-medium truncate" title={prod.styleName}>{prod.styleName}</span>
-                              <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
+                            <td className="px-3 py-2.5 max-w-[140px]">
+                              <span className="text-white block font-medium truncate">{prod.color}</span>
+                              <span className="text-[10px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
                             </td>
-                            <td className="px-3 py-2 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
-                            <td className="px-4 py-2 text-right print:hidden">
+                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
+                            <td className="px-4 py-2.5 text-right print:hidden">
                               <button
                                 onClick={() => setInspectedProduct(prod)}
                                 className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer"
@@ -1167,9 +1172,15 @@ export default function QlikViewAnalyticsPage() {
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-4 py-2 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r border-slate-700">
-                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
-                              <span className="text-[10px] text-slate-400">{prod.color} / {prod.size}</span>
+                            {/* NESTED DETAILS IN MATRIX VIEW */}
+                            <td className="px-4 py-2.5 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r border-slate-700 space-y-0.5">
+                              <span className="font-bold text-emerald-400 block text-xs">
+                                {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
+                              </span>
+                              <div className="text-[10px] text-slate-300 font-sans font-medium flex items-center gap-1">
+                                <span className="text-emerald-300">Code: {prod.styleCode}</span>
+                                <span className="text-slate-400">• {prod.color} ({prod.size})</span>
+                              </div>
                             </td>
                             {universe.stores.map((st) => {
                               const storeQty = prod.storeBreakdown[st] || 0;
