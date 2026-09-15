@@ -193,7 +193,6 @@ export default function QlikViewAnalyticsPage() {
   const [datePreset, setDatePreset] = useState<string>("all");
 
   const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
-  const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<string[]>([]);
   const [cyclicIndex, setCyclicIndex] = useState<number>(0);
   const [drillLevel, setDrillLevel] = useState<number>(0);
 
@@ -471,7 +470,6 @@ export default function QlikViewAnalyticsPage() {
   const clearCurrentStateSelections = () => {
     setActiveSelection(() => EMPTY_SELECTIONS);
     setDrillLevel(0);
-    setDrillBreadcrumbs([]);
   };
 
   const calcMetrics = (subset: SalesRecord[]) => {
