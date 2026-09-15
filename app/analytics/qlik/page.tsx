@@ -48,7 +48,8 @@ import {
   Clock,
   ShieldAlert,
   Activity,
-  Database
+  Database,
+  ChevronLeft
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -227,6 +228,10 @@ export default function QlikViewAnalyticsPage() {
   const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
 
+  // Master Catalog Pagination State
+  const [masterPage, setMasterPage] = useState<number>(1);
+  const [masterPageSize, setMasterPageSize] = useState<number>(10);
+
   const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
   const [branchModalSearch, setBranchModalSearch] = useState<string>("");
   const [branchModalTierFilter, setBranchModalTierFilter] = useState<"ALL" | "A" | "B" | "C">("ALL");
@@ -292,6 +297,11 @@ export default function QlikViewAnalyticsPage() {
       try { setBookmarks(JSON.parse(saved)); } catch (e) { console.error("Failed to parse bookmarks", e); }
     }
   }, [fetchData]);
+
+  // Reset pagination on search or filter change
+  useEffect(() => {
+    setMasterPage(1);
+  }, [masterCatalogSearch, masterCatalogStoreFilter]);
 
   const saveBookmark = (e: React.FormEvent) => {
     e.preventDefault();
@@ -572,6 +582,14 @@ export default function QlikViewAnalyticsPage() {
     return filtered.sort((a, b) => b.unitsSold - a.unitsSold);
   }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter]);
 
+  // Master Catalog Paginated Slices
+  const masterTotalItems = masterCatalogProducts.length;
+  const masterTotalPages = Math.ceil(masterTotalItems / masterPageSize) || 1;
+  const masterStartIndex = (masterPage - 1) * masterPageSize;
+  const paginatedMasterProducts = useMemo(() => {
+    return masterCatalogProducts.slice(masterStartIndex, masterStartIndex + masterPageSize);
+  }, [masterCatalogProducts, masterStartIndex, masterPageSize]);
+
   const filteredProducts = useMemo(() => {
     let daysInPeriod = 30;
     if (startDate && endDate) {
@@ -815,13 +833,13 @@ export default function QlikViewAnalyticsPage() {
             <button onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Sales Analytics Workspace</button>
             <button onClick={() => setProductViewMode("master_catalog")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5 text-indigo-400"/> All Master Catalog</button>
             <button onClick={() => setProductViewMode("replenishment")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment</button>
-            <button onClick={() => setProductViewMode("aging_slob")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
-            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
+            <button onClick={() => setProductViewMode("aging_slob")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
+            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
           </div>
         </div>
       </div>
 
-      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION */}
+      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION WITH PAGINATION */}
       {productViewMode === "master_catalog" ? (
         <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -864,7 +882,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           </div>
 
-          <div className="relative overflow-x-auto max-h-[700px] [scrollbar-width:thin]">
+          <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
                 <tr>
@@ -877,10 +895,10 @@ export default function QlikViewAnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 text-xs">
-                {masterCatalogProducts.length === 0 ? (
+                {paginatedMasterProducts.length === 0 ? (
                   <tr><td colSpan={6} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
                 ) : (
-                  masterCatalogProducts.map((prod, idx) => (
+                  paginatedMasterProducts.map((prod, idx) => (
                     <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
                       <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
                       <td className="px-5 py-3 font-mono border-r border-slate-900/50">
@@ -900,6 +918,56 @@ export default function QlikViewAnalyticsPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Master Catalog Pagination Footer */}
+          <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 rounded-2xl">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing <strong className="text-slate-200">{masterTotalItems === 0 ? 0 : masterStartIndex + 1}</strong> to{" "}
+                <strong className="text-slate-200">{Math.min(masterStartIndex + masterPageSize, masterTotalItems)}</strong> of{" "}
+                <strong className="text-slate-200">{masterTotalItems}</strong> entries
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <span>| Show</span>
+                <select
+                  value={masterPageSize}
+                  onChange={(e) => {
+                    setMasterPageSize(Number(e.target.value));
+                    setMasterPage(1);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setMasterPage((p) => Math.max(p - 1, 1))}
+                disabled={masterPage === 1 || loading}
+                className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
+                {masterPage} / {masterTotalPages}
+              </span>
+
+              <button
+                onClick={() => setMasterPage((p) => Math.min(p + 1, masterTotalPages))}
+                disabled={masterPage === masterTotalPages || loading}
+                className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       ) : (
