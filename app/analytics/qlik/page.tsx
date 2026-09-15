@@ -41,7 +41,10 @@ import {
   List,
   Maximize2,
   Minimize2,
+  FileText,
   Printer,
+  Building2,
+  ArrowRight,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -184,7 +187,10 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("store_breakdown");
+  
+  // Re-architected view mode: "consolidated" (Clean Catalog) or "stores_grid" (Modern Branch Cards)
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "stores_grid">("consolidated");
+  const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
   
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
@@ -466,7 +472,6 @@ export default function QlikViewAnalyticsPage() {
   };
 
   const metricsA = useMemo(() => calcMetrics(currentSubset), [currentSubset, universe.totalRevenue]);
-  const metricsB = useMemo(() => calcMetrics(subsetB), [subsetB, universe.totalRevenue]);
 
   const activeMeasure = MEASURES[activeMeasureIndex];
 
@@ -606,6 +611,32 @@ export default function QlikViewAnalyticsPage() {
         p.size.toLowerCase().includes(q)
     );
   }, [currentSubset, detailSearch]);
+
+  // Aggregate stats per store for the modern branch breakdown cards
+  const storeCardsSummary = useMemo(() => {
+    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number; topItemsCount: number }> = {};
+    
+    universe.stores.forEach((st) => {
+      map[st] = { store: st, totalUnits: 0, totalRevenue: 0, topItemsCount: 0 };
+    });
+
+    currentSubset.forEach((item) => {
+      if (!map[item.store]) {
+        map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0, topItemsCount: 0 };
+      }
+      map[item.store].totalUnits += item.quantity;
+      map[item.store].totalRevenue += item.revenue;
+    });
+
+    return Object.values(map).sort((a, b) => b.totalRevenue - a.totalRevenue);
+  }, [currentSubset, universe.stores]);
+
+  const selectedBranchProducts = useMemo(() => {
+    if (!selectedBranchDetail) return [];
+    return filteredProducts
+      .filter((p) => (p.storeBreakdown[selectedBranchDetail] || 0) > 0)
+      .sort((a, b) => (b.storeBreakdown[selectedBranchDetail] || 0) - (a.storeBreakdown[selectedBranchDetail] || 0));
+  }, [filteredProducts, selectedBranchDetail]);
 
   const inspectedProductBreakdown = useMemo(() => {
     if (!inspectedProduct) return { stores: [], totalLogs: 0 };
@@ -1054,28 +1085,28 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN MATRIX WITH PROPERLY NESTED DETAILS */}
+          {/* RIGHT PANEL: REDESIGNED MODERN STORE BREAKDOWN & CATALOG */}
           {expandedPanel !== "graph" && (
             <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[580px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
               <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-black text-white uppercase">Product Catalog ({filteredProducts.length})</span>
+                  <span className="text-xs font-black text-white uppercase">Product Catalog & Branches</span>
                 </div>
 
                 <div className="flex items-center gap-2 print:hidden">
                   <div className="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5 text-[11px]">
                     <button
-                      onClick={() => setProductViewMode("consolidated")}
+                      onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }}
                       className={`px-2.5 py-1 rounded-md transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
                     >
-                      Total Stock
+                      Consolidated Stock
                     </button>
                     <button
-                      onClick={() => setProductViewMode("store_breakdown")}
-                      className={`px-2.5 py-1 rounded-md transition ${productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+                      onClick={() => setProductViewMode("stores_grid")}
+                      className={`px-2.5 py-1 rounded-md transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
                     >
-                      Store Breakdown
+                      Store Breakdown Cards
                     </button>
                   </div>
 
@@ -1096,17 +1127,18 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
+              {/* MODERN REDESIGNED VIEW MODES */}
+              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin] p-3">
                 {productViewMode === "consolidated" ? (
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-700 sticky top-0 backdrop-blur-md z-10">
                       <tr>
-                        <th className="px-4 py-2.5">Style / Details</th>
+                        <th className="px-3 py-2.5">Style / Details</th>
                         <th className="px-3 py-2.5">Tier</th>
                         <th className="px-3 py-2.5">Color & Size</th>
                         <th className="px-3 py-2.5 text-right">Price</th>
                         <th className="px-3 py-2.5 text-right">Total Stock</th>
-                        <th className="px-4 py-2.5 text-right print:hidden">Action</th>
+                        <th className="px-3 py-2.5 text-right print:hidden">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 text-xs">
@@ -1115,16 +1147,16 @@ export default function QlikViewAnalyticsPage() {
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-4 py-2.5 font-mono space-y-0.5">
-                              <span className="font-bold text-emerald-400 block text-sm">
+                            <td className="px-3 py-2 font-mono space-y-0.5">
+                              <span className="font-bold text-emerald-400 block text-xs">
                                 {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
                               </span>
-                              <div className="text-[11px] text-slate-300 font-sans font-medium flex items-center gap-1.5">
+                              <div className="text-[10px] text-slate-300 font-sans font-medium flex items-center gap-1.5">
                                 <span className="text-emerald-300 font-bold">Code: {prod.styleCode}</span>
                                 {prod.sku !== "-" && <span className="text-blue-400">• SKU: {prod.sku}</span>}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                                 prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                 prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
@@ -1133,13 +1165,13 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 max-w-[140px]">
+                            <td className="px-3 py-2 max-w-[130px]">
                               <span className="text-white block font-medium truncate">{prod.color}</span>
                               <span className="text-[10px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
                             </td>
-                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
-                            <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
-                            <td className="px-4 py-2.5 text-right print:hidden">
+                            <td className="px-3 py-2 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
+                            <td className="px-3 py-2 text-right print:hidden">
                               <button
                                 onClick={() => setInspectedProduct(prod)}
                                 className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer"
@@ -1154,56 +1186,93 @@ export default function QlikViewAnalyticsPage() {
                     </tbody>
                   </table>
                 ) : (
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-700 sticky top-0 backdrop-blur-md z-10">
-                      <tr>
-                        <th className="px-4 py-2.5 sticky left-0 bg-slate-900 z-20 border-r border-slate-700">Style / Variant</th>
-                        {universe.stores.map((st) => (
-                          <th key={st} className="px-2 py-2.5 text-right truncate max-w-[100px]" title={st}>
-                            {st}
-                          </th>
-                        ))}
-                        <th className="px-4 py-2.5 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800 text-xs">
-                      {filteredProducts.length === 0 ? (
-                        <tr><td colSpan={universe.stores.length + 2} className="p-8 text-center text-slate-500">No product records.</td></tr>
-                      ) : (
-                        filteredProducts.map((prod) => (
-                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            {/* NESTED DETAILS IN MATRIX VIEW */}
-                            <td className="px-4 py-2.5 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r border-slate-700 space-y-0.5">
-                              <span className="font-bold text-emerald-400 block text-xs">
-                                {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
-                              </span>
-                              <div className="text-[10px] text-slate-300 font-sans font-medium flex items-center gap-1">
-                                <span className="text-emerald-300">Code: {prod.styleCode}</span>
-                                <span className="text-slate-400">• {prod.color} ({prod.size})</span>
-                              </div>
-                            </td>
-                            {universe.stores.map((st) => {
-                              const storeQty = prod.storeBreakdown[st] || 0;
-                              return (
-                                <td key={st} className={`px-2 py-2 text-right font-mono ${storeQty > 0 ? "text-white font-semibold" : "text-slate-700"}`}>
-                                  {storeQty > 0 ? `${storeQty}` : "-"}
-                                </td>
-                              );
-                            })}
-                            <td className="px-4 py-2 text-right font-mono font-black text-emerald-400">
-                              {prod.units} pcs
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                  /* MODERN BRANCH CARDS LAYOUT (Replaces overwhelming multi-column matrix) */
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {storeCardsSummary.map((storeCard) => (
+                      <div
+                        key={storeCard.store}
+                        onClick={() => setSelectedBranchDetail(storeCard.store)}
+                        className="bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-lg"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                            <h4 className="font-bold text-white text-xs truncate max-w-[180px]">{storeCard.store}</h4>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition" />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80 text-xs font-mono">
+                          <div className="bg-slate-950 p-2 rounded-xl border border-slate-800/60">
+                            <span className="text-[9px] text-slate-500 uppercase block font-sans">Units Stocked</span>
+                            <span className="text-emerald-400 font-bold">{storeCard.totalUnits.toLocaleString()} pcs</span>
+                          </div>
+                          <div className="bg-slate-950 p-2 rounded-xl border border-slate-800/60">
+                            <span className="text-[9px] text-slate-500 uppercase block font-sans">Branch Revenue</span>
+                            <span className="text-indigo-400 font-bold">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* BRANCH DEEP-DIVE MODAL */}
+      {selectedBranchDetail && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Branch Inventory Breakdown</span>
+                  <h2 className="text-base font-bold text-white">{selectedBranchDetail}</h2>
+                </div>
+              </div>
+              <button onClick={() => setSelectedBranchDetail(null)} className="text-slate-400 hover:text-white cursor-pointer p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+              {selectedBranchProducts.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-xs">No active stock recorded for this branch.</div>
+              ) : (
+                selectedBranchProducts.map((prod) => (
+                  <div key={prod.key} className="bg-slate-950/80 border border-slate-800 p-3 rounded-2xl flex items-center justify-between text-xs">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-white block text-sm">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
+                      <span className="text-[11px] text-slate-400 font-mono">Code: {prod.styleCode} • {prod.color} ({prod.size})</span>
+                    </div>
+                    <div className="text-right font-mono">
+                      <span className="font-black text-emerald-400 text-sm block">{prod.storeBreakdown[selectedBranchDetail] || 0} pcs</span>
+                      <span className="text-[10px] text-slate-500">₱{prod.price.toFixed(0)} / unit</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setSelectedBranchDetail(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Close Branch View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* INSPECTION MODAL */}
       {inspectedProduct && (
