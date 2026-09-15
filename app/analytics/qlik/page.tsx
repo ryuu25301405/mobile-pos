@@ -478,13 +478,11 @@ export default function QlikViewAnalyticsPage() {
 
   // Master Catalog: Driven by the `products` table as the primary source of truth
   const masterCatalogProducts = useMemo(() => {
-    // Build a lookup map of inventory stock per store/style
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
       stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
     });
 
-    // Build a lookup map of sales per store/style
     const salesMap: Record<string, { units: number; revenue: number }> = {};
     data.forEach((log) => {
       const k = `${log.store}-${log.style_code}`;
@@ -493,7 +491,6 @@ export default function QlikViewAnalyticsPage() {
       salesMap[k].revenue += log.revenue;
     });
 
-    // If we have products in the products table, list every product across each active store
     const list: Array<{
       id: string;
       store: string;
@@ -534,7 +531,6 @@ export default function QlikViewAnalyticsPage() {
         });
       });
     } else {
-      // Fallback if products table is empty: use inventory records
       inventoryData.forEach((inv) => {
         const k = `${inv.store}-${inv.style_code}`;
         list.push({
@@ -811,7 +807,104 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE */}
+      {/* VIEW SELECTOR TOGGLE BAR FOR WORKSPACE / MASTER CATALOG */}
+      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">View Mode:</span>
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+            <button onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Sales Analytics Workspace</button>
+            <button onClick={() => setProductViewMode("master_catalog")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5 text-indigo-400"/> All Master Catalog</button>
+            <button onClick={() => setProductViewMode("replenishment")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment</button>
+            <button onClick={() => setProductViewMode("aging_slob")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
+            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
+          </div>
+        </div>
+      </div>
+
+      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION */}
+      {productViewMode === "master_catalog" ? (
+        <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white uppercase tracking-wide">All Master Product Catalog</h2>
+                <p className="text-xs text-slate-400 font-mono">Complete database listing with stock and lifetime transaction performance</p>
+              </div>
+            </div>
+
+            {/* SEPARATED TOOLBAR CONTROLS */}
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div className="relative flex-1 md:w-72">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search master catalog by name, style code, SKU..."
+                  value={masterCatalogSearch}
+                  onChange={(e) => setMasterCatalogSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs">
+                <StoreIcon className="w-4 h-4 text-indigo-400" />
+                <select
+                  value={masterCatalogStoreFilter}
+                  onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
+                  className="bg-transparent text-slate-200 focus:outline-none cursor-pointer font-bold"
+                >
+                  <option value="All Stores" className="bg-slate-900">All Stores</option>
+                  {universe.stores.map((st) => (
+                    <option key={st} value={st} className="bg-slate-900">{st}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative overflow-x-auto max-h-[700px] [scrollbar-width:thin]">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                <tr>
+                  <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Store</th>
+                  <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
+                  <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
+                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
+                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
+                  <th className="px-4 py-3.5 text-right bg-slate-900">Total Units Sold</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 text-xs">
+                {masterCatalogProducts.length === 0 ? (
+                  <tr><td colSpan={6} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
+                ) : (
+                  masterCatalogProducts.map((prod, idx) => (
+                    <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
+                      <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
+                      <td className="px-5 py-3 font-mono border-r border-slate-900/50">
+                        <span className="font-bold text-white block text-sm">{prod.styleName}</span>
+                        <span className="text-[11px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
+                      </td>
+                      <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
+                        {prod.color} / <strong className="text-white">{prod.size}</strong>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
+                      <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {prod.currentStock} pcs
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold text-sm">{prod.unitsSold} pcs</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+
+      /* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
@@ -916,57 +1009,17 @@ export default function QlikViewAnalyticsPage() {
                 <div className="flex items-center gap-2.5">
                   <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-black text-white tracking-wide uppercase">Product Intelligence</span>
+                  <span className="text-sm font-black text-white tracking-wide uppercase">Product Catalog & Branches</span>
                 </div>
 
                 <div className="flex items-center gap-3 print:hidden">
-                  <div className="flex items-center bg-slate-950 border border-slate-700 rounded-xl p-0.5 text-xs">
-                    <button onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Sales Catalog</button>
-                    <button onClick={() => setProductViewMode("master_catalog")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5"/> All Master</button>
-                    <button onClick={() => setProductViewMode("replenishment")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5"/> Replenishment</button>
-                    <button onClick={() => setProductViewMode("aging_slob")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5"/> Aging / SLOB</button>
-                    <button onClick={() => setProductViewMode("stores_grid")} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
-                  </div>
-
-                  {productViewMode !== "master_catalog" && (
-                    <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
-                  )}
+                  <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
 
                   <button onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm" title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}>
                     {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
-
-              {/* SEPARATED SEARCH & FILTER TOOLBAR FOR ALL MASTER VIEW */}
-              {productViewMode === "master_catalog" && (
-                <div className="px-5 py-3 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center gap-3 shrink-0 print:hidden">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Search master catalog by name, style code, SKU..."
-                      value={masterCatalogSearch}
-                      onChange={(e) => setMasterCatalogSearch(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs">
-                    <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
-                    <select
-                      value={masterCatalogStoreFilter}
-                      onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
-                      className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
-                    >
-                      <option value="All Stores" className="bg-slate-900">All Stores</option>
-                      {universe.stores.map((st) => (
-                        <option key={st} value={st} className="bg-slate-900">{st}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
 
               {/* FIXED RELATIVE CONTAINER WITH FLUSH STICKY HEADER */}
               <div className="relative flex-1 overflow-hidden flex flex-col">
@@ -1019,44 +1072,6 @@ export default function QlikViewAnalyticsPage() {
                                   <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
                                 </button>
                               </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {productViewMode === "master_catalog" && (
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
-                        <tr>
-                          <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Store</th>
-                          <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
-                          <th className="px-3 py-3 border-r border-slate-800 bg-slate-900">Color & Size</th>
-                          <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Price</th>
-                          <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
-                          <th className="px-3 py-3 text-right bg-slate-900">Total Units Sold</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/80 text-xs">
-                        {masterCatalogProducts.length === 0 ? (
-                          <tr><td colSpan={6} className="p-8 text-center text-slate-500 text-sm">No products found in master inventory.</td></tr>
-                        ) : (
-                          masterCatalogProducts.map((prod, idx) => (
-                            <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
-                              <td className="px-4 py-2.5 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
-                              <td className="px-4 py-2.5 font-mono border-r border-slate-900/50">
-                                <span className="font-bold text-white block">{prod.styleName}</span>
-                                <span className="text-[10px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
-                              </td>
-                              <td className="px-3 py-2.5 border-r border-slate-900/50 text-slate-300">
-                                {prod.color} / <strong className="text-white">{prod.size}</strong>
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-mono text-slate-300 border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
-                              <td className={`px-3 py-2.5 text-right font-mono font-bold border-r border-slate-900/50 ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                                {prod.currentStock} pcs
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-mono text-indigo-400 font-semibold">{prod.unitsSold} pcs</td>
                             </tr>
                           ))
                         )}
@@ -1180,6 +1195,7 @@ export default function QlikViewAnalyticsPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH EXPANDED VIEW TOGGLE */}
       {selectedBranchDetail && (
