@@ -60,7 +60,6 @@ interface SalesRecord {
   style_code: string;
   sku: string;
   style_name: string;
-  description: string;
   color: string;
   size: string;
   category: string;
@@ -206,9 +205,6 @@ export default function QlikViewAnalyticsPage() {
   const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [isComparativeMode, setIsComparativeMode] = useState<boolean>(false);
-  const [activeEditingState, setActiveEditingState] = useState<"A" | "B">("A");
-
   const [stateA, setStateA] = useState<StateSelection>(EMPTY_SELECTIONS);
   const [stateB, setStateB] = useState<StateSelection>(EMPTY_SELECTIONS);
 
@@ -219,7 +215,6 @@ export default function QlikViewAnalyticsPage() {
   const [activeMeasureIndex, setActiveMeasureIndex] = useState<number>(0);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [datePreset, setDatePreset] = useState<string>("all");
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
@@ -228,7 +223,6 @@ export default function QlikViewAnalyticsPage() {
   const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
 
-  // Master Catalog Pagination State
   const [masterPage, setMasterPage] = useState<number>(1);
   const [masterPageSize, setMasterPageSize] = useState<number>(10);
 
@@ -298,7 +292,6 @@ export default function QlikViewAnalyticsPage() {
     }
   }, [fetchData]);
 
-  // Reset pagination on search or filter change
   useEffect(() => {
     setMasterPage(1);
   }, [masterCatalogSearch, masterCatalogStoreFilter]);
@@ -306,7 +299,7 @@ export default function QlikViewAnalyticsPage() {
   const saveBookmark = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBookmarkName.trim()) return;
-    const newBm: BookmarkPreset = { id: Date.now().toString(), name: newBookmarkName.trim(), selection: activeSelection, startDate, endDate };
+    const newBm: BookmarkPreset = { id: Date.now().toString(), name: newBookmarkName.trim(), selection: stateA, startDate, endDate };
     const updated = [newBm, ...bookmarks];
     setBookmarks(updated);
     localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
@@ -315,10 +308,9 @@ export default function QlikViewAnalyticsPage() {
   };
 
   const loadBookmark = (bm: BookmarkPreset) => {
-    setActiveSelection(() => bm.selection);
+    setStateA(() => bm.selection);
     setStartDate(bm.startDate);
     setEndDate(bm.endDate);
-    setDatePreset("custom");
   };
 
   const deleteBookmark = (id: string, e: React.MouseEvent) => {
@@ -326,18 +318,6 @@ export default function QlikViewAnalyticsPage() {
     const updated = bookmarks.filter((b) => b.id !== id);
     setBookmarks(updated);
     localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
-  };
-
-  const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "30days" | "all") => {
-    setDatePreset(preset);
-    const today = new Date();
-    const formatDate = (d: Date) => d.toISOString().split("T")[0];
-
-    if (preset === "all") { setStartDate(""); setEndDate(""); return; }
-    if (preset === "today") { const s = formatDate(today); setStartDate(s); setEndDate(s); }
-    else if (preset === "yesterday") { const y = new Date(today); y.setDate(y.getDate() - 1); const s = formatDate(y); setStartDate(s); setEndDate(s); }
-    else if (preset === "7days") { const past = new Date(today); past.setDate(past.getDate() - 6); setStartDate(formatDate(past)); setEndDate(formatDate(today)); }
-    else if (preset === "30days") { const past = new Date(today); past.setDate(past.getDate() - 29); setStartDate(formatDate(past)); setEndDate(formatDate(today)); }
   };
 
   const dateFilteredData = useMemo(() => {
@@ -362,13 +342,6 @@ export default function QlikViewAnalyticsPage() {
     };
   }, [dateFilteredData]);
 
-  const activeSelection = isComparativeMode ? (activeEditingState === "A" ? stateA : stateB) : stateA;
-
-  const setActiveSelection = (fn: (prev: StateSelection) => StateSelection) => {
-    if (!isComparativeMode || activeEditingState === "A") setStateA(fn);
-    else setStateB(fn);
-  };
-
   const evaluateSubset = useCallback(
     (selection: StateSelection) => {
       return dateFilteredData.filter((row) => {
@@ -388,12 +361,12 @@ export default function QlikViewAnalyticsPage() {
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (targetField: "store" | "department" | "category" | "color" | "size") => {
       const subset = dateFilteredData.filter((row) => {
-        const mStore = targetField === "store" || activeSelection.stores.length === 0 || activeSelection.stores.includes(row.store);
-        const mDept = targetField === "department" || activeSelection.departments.length === 0 || activeSelection.departments.includes(row.department);
-        const mCat = targetField === "category" || activeSelection.categories.length === 0 || activeSelection.categories.includes(row.category);
-        const mColor = targetField === "color" || activeSelection.colors.length === 0 || activeSelection.colors.includes(row.color);
-        const mSize = targetField === "size" || activeSelection.sizes.length === 0 || activeSelection.sizes.includes(row.size);
-        const mStyle = activeSelection.styles.length === 0 || activeSelection.styles.includes(row.style_code);
+        const mStore = targetField === "store" || stateA.stores.length === 0 || stateA.stores.includes(row.store);
+        const mDept = targetField === "department" || stateA.departments.length === 0 || stateA.departments.includes(row.department);
+        const mCat = targetField === "category" || stateA.categories.length === 0 || stateA.categories.includes(row.category);
+        const mColor = targetField === "color" || stateA.colors.length === 0 || stateA.colors.includes(row.color);
+        const mSize = targetField === "size" || stateA.sizes.length === 0 || stateA.sizes.includes(row.size);
+        const mStyle = stateA.styles.length === 0 || stateA.styles.includes(row.style_code);
         return mStore && mDept && mCat && mColor && mSize && mStyle;
       });
 
@@ -423,10 +396,10 @@ export default function QlikViewAnalyticsPage() {
         sizes: calcPossibleAndFreq("size").freqMap,
       },
     };
-  }, [dateFilteredData, activeSelection]);
+  }, [dateFilteredData, stateA]);
 
   const toggleSelection = (field: "store" | "department" | "category" | "color" | "size" | "style_code", value: string) => {
-    setActiveSelection((prev) => {
+    setStateA((prev) => {
       const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
       const key = fieldKeyMap[field];
       const exists = prev[key].includes(value);
@@ -434,7 +407,7 @@ export default function QlikViewAnalyticsPage() {
     });
   };
 
-  const clearCurrentStateSelections = () => { setActiveSelection(() => EMPTY_SELECTIONS); };
+  const clearCurrentStateSelections = () => { setStateA(() => EMPTY_SELECTIONS); };
 
   const calcMetrics = (subset: SalesRecord[]) => {
     const revenue = subset.reduce((acc, curr) => acc + curr.revenue, 0);
@@ -486,7 +459,6 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [graphRows]);
 
-  // Master Catalog: Driven by the `products` table as the primary source of truth
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
@@ -582,7 +554,6 @@ export default function QlikViewAnalyticsPage() {
     return filtered.sort((a, b) => b.unitsSold - a.unitsSold);
   }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter]);
 
-  // Master Catalog Paginated Slices
   const masterTotalItems = masterCatalogProducts.length;
   const masterTotalPages = Math.ceil(masterTotalItems / masterPageSize) || 1;
   const masterStartIndex = (masterPage - 1) * masterPageSize;
@@ -599,7 +570,7 @@ export default function QlikViewAnalyticsPage() {
     }
 
     const map: Record<string, ProductSummaryItem> = {};
-    const validStores = activeSelection.stores.length > 0 ? activeSelection.stores : universe.stores;
+    const validStores = stateA.stores.length > 0 ? stateA.stores : universe.stores;
     const relevantInv = inventoryData.filter(i => validStores.includes(i.store));
 
     currentSubset.forEach((item) => {
@@ -647,7 +618,7 @@ export default function QlikViewAnalyticsPage() {
     if (!detailSearch.trim()) return classifiedList;
     const q = detailSearch.toLowerCase();
     return classifiedList.filter((p) => p.styleCode.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.styleName.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q));
-  }, [currentSubset, detailSearch, inventoryData, activeSelection.stores, universe.stores, startDate, endDate]);
+  }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
 
   const storeCardsSummary = useMemo(() => {
     const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
@@ -756,7 +727,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
           {CYCLIC_DIMENSIONS.map((dim) => {
             const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
-            const count = activeSelection[fieldKeyMap[dim.key]]?.length || 0;
+            const count = stateA[fieldKeyMap[dim.key]]?.length || 0;
             return (
               <button key={dim.key} onClick={() => setActiveFilterDrawer(activeFilterDrawer === dim.key ? null : dim.key)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${count > 0 ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : activeFilterDrawer === dim.key ? "bg-slate-800 text-white border-slate-700" : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"}`}
@@ -773,7 +744,7 @@ export default function QlikViewAnalyticsPage() {
           <button onClick={() => setIsBookmarkModalOpen(true)} className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
             <Bookmark className="w-3.5 h-3.5" /><span>Presets</span>
           </button>
-          {(activeSelection.stores.length > 0 || activeSelection.departments.length > 0 || activeSelection.categories.length > 0 || activeSelection.colors.length > 0 || activeSelection.sizes.length > 0 || activeSelection.styles.length > 0) && (
+          {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0) && (
             <button onClick={clearCurrentStateSelections} className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs">
               <RotateCcw className="w-3.5 h-3.5" /><span>Reset</span>
             </button>
@@ -798,12 +769,12 @@ export default function QlikViewAnalyticsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto pr-1">
             {(() => {
               const fieldMap: Record<DimensionKey, { items: string[]; sel: string[]; poss: Set<string>; freq: Record<string, number> }> = {
-                store: { items: universe.stores, sel: activeSelection.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
-                department: { items: universe.departments, sel: activeSelection.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
-                category: { items: universe.categories, sel: activeSelection.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
-                color: { items: universe.colors, sel: activeSelection.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
-                size: { items: universe.sizes, sel: activeSelection.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
-                style_code: { items: universe.styles, sel: activeSelection.styles, poss: new Set(universe.styles), freq: {} },
+                store: { items: universe.stores, sel: stateA.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
+                department: { items: universe.departments, sel: stateA.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
+                category: { items: universe.categories, sel: stateA.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
+                color: { items: universe.colors, sel: stateA.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
+                size: { items: universe.sizes, sel: stateA.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
+                style_code: { items: universe.styles, sel: stateA.styles, poss: new Set(universe.styles), freq: {} },
               };
               const current = fieldMap[activeFilterDrawer];
               const filteredList = current.items.filter((i) => i.toLowerCase().includes(drawerSearch.toLowerCase()));
