@@ -186,8 +186,15 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
+  
+  // View mode includes consolidated catalog or interactive store breakdown cards
   const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
   
+  // Branch Modal States with Search & Filter
+  const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
+  const [branchModalSearch, setBranchModalSearch] = useState<string>("");
+  const [branchModalTierFilter, setBranchModalTierFilter] = useState<"ALL" | "A" | "B" | "C">("ALL");
+
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
   const [detailSearch, setDetailSearch] = useState("");
@@ -608,6 +615,50 @@ export default function QlikViewAnalyticsPage() {
     );
   }, [currentSubset, detailSearch]);
 
+  const storeCardsSummary = useMemo(() => {
+    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
+    
+    universe.stores.forEach((st) => {
+      map[st] = { store: st, totalUnits: 0, totalRevenue: 0 };
+    });
+
+    currentSubset.forEach((item) => {
+      if (!map[item.store]) {
+        map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0 };
+      }
+      map[item.store].totalUnits += item.quantity;
+      map[item.store].totalRevenue += item.revenue;
+    });
+
+    return Object.values(map).sort((a, b) => b.totalRevenue - a.totalRevenue);
+  }, [currentSubset, universe.stores]);
+
+  const selectedBranchProducts = useMemo(() => {
+    if (!selectedBranchDetail) return [];
+    
+    let list = filteredProducts
+      .filter((p) => (p.storeBreakdown[selectedBranchDetail] || 0) > 0)
+      .sort((a, b) => (b.storeBreakdown[selectedBranchDetail] || 0) - (a.storeBreakdown[selectedBranchDetail] || 0));
+
+    if (branchModalTierFilter !== "ALL") {
+      list = list.filter((p) => p.abcClass === branchModalTierFilter);
+    }
+
+    if (branchModalSearch.trim()) {
+      const q = branchModalSearch.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.styleCode.toLowerCase().includes(q) ||
+          p.styleName.toLowerCase().includes(q) ||
+          p.color.toLowerCase().includes(q) ||
+          p.size.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
+
   const inspectedProductBreakdown = useMemo(() => {
     if (!inspectedProduct) return { stores: [], totalLogs: 0 };
 
@@ -901,7 +952,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE */}
+      {/* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH STORE BREAKDOWN CARDS */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
@@ -917,13 +968,13 @@ export default function QlikViewAnalyticsPage() {
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
             <button
               onClick={() => setVisualizationMode("chart")}
-              className={`px-3 py-1.5 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+              className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
             >
               Bars
             </button>
             <button
               onClick={() => setVisualizationMode("donut")}
-              className={`px-3 py-1.5 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+              className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
             >
               Proportion Ring
             </button>
@@ -1059,27 +1110,39 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT PANEL: FULL EXPANDED PRODUCT CATALOG TABLE */}
+          {/* RIGHT PANEL: CONSOLIDATED CATALOG OR INTERACTIVE STORE BREAKDOWN CARDS */}
           {expandedPanel !== "graph" && (
             <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
               <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-black text-white tracking-wide uppercase">Product Catalog ({filteredProducts.length})</span>
+                  <span className="text-sm font-black text-white tracking-wide uppercase">Product Catalog & Branches</span>
                 </div>
 
                 <div className="flex items-center gap-3 print:hidden">
-                  <div className="relative w-48 sm:w-56">
-                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Search style or name..."
-                      value={detailSearch}
-                      onChange={(e) => setDetailSearch(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
-                    />
+                  <div className="flex items-center bg-slate-950 border border-slate-700 rounded-xl p-0.5 text-xs">
+                    <button
+                      onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }}
+                      className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+                    >
+                      Consolidated Stock
+                    </button>
+                    <button
+                      onClick={() => setProductViewMode("store_breakdown")}
+                      className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+                    >
+                      Store Breakdown Cards
+                    </button>
                   </div>
+
+                  <input
+                    type="text"
+                    placeholder="Search style..."
+                    value={detailSearch}
+                    onChange={(e) => setDetailSearch(e.target.value)}
+                    className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
+                  />
 
                   <button
                     onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")}
@@ -1091,67 +1154,197 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 backdrop-blur-md z-10 shadow-md">
-                    <tr>
-                      <th className="px-5 py-3.5 border-r border-slate-800">Style Name / Details</th>
-                      <th className="px-4 py-3.5 border-r border-slate-800">Class</th>
-                      <th className="px-4 py-3.5 border-r border-slate-800">Color & Size</th>
-                      <th className="px-4 py-3.5 text-right border-r border-slate-800">Price</th>
-                      <th className="px-4 py-3.5 text-right border-r border-slate-800">Total Stock</th>
-                      <th className="px-5 py-3.5 text-right print:hidden">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/80 text-xs">
-                    {filteredProducts.length === 0 ? (
-                      <tr><td colSpan={6} className="p-12 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
-                    ) : (
-                      filteredProducts.map((prod) => (
-                        <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                          <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                            <span className="font-black text-emerald-400 block text-sm tracking-wide">
-                              {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
-                            </span>
-                            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
-                              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {prod.styleCode}</span>
-                              {prod.sku !== "-" && <span className="text-blue-400 font-mono">SKU: {prod.sku}</span>}
+              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin] p-4">
+                {productViewMode === "consolidated" ? (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 backdrop-blur-md z-10 shadow-md">
+                      <tr>
+                        <th className="px-5 py-3.5 border-r border-slate-800">Style Name / Details</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Class</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Color & Size</th>
+                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Price</th>
+                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Total Stock</th>
+                        <th className="px-5 py-3.5 text-right print:hidden">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80 text-xs">
+                      {filteredProducts.length === 0 ? (
+                        <tr><td colSpan={6} className="p-12 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
+                      ) : (
+                        filteredProducts.map((prod) => (
+                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
+                            <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
+                              <span className="font-black text-emerald-400 block text-sm tracking-wide">
+                                {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
+                              </span>
+                              <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
+                                <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {prod.styleCode}</span>
+                                {prod.sku !== "-" && <span className="text-blue-400 font-mono">SKU: {prod.sku}</span>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                              <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                                prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                                prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                                "bg-slate-800 text-slate-400 border-slate-700"
+                              }`}>
+                                Class {prod.abcClass}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 max-w-[180px] border-r border-slate-900/50">
+                              <span className="text-white block font-semibold text-xs">{prod.color}</span>
+                              <span className="text-[11px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
+                            </td>
+                            <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50">{prod.units} pcs</td>
+                            <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
+                              <button
+                                onClick={() => setInspectedProduct(prod)}
+                                className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Inspect</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* MODERN BRANCH CARDS GRID */
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {storeCardsSummary.map((storeCard) => (
+                      <div
+                        key={storeCard.store}
+                        onClick={() => {
+                          setSelectedBranchDetail(storeCard.store);
+                          setBranchModalSearch("");
+                          setBranchModalTierFilter("ALL");
+                        }}
+                        className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5 truncate mr-2">
+                            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition shrink-0">
+                              <Building2 className="w-4 h-4" />
                             </div>
-                          </td>
-                          <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
-                            <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
-                              prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
-                              prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
-                              "bg-slate-800 text-slate-400 border-slate-700"
-                            }`}>
-                              Class {prod.abcClass}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 max-w-[180px] border-r border-slate-900/50">
-                            <span className="text-white block font-semibold text-xs">{prod.color}</span>
-                            <span className="text-[11px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
-                          </td>
-                          <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
-                          <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50">{prod.units} pcs</td>
-                          <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                            <button
-                              onClick={() => setInspectedProduct(prod)}
-                              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>Inspect</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                            <h4 className="font-bold text-white text-xs truncate">{storeCard.store}</h4>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition shrink-0" />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs font-mono">
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                            <span className="text-[9px] text-slate-500 uppercase block font-sans">Units Stocked</span>
+                            <span className="text-emerald-400 font-bold text-sm">{storeCard.totalUnits.toLocaleString()} pcs</span>
+                          </div>
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                            <span className="text-[9px] text-slate-500 uppercase block font-sans">Branch Revenue</span>
+                            <span className="text-indigo-400 font-bold text-sm">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH SEARCH & TIER FILTER */}
+      {selectedBranchDetail && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Branch Inventory Breakdown</span>
+                  <h2 className="text-base font-bold text-white">{selectedBranchDetail}</h2>
+                </div>
+              </div>
+              <button onClick={() => setSelectedBranchDetail(null)} className="text-slate-400 hover:text-white cursor-pointer p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* SEARCH & FILTER CONTROLS INSIDE MODAL */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search style code, name, color..."
+                  value={branchModalSearch}
+                  onChange={(e) => setBranchModalSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+                <span className="text-[10px] uppercase text-slate-500 font-bold px-2">Tier:</span>
+                {(["ALL", "A", "B", "C"] as const).map((tier) => (
+                  <button
+                    key={tier}
+                    onClick={() => setBranchModalTierFilter(tier)}
+                    className={`px-3 py-1 rounded-lg transition font-bold text-xs ${
+                      branchModalTierFilter === tier
+                        ? "bg-emerald-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {tier}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto space-y-2 pr-1 [scrollbar-width:thin]">
+              {selectedBranchProducts.length === 0 ? (
+                <div className="p-10 text-center text-slate-500 text-xs">No matching product records found for this branch.</div>
+              ) : (
+                selectedBranchProducts.map((prod) => (
+                  <div key={prod.key} className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl flex items-center justify-between text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white block text-sm">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
+                        <span className={`text-[10px] font-black px-2 py-0.2 rounded border ${
+                          prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                          prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                          "bg-slate-800 text-slate-400 border-slate-700"
+                        }`}>
+                          Class {prod.abcClass}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">Code: {prod.styleCode} • {prod.color} ({prod.size})</span>
+                    </div>
+                    <div className="text-right font-mono">
+                      <span className="font-black text-emerald-400 text-base block">{prod.storeBreakdown[selectedBranchDetail] || 0} pcs</span>
+                      <span className="text-[11px] text-slate-500">₱{prod.price.toFixed(0)} / unit</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+              <span>Showing {selectedBranchProducts.length} items</span>
+              <button
+                onClick={() => setSelectedBranchDetail(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+              >
+                Close Branch View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* INSPECTION MODAL */}
       {inspectedProduct && (
