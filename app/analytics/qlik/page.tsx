@@ -47,7 +47,8 @@ import {
   AlertTriangle,
   Clock,
   ShieldAlert,
-  Activity
+  Activity,
+  Database
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -71,10 +72,19 @@ interface SalesRecord {
 }
 
 interface InventoryRecord {
+  id: string;
   store: string;
   style_code: string;
+  sku: string | null;
+  style_name?: string;
+  color?: string;
+  size?: string;
+  department?: string;
+  category?: string;
   current_stock: number;
   safety_stock: number;
+  initial_stock: number;
+  price?: number;
   last_replenished_at: string;
 }
 
@@ -199,8 +209,11 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  const [productViewMode, setProductViewMode] = useState<"consolidated" | "stores_grid" | "replenishment" | "aging_slob">("consolidated");
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "master_catalog" | "stores_grid" | "replenishment" | "aging_slob">("consolidated");
   
+  const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
+  const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
+
   const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
   const [branchModalSearch, setBranchModalSearch] = useState<string>("");
   const [branchModalTierFilter, setBranchModalTierFilter] = useState<"ALL" | "A" | "B" | "C">("ALL");
@@ -218,7 +231,7 @@ export default function QlikViewAnalyticsPage() {
     setLoading(true);
     const [logsRes, invRes] = await Promise.all([
       supabase.from("scanned_logs").select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at").order("scanned_at", { ascending: false }),
-      supabase.from("store_inventory").select("store, style_code, current_stock, safety_stock, last_replenished_at")
+      supabase.from("store_inventory").select("*")
     ]);
 
     if (!logsRes.error && logsRes.data) {
@@ -322,44 +335,6 @@ export default function QlikViewAnalyticsPage() {
 
   const activeSelection = isComparativeMode ? (activeEditingState === "A" ? stateA : stateB) : stateA;
 
-  const filterRows = useMemo(() => {
-    const fields: Array<[keyof StateSelection, keyof SalesRecord]> = [
-      ["stores", "store"], ["departments", "department"], ["categories", "category"],
-      ["colors", "color"], ["sizes", "size"], ["styles", "style_code"],
-    ];
-    const result = {} as Record<keyof StateSelection, SalesRecord[]>;
-    fields.forEach(([field, recordField]) => {
-      result[field] = dateFilteredData.filter((row) => fields.every(([otherField, otherRecordField]) =>
-        otherField === field || activeSelection[otherField].length === 0 ||
-        activeSelection[otherField].includes(String(row[otherRecordField]))
-      ));
-    });
-    return result;
-  }, [dateFilteredData, activeSelection]);
-
-  const possibleValues = useMemo(() => ({
-    stores: new Set(filterRows.stores.map((row) => row.store)),
-    departments: new Set(filterRows.departments.map((row) => row.department)),
-    categories: new Set(filterRows.categories.map((row) => row.category)),
-    colors: new Set(filterRows.colors.map((row) => row.color)),
-    sizes: new Set(filterRows.sizes.map((row) => row.size)),
-  }), [filterRows]);
-
-  const fieldFrequencies = useMemo(() => {
-    const count = (rows: SalesRecord[], field: keyof SalesRecord) => rows.reduce<Record<string, number>>((frequencies, row) => {
-      const value = String(row[field]);
-      frequencies[value] = (frequencies[value] || 0) + 1;
-      return frequencies;
-    }, {});
-    return {
-      stores: count(filterRows.stores, "store"),
-      departments: count(filterRows.departments, "department"),
-      categories: count(filterRows.categories, "category"),
-      colors: count(filterRows.colors, "color"),
-      sizes: count(filterRows.sizes, "size"),
-    };
-  }, [filterRows]);
-
   const setActiveSelection = (fn: (prev: StateSelection) => StateSelection) => {
     if (!isComparativeMode || activeEditingState === "A") setStateA(fn);
     else setStateB(fn);
@@ -380,6 +355,46 @@ export default function QlikViewAnalyticsPage() {
   );
 
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
+
+  const { possibleValues, fieldFrequencies } = useMemo(() => {
+    const calcPossibleAndFreq = (targetField: "store" | "department" | "category" | "color" | "size") => {
+      const subset = dateFilteredData.filter((row) => {
+        const mStore = targetField === "store" || activeSelection.stores.length === 0 || activeSelection.stores.includes(row.store);
+        const mDept = targetField === "department" || activeSelection.departments.length === 0 || activeSelection.departments.includes(row.department);
+        const mCat = targetField === "category" || activeSelection.categories.length === 0 || activeSelection.categories.includes(row.category);
+        const mColor = targetField === "color" || activeSelection.colors.length === 0 || activeSelection.colors.includes(row.color);
+        const mSize = targetField === "size" || activeSelection.sizes.length === 0 || activeSelection.sizes.includes(row.size);
+        const mStyle = activeSelection.styles.length === 0 || activeSelection.styles.includes(row.style_code);
+        return mStore && mDept && mCat && mColor && mSize && mStyle;
+      });
+
+      const possibleSet = new Set<string>();
+      const freqMap: Record<string, number> = {};
+      subset.forEach((row) => {
+        const val = row[targetField];
+        possibleSet.add(val);
+        freqMap[val] = (freqMap[val] || 0) + row.quantity;
+      });
+      return { possibleSet, freqMap };
+    };
+
+    return {
+      possibleValues: {
+        stores: calcPossibleAndFreq("store").possibleSet,
+        departments: calcPossibleAndFreq("department").possibleSet,
+        categories: calcPossibleAndFreq("category").possibleSet,
+        colors: calcPossibleAndFreq("color").possibleSet,
+        sizes: calcPossibleAndFreq("size").possibleSet,
+      },
+      fieldFrequencies: {
+        stores: calcPossibleAndFreq("store").freqMap,
+        departments: calcPossibleAndFreq("department").freqMap,
+        categories: calcPossibleAndFreq("category").freqMap,
+        colors: calcPossibleAndFreq("color").freqMap,
+        sizes: calcPossibleAndFreq("size").freqMap,
+      },
+    };
+  }, [dateFilteredData, activeSelection]);
 
   const toggleSelection = (field: "store" | "department" | "category" | "color" | "size" | "style_code", value: string) => {
     setActiveSelection((prev) => {
@@ -441,6 +456,51 @@ export default function QlikViewAnalyticsPage() {
       return { ...row, startAngle, endAngle: (cumulativePercent / 100) * 360 };
     });
   }, [graphRows]);
+
+  const masterCatalogProducts = useMemo(() => {
+    let list = inventoryData.map((inv) => {
+      const matchingSales = currentSubset.filter((s) => s.style_code === inv.style_code && s.store === inv.store);
+      const unitsSold = matchingSales.reduce((acc, curr) => acc + curr.quantity, 0);
+      const revenue = matchingSales.reduce((acc, curr) => acc + curr.revenue, 0);
+
+      return {
+        id: inv.id,
+        store: inv.store,
+        styleCode: inv.style_code,
+        sku: inv.sku || "-",
+        styleName: inv.style_name || inv.style_code,
+        color: inv.color || "Default",
+        size: inv.size || "Free Size",
+        department: inv.department || "General",
+        category: inv.category || "General",
+        currentStock: Number(inv.current_stock) || 0,
+        initialStock: Number(inv.initial_stock) || 0,
+        safetyStock: Number(inv.safety_stock) || 5,
+        price: Number(inv.price) || 299.00,
+        unitsSold,
+        revenue,
+      };
+    });
+
+    if (masterCatalogStoreFilter !== "All Stores") {
+      list = list.filter((p) => p.store === masterCatalogStoreFilter);
+    }
+
+    if (masterCatalogSearch.trim()) {
+      const q = masterCatalogSearch.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.styleCode.toLowerCase().includes(q) ||
+          p.styleName.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q) ||
+          p.store.toLowerCase().includes(q) ||
+          p.color.toLowerCase().includes(q) ||
+          p.size.toLowerCase().includes(q)
+      );
+    }
+
+    return list.sort((a, b) => b.currentStock - a.currentStock);
+  }, [inventoryData, currentSubset, masterCatalogSearch, masterCatalogStoreFilter]);
 
   const filteredProducts = useMemo(() => {
     let daysInPeriod = 30;
@@ -788,12 +848,15 @@ export default function QlikViewAnalyticsPage() {
                 <div className="flex items-center gap-3 print:hidden">
                   <div className="flex items-center bg-slate-950 border border-slate-700 rounded-xl p-0.5 text-xs">
                     <button onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Sales Catalog</button>
+                    <button onClick={() => setProductViewMode("master_catalog")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5"/> All Master</button>
                     <button onClick={() => setProductViewMode("replenishment")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5"/> Replenishment</button>
                     <button onClick={() => setProductViewMode("aging_slob")} className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5"/> Aging / SLOB</button>
                     <button onClick={() => setProductViewMode("stores_grid")} className={`px-3 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
                   </div>
 
-                  <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
+                  {productViewMode !== "master_catalog" && (
+                    <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
+                  )}
 
                   <button onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm" title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}>
                     {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -857,6 +920,73 @@ export default function QlikViewAnalyticsPage() {
                         )}
                       </tbody>
                     </table>
+                  )}
+
+                  {productViewMode === "master_catalog" && (
+                    <div className="space-y-3 p-3">
+                      <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search master catalog by name, style code, SKU..."
+                            value={masterCatalogSearch}
+                            onChange={(e) => setMasterCatalogSearch(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs">
+                          <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
+                          <select
+                            value={masterCatalogStoreFilter}
+                            onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
+                            className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+                          >
+                            <option value="All Stores" className="bg-slate-900">All Stores</option>
+                            {universe.stores.map((st) => (
+                              <option key={st} value={st} className="bg-slate-900">{st}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                          <tr>
+                            <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Store</th>
+                            <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
+                            <th className="px-3 py-3 border-r border-slate-800 bg-slate-900">Color & Size</th>
+                            <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Price</th>
+                            <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
+                            <th className="px-3 py-3 text-right bg-slate-900">Period Sales</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/80 text-xs">
+                          {masterCatalogProducts.length === 0 ? (
+                            <tr><td colSpan={6} className="p-8 text-center text-slate-500 text-sm">No products found in master inventory.</td></tr>
+                          ) : (
+                            masterCatalogProducts.map((prod, idx) => (
+                              <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
+                                <td className="px-4 py-2.5 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
+                                <td className="px-4 py-2.5 font-mono border-r border-slate-900/50">
+                                  <span className="font-bold text-white block">{prod.styleName}</span>
+                                  <span className="text-[10px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
+                                </td>
+                                <td className="px-3 py-2.5 border-r border-slate-900/50 text-slate-300">
+                                  {prod.color} / <strong className="text-white">{prod.size}</strong>
+                                </td>
+                                <td className="px-3 py-2.5 text-right font-mono text-slate-300 border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
+                                <td className={`px-3 py-2.5 text-right font-mono font-bold border-r border-slate-900/50 ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                  {prod.currentStock} pcs
+                                </td>
+                                <td className="px-3 py-2.5 text-right font-mono text-indigo-400 font-semibold">{prod.unitsSold} pcs</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
 
                   {productViewMode === "replenishment" && (
