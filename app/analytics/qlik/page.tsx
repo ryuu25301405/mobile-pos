@@ -186,14 +186,13 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  
-  // View mode includes consolidated catalog or interactive store breakdown cards
   const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
   
-  // Branch Modal States with Search & Filter
+  // Branch Modal States with Search, Filter & Expanded Toggle
   const [selectedBranchDetail, setSelectedBranchDetail] = useState<string | null>(null);
   const [branchModalSearch, setBranchModalSearch] = useState<string>("");
   const [branchModalTierFilter, setBranchModalTierFilter] = useState<"ALL" | "A" | "B" | "C">("ALL");
+  const [isBranchModalExpanded, setIsBranchModalExpanded] = useState<boolean>(false);
 
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
@@ -952,7 +951,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH STORE BREAKDOWN CARDS */}
+      {/* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
@@ -1110,7 +1109,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT PANEL: CONSOLIDATED CATALOG OR INTERACTIVE STORE BREAKDOWN CARDS */}
+          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS */}
           {expandedPanel !== "graph" && (
             <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
               <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
@@ -1212,7 +1211,6 @@ export default function QlikViewAnalyticsPage() {
                     </tbody>
                   </table>
                 ) : (
-                  /* MODERN BRANCH CARDS GRID */
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     {storeCardsSummary.map((storeCard) => (
                       <div
@@ -1221,6 +1219,7 @@ export default function QlikViewAnalyticsPage() {
                           setSelectedBranchDetail(storeCard.store);
                           setBranchModalSearch("");
                           setBranchModalTierFilter("ALL");
+                          setIsBranchModalExpanded(false);
                         }}
                         className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl"
                       >
@@ -1254,11 +1253,13 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH SEARCH & TIER FILTER */}
+      {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH EXPANDED VIEW TOGGLE */}
       {selectedBranchDetail && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col ${
+            isBranchModalExpanded ? "w-full h-full max-w-none max-h-none m-2" : "w-full max-w-2xl max-h-[90vh]"
+          }`}>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
                   <Building2 className="w-5 h-5" />
@@ -1268,13 +1269,26 @@ export default function QlikViewAnalyticsPage() {
                   <h2 className="text-base font-bold text-white">{selectedBranchDetail}</h2>
                 </div>
               </div>
-              <button onClick={() => setSelectedBranchDetail(null)} className="text-slate-400 hover:text-white cursor-pointer p-1">
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsBranchModalExpanded(!isBranchModalExpanded)}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer"
+                  title={isBranchModalExpanded ? "Minimize Modal" : "Expand Full Screen"}
+                >
+                  {isBranchModalExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => setSelectedBranchDetail(null)}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* SEARCH & FILTER CONTROLS INSIDE MODAL */}
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-3 pt-1 shrink-0">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -1305,7 +1319,7 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-2 pr-1 [scrollbar-width:thin]">
+            <div className={`overflow-y-auto space-y-2 pr-1 flex-1 [scrollbar-width:thin]`}>
               {selectedBranchProducts.length === 0 ? (
                 <div className="p-10 text-center text-slate-500 text-xs">No matching product records found for this branch.</div>
               ) : (
@@ -1333,7 +1347,7 @@ export default function QlikViewAnalyticsPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400 shrink-0">
               <span>Showing {selectedBranchProducts.length} items</span>
               <button
                 onClick={() => setSelectedBranchDetail(null)}
