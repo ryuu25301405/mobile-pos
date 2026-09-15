@@ -193,6 +193,7 @@ export default function QlikViewAnalyticsPage() {
   const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
   const [cyclicIndex, setCyclicIndex] = useState<number>(0);
   const [drillLevel, setDrillLevel] = useState<number>(0);
+  const [drillBreadcrumbs, setDrillBreadcrumbs] = useState<string[]>([]);
 
   const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
