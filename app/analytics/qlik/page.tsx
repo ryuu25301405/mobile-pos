@@ -88,6 +88,18 @@ interface InventoryRecord {
   last_replenished_at: string;
 }
 
+interface ProductMasterRecord {
+  id: string;
+  style_code: string;
+  sku: string;
+  style_name: string;
+  department: string;
+  category: string;
+  color: string;
+  size: string;
+  price: number;
+}
+
 type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code";
 type MeasureKey = "revenue" | "units" | "aur" | "transactions";
 
@@ -190,6 +202,7 @@ interface ProductSummaryItem {
 export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [inventoryData, setInventoryData] = useState<InventoryRecord[]>([]);
+  const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isComparativeMode, setIsComparativeMode] = useState<boolean>(false);
@@ -229,9 +242,10 @@ export default function QlikViewAnalyticsPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [logsRes, invRes] = await Promise.all([
+    const [logsRes, invRes, prodRes] = await Promise.all([
       supabase.from("scanned_logs").select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at").order("scanned_at", { ascending: false }),
-      supabase.from("store_inventory").select("*")
+      supabase.from("store_inventory").select("*"),
+      supabase.from("products").select("*")
     ]);
 
     if (!logsRes.error && logsRes.data) {
@@ -263,6 +277,11 @@ export default function QlikViewAnalyticsPage() {
     if (!invRes.error && invRes.data) {
       setInventoryData(invRes.data as InventoryRecord[]);
     }
+
+    if (!prodRes.error && prodRes.data) {
+      setProductsMaster(prodRes.data as ProductMasterRecord[]);
+    }
+
     setLoading(false);
   }, []);
 
@@ -457,38 +476,93 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [graphRows]);
 
+  // Master Catalog: Driven by the `products` table as the primary source of truth
   const masterCatalogProducts = useMemo(() => {
-    let list = inventoryData.map((inv) => {
-      const matchingSales = currentSubset.filter((s) => s.style_code === inv.style_code && s.store === inv.store);
-      const unitsSold = matchingSales.reduce((acc, curr) => acc + curr.quantity, 0);
-      const revenue = matchingSales.reduce((acc, curr) => acc + curr.revenue, 0);
-
-      return {
-        id: inv.id,
-        store: inv.store,
-        styleCode: inv.style_code,
-        sku: inv.sku || "-",
-        styleName: inv.style_name || inv.style_code,
-        color: inv.color || "Default",
-        size: inv.size || "Free Size",
-        department: inv.department || "General",
-        category: inv.category || "General",
-        currentStock: Number(inv.current_stock) || 0,
-        initialStock: Number(inv.initial_stock) || 0,
-        safetyStock: Number(inv.safety_stock) || 5,
-        price: Number(inv.price) || 299.00,
-        unitsSold,
-        revenue,
-      };
+    // Build a lookup map of inventory stock per store/style
+    const stockMap: Record<string, number> = {};
+    inventoryData.forEach((inv) => {
+      stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
     });
 
+    // Build a lookup map of sales per store/style
+    const salesMap: Record<string, { units: number; revenue: number }> = {};
+    data.forEach((log) => {
+      const k = `${log.store}-${log.style_code}`;
+      if (!salesMap[k]) salesMap[k] = { units: 0, revenue: 0 };
+      salesMap[k].units += log.quantity;
+      salesMap[k].revenue += log.revenue;
+    });
+
+    // If we have products in the products table, list every product across each active store
+    const list: Array<{
+      id: string;
+      store: string;
+      styleCode: string;
+      sku: string;
+      styleName: string;
+      color: string;
+      size: string;
+      department: string;
+      category: string;
+      currentStock: number;
+      price: number;
+      unitsSold: number;
+      revenue: number;
+    }> = [];
+
+    const storesList = universe.stores.length > 0 ? universe.stores : ["Unassigned Store"];
+
+    if (productsMaster.length > 0) {
+      productsMaster.forEach((prod) => {
+        storesList.forEach((st) => {
+          const k = `${st}-${prod.style_code}`;
+          list.push({
+            id: prod.id,
+            store: st,
+            styleCode: prod.style_code || "-",
+            sku: prod.sku || "-",
+            styleName: prod.style_name || prod.style_code,
+            color: prod.color || "Default",
+            size: prod.size || "Free Size",
+            department: prod.department || "General",
+            category: prod.category || "General",
+            currentStock: stockMap[k] || 0,
+            price: Number(prod.price) || 299.00,
+            unitsSold: salesMap[k]?.units || 0,
+            revenue: salesMap[k]?.revenue || 0,
+          });
+        });
+      });
+    } else {
+      // Fallback if products table is empty: use inventory records
+      inventoryData.forEach((inv) => {
+        const k = `${inv.store}-${inv.style_code}`;
+        list.push({
+          id: inv.id,
+          store: inv.store || "Unassigned Store",
+          styleCode: inv.style_code || "-",
+          sku: inv.sku || "-",
+          styleName: inv.style_name || inv.style_code,
+          color: inv.color || "Default",
+          size: inv.size || "Free Size",
+          department: inv.department || "General",
+          category: inv.category || "General",
+          currentStock: Number(inv.current_stock) || 0,
+          price: Number(inv.price) || 299.00,
+          unitsSold: salesMap[k]?.units || 0,
+          revenue: salesMap[k]?.revenue || 0,
+        });
+      });
+    }
+
+    let filtered = list;
     if (masterCatalogStoreFilter !== "All Stores") {
-      list = list.filter((p) => p.store === masterCatalogStoreFilter);
+      filtered = filtered.filter((p) => p.store === masterCatalogStoreFilter);
     }
 
     if (masterCatalogSearch.trim()) {
       const q = masterCatalogSearch.toLowerCase();
-      list = list.filter(
+      filtered = filtered.filter(
         (p) =>
           p.styleCode.toLowerCase().includes(q) ||
           p.styleName.toLowerCase().includes(q) ||
@@ -499,8 +573,8 @@ export default function QlikViewAnalyticsPage() {
       );
     }
 
-    return list.sort((a, b) => b.currentStock - a.currentStock);
-  }, [inventoryData, currentSubset, masterCatalogSearch, masterCatalogStoreFilter]);
+    return filtered.sort((a, b) => b.unitsSold - a.unitsSold);
+  }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter]);
 
   const filteredProducts = useMemo(() => {
     let daysInPeriod = 30;
@@ -864,6 +938,36 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
+              {/* SEPARATED SEARCH & FILTER TOOLBAR FOR ALL MASTER VIEW */}
+              {productViewMode === "master_catalog" && (
+                <div className="px-5 py-3 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center gap-3 shrink-0 print:hidden">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search master catalog by name, style code, SKU..."
+                      value={masterCatalogSearch}
+                      onChange={(e) => setMasterCatalogSearch(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs">
+                    <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
+                    <select
+                      value={masterCatalogStoreFilter}
+                      onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
+                      className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                      <option value="All Stores" className="bg-slate-900">All Stores</option>
+                      {universe.stores.map((st) => (
+                        <option key={st} value={st} className="bg-slate-900">{st}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {/* FIXED RELATIVE CONTAINER WITH FLUSH STICKY HEADER */}
               <div className="relative flex-1 overflow-hidden flex flex-col">
                 <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
@@ -923,70 +1027,41 @@ export default function QlikViewAnalyticsPage() {
                   )}
 
                   {productViewMode === "master_catalog" && (
-                    <div className="space-y-3 p-3">
-                      <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
-                        <div className="relative flex-1">
-                          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            placeholder="Search master catalog by name, style code, SKU..."
-                            value={masterCatalogSearch}
-                            onChange={(e) => setMasterCatalogSearch(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs">
-                          <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
-                          <select
-                            value={masterCatalogStoreFilter}
-                            onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
-                            className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
-                          >
-                            <option value="All Stores" className="bg-slate-900">All Stores</option>
-                            {universe.stores.map((st) => (
-                              <option key={st} value={st} className="bg-slate-900">{st}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
-                          <tr>
-                            <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Store</th>
-                            <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
-                            <th className="px-3 py-3 border-r border-slate-800 bg-slate-900">Color & Size</th>
-                            <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Price</th>
-                            <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
-                            <th className="px-3 py-3 text-right bg-slate-900">Period Sales</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/80 text-xs">
-                          {masterCatalogProducts.length === 0 ? (
-                            <tr><td colSpan={6} className="p-8 text-center text-slate-500 text-sm">No products found in master inventory.</td></tr>
-                          ) : (
-                            masterCatalogProducts.map((prod, idx) => (
-                              <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
-                                <td className="px-4 py-2.5 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
-                                <td className="px-4 py-2.5 font-mono border-r border-slate-900/50">
-                                  <span className="font-bold text-white block">{prod.styleName}</span>
-                                  <span className="text-[10px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
-                                </td>
-                                <td className="px-3 py-2.5 border-r border-slate-900/50 text-slate-300">
-                                  {prod.color} / <strong className="text-white">{prod.size}</strong>
-                                </td>
-                                <td className="px-3 py-2.5 text-right font-mono text-slate-300 border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
-                                <td className={`px-3 py-2.5 text-right font-mono font-bold border-r border-slate-900/50 ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                                  {prod.currentStock} pcs
-                                </td>
-                                <td className="px-3 py-2.5 text-right font-mono text-indigo-400 font-semibold">{prod.unitsSold} pcs</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                        <tr>
+                          <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Store</th>
+                          <th className="px-4 py-3 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
+                          <th className="px-3 py-3 border-r border-slate-800 bg-slate-900">Color & Size</th>
+                          <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Price</th>
+                          <th className="px-3 py-3 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
+                          <th className="px-3 py-3 text-right bg-slate-900">Total Units Sold</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80 text-xs">
+                        {masterCatalogProducts.length === 0 ? (
+                          <tr><td colSpan={6} className="p-8 text-center text-slate-500 text-sm">No products found in master inventory.</td></tr>
+                        ) : (
+                          masterCatalogProducts.map((prod, idx) => (
+                            <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
+                              <td className="px-4 py-2.5 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
+                              <td className="px-4 py-2.5 font-mono border-r border-slate-900/50">
+                                <span className="font-bold text-white block">{prod.styleName}</span>
+                                <span className="text-[10px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
+                              </td>
+                              <td className="px-3 py-2.5 border-r border-slate-900/50 text-slate-300">
+                                {prod.color} / <strong className="text-white">{prod.size}</strong>
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-mono text-slate-300 border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
+                              <td className={`px-3 py-2.5 text-right font-mono font-bold border-r border-slate-900/50 ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                {prod.currentStock} pcs
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-mono text-indigo-400 font-semibold">{prod.unitsSold} pcs</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   )}
 
                   {productViewMode === "replenishment" && (
