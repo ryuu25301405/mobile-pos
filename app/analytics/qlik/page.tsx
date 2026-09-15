@@ -41,7 +41,6 @@ import {
   List,
   Maximize2,
   Minimize2,
-  FileText,
   Printer,
 } from "lucide-react";
 
@@ -103,15 +102,6 @@ const MEASURES: MeasureConfig[] = [
 ];
 
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
-  { key: "store", label: "Store Location" },
-  { key: "department", label: "Department" },
-  { key: "category", label: "Category" },
-  { key: "color", label: "Color" },
-  { key: "size", label: "Size" },
-  { key: "style_code", label: "Style Code" },
-];
-
-const DRILL_HIERARCHY: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
   { key: "department", label: "Department" },
   { key: "category", label: "Category" },
@@ -192,12 +182,7 @@ export default function QlikViewAnalyticsPage() {
   const [endDate, setEndDate] = useState<string>("");
   const [datePreset, setDatePreset] = useState<string>("all");
 
-  const [tableMode, setTableMode] = useState<"cyclic" | "drilldown">("drilldown");
-  const [cyclicIndex, setCyclicIndex] = useState<number>(0);
-  const [drillLevel, setDrillLevel] = useState<number>(0);
-
-  const [activeTab, setActiveTab] = useState<"both" | "summary" | "details">("both");
-  const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut" | "table">("chart");
+  const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
   const [productViewMode, setProductViewMode] = useState<"consolidated" | "store_breakdown">("consolidated");
   
@@ -469,7 +454,6 @@ export default function QlikViewAnalyticsPage() {
 
   const clearCurrentStateSelections = () => {
     setActiveSelection(() => EMPTY_SELECTIONS);
-    setDrillLevel(0);
   };
 
   const calcMetrics = (subset: SalesRecord[]) => {
@@ -649,10 +633,6 @@ export default function QlikViewAnalyticsPage() {
     };
   }, [currentSubset, inspectedProduct]);
 
-  const handleGraphSliceClick = (label: string) => {
-    toggleSelection(graphDimensionKey, label);
-  };
-
   const handlePrintExecutivePDF = () => {
     window.print();
   };
@@ -660,7 +640,7 @@ export default function QlikViewAnalyticsPage() {
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black">
       
-      {/* GLOBAL NAVIGATION BAR */}
+      {/* HEADER & NAV */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
@@ -678,10 +658,9 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Executive PDF Brief Export Button */}
           <button
             onClick={handlePrintExecutivePDF}
-            className="flex items-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5 text-indigo-400" />
             <span>Export Executive PDF</span>
@@ -715,177 +694,69 @@ export default function QlikViewAnalyticsPage() {
 
       {/* EXECUTIVE KPI STRIP */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4">
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden print:border-slate-300 print:bg-white print:text-black">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-600">
-              {isComparativeMode ? "State A Revenue" : "Filtered Revenue"}
-            </p>
-            <h3 className="text-2xl font-black text-white mt-1 print:text-black">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
+            <h3 className="text-xl font-black text-white mt-1">
               ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-[10px] text-emerald-400 font-mono mt-1 print:text-emerald-700">
+            <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
               {metricsA.shareOfTotal.toFixed(1)}% of total universe
             </p>
           </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl">
-            <DollarSign className="w-5 h-5" />
+          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
+            <DollarSign className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden print:border-slate-300 print:bg-white print:text-black">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-600">
-              {isComparativeMode ? "State B Revenue" : "Units Sold"}
-            </p>
-            <h3 className="text-2xl font-black text-white mt-1 print:text-black">
-              {isComparativeMode
-                ? `₱${metricsB.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                : `${metricsA.units.toLocaleString()} pcs`}
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold</p>
+            <h3 className="text-xl font-black text-white mt-1">
+              {metricsA.units.toLocaleString()} pcs
             </h3>
-            <p className="text-[10px] text-indigo-400 font-mono mt-1 print:text-indigo-700">
-              {isComparativeMode
-                ? `${metricsB.shareOfTotal.toFixed(1)}% of universe`
-                : `out of ${universe.totalUnits.toLocaleString()} total units`}
+            <p className="text-[10px] text-indigo-400 font-mono mt-0.5">
+              out of {universe.totalUnits.toLocaleString()} total units
             </p>
           </div>
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl">
-            <ShoppingBag className="w-5 h-5" />
+          <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+            <ShoppingBag className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden print:border-slate-300 print:bg-white print:text-black">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-600">
-              {isComparativeMode ? "State A Units" : "Transactions"}
-            </p>
-            <h3 className="text-2xl font-black text-white mt-1 print:text-black">
-              {isComparativeMode
-                ? `${metricsA.units.toLocaleString()} pcs`
-                : `${metricsA.transactions.toLocaleString()} logs`}
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
+            <h3 className="text-xl font-black text-white mt-1">
+              {metricsA.transactions.toLocaleString()} logs
             </h3>
-            <p className="text-[10px] text-blue-400 font-mono mt-1 print:text-blue-700">
-              {isComparativeMode ? `State B: ${metricsB.units} pcs` : "scanned audit logs"}
-            </p>
+            <p className="text-[10px] text-blue-400 font-mono mt-0.5">scanned audit records</p>
           </div>
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl">
-            <TrendingUp className="w-5 h-5" />
+          <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl">
+            <TrendingUp className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden print:border-slate-300 print:bg-white print:text-black">
+        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-600">
-              Average Unit Retail (AUR)
-            </p>
-            <h3 className="text-2xl font-black text-white mt-1 print:text-black">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Unit Retail (AUR)</p>
+            <h3 className="text-xl font-black text-white mt-1">
               ₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-[10px] text-purple-400 font-mono mt-1 print:text-purple-700">
-              {isComparativeMode ? `State B AUR: ₱${metricsB.aur.toFixed(2)}` : "per unit retail avg"}
-            </p>
+            <p className="text-[10px] text-purple-400 font-mono mt-0.5">per unit retail avg</p>
           </div>
-          <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl">
-            <Layers className="w-5 h-5" />
+          <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
+            <Layers className="w-4 h-4" />
           </div>
         </div>
       </div>
 
-      {/* DATE RANGE TOOLBAR */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs shadow-xl print:hidden">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-1">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Date Range:</span>
-          </div>
-
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-            <button
-              onClick={() => applyDatePreset("all")}
-              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "all" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              All Time
-            </button>
-            <button
-              onClick={() => applyDatePreset("today")}
-              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "today" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Today
-            </button>
-            <button
-              onClick={() => applyDatePreset("yesterday")}
-              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "yesterday" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Yesterday
-            </button>
-            <button
-              onClick={() => applyDatePreset("7days")}
-              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "7days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Last 7 Days
-            </button>
-            <button
-              onClick={() => applyDatePreset("30days")}
-              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                datePreset === "30days" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Last 30 Days
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
-            <span className="text-[10px] uppercase text-slate-500 font-bold">From</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setDatePreset("custom");
-              }}
-              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
-            <span className="text-[10px] uppercase text-slate-500 font-bold">To</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setDatePreset("custom");
-              }}
-              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
-            />
-          </div>
-
-          {(startDate || endDate) && (
-            <button
-              onClick={() => applyDatePreset("all")}
-              className="text-xs text-slate-400 hover:text-rose-400 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* TOP-DOCKED FACET FILTER BAR */}
+      {/* STREAMLINED FILTER & CONTROLS BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-2">
+          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-1">
             <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
-            <span>Associative Facets:</span>
+            <span>Facets:</span>
           </div>
 
           {CYCLIC_DIMENSIONS.map((dim) => {
@@ -903,17 +774,17 @@ export default function QlikViewAnalyticsPage() {
               <button
                 key={dim.key}
                 onClick={() => setActiveFilterDrawer(activeFilterDrawer === dim.key ? null : dim.key)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                   count > 0
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                     : activeFilterDrawer === dim.key
                     ? "bg-slate-800 text-white border-slate-700"
-                    : "bg-slate-950/80 text-slate-300 border-slate-800 hover:border-slate-700"
+                    : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
                 }`}
               >
                 <span>{dim.label}</span>
                 {count > 0 && (
-                  <span className="bg-emerald-500 text-slate-950 px-1.5 py-0.2 rounded-md text-[10px] font-black">
+                  <span className="bg-emerald-500 text-slate-950 px-1 py-0.2 rounded-md text-[10px] font-black">
                     {count}
                   </span>
                 )}
@@ -926,22 +797,10 @@ export default function QlikViewAnalyticsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsBookmarkModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <Bookmark className="w-3.5 h-3.5" />
-            <span>Presets ({bookmarks.length})</span>
-          </button>
-
-          <button
-            onClick={() => setIsComparativeMode(!isComparativeMode)}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
-              isComparativeMode
-                ? "bg-purple-600 text-white border-purple-500 shadow-lg"
-                : "bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800"
-            }`}
-          >
-            <GitCompare className="w-3.5 h-3.5" />
-            <span>{isComparativeMode ? "State A/B: ON" : "State A/B"}</span>
+            <span>Presets</span>
           </button>
 
           {(activeSelection.stores.length > 0 ||
@@ -952,7 +811,7 @@ export default function QlikViewAnalyticsPage() {
             activeSelection.styles.length > 0) && (
             <button
               onClick={clearCurrentStateSelections}
-              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs"
+              className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
@@ -1041,86 +900,69 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* 4. MAIN ANALYTICS WORKSPACE - HIGHLY SEGREGATED & PROFESSIONAL HEADERS */}
+      {/* 4. MAIN WORKSPACE: SIDE-BY-SIDE ANALYTICS & CATALOG */}
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={cycleMeasure}
-              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
-            >
-              <Layers className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Measure: {activeMeasure.label} ⟳</span>
-            </button>
-          </div>
+          <button
+            onClick={cycleMeasure}
+            className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Measure: {activeMeasure.label} ⟳</span>
+          </button>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-              <button
-                onClick={() => setVisualizationMode("chart")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
-                  visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <BarChart2 className="w-3.5 h-3.5" />
-                <span>Bars</span>
-              </button>
-              <button
-                onClick={() => setVisualizationMode("donut")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition ${
-                  visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <PieChartIcon className="w-3.5 h-3.5" />
-                <span>Proportion Ring</span>
-              </button>
-            </div>
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+            <button
+              onClick={() => setVisualizationMode("chart")}
+              className={`px-3 py-1 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+            >
+              Bars
+            </button>
+            <button
+              onClick={() => setVisualizationMode("donut")}
+              className={`px-3 py-1 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
+            >
+              Proportion Ring
+            </button>
           </div>
         </div>
 
-        {/* MAIN DISPLAY GRID WITH DISTINCTLY SEGREGATED HEADERS */}
+        {/* WORKSPACE PANELS */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
           
-          {/* LEFT GRAPH STAGE */}
+          {/* LEFT PANEL: CHART BREAKDOWN */}
           {expandedPanel !== "table" && (
-            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] print:h-auto print:border print:border-slate-300 print:bg-white ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
-              <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 print:bg-slate-100 print:text-black">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
-                  <span className="text-sm font-black text-white tracking-wide uppercase print:text-black">
-                    {visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}
-                  </span>
-                </div>
+            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[580px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-xs font-black text-white tracking-wide uppercase">
+                  {visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}
+                </span>
 
-                <div className="flex items-center gap-3 print:hidden">
-                  <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-700 px-3 py-1.5 rounded-xl text-xs shadow-inner">
-                    <span className="text-slate-400 font-semibold">Analyze by:</span>
-                    <select
-                      value={graphDimensionKey}
-                      onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)}
-                      className="bg-slate-900 text-emerald-400 font-bold focus:outline-none cursor-pointer"
-                    >
-                      {CYCLIC_DIMENSIONS.map((dim) => (
-                        <option key={dim.key} value={dim.key}>{dim.label}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="flex items-center gap-2 print:hidden">
+                  <select
+                    value={graphDimensionKey}
+                    onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)}
+                    className="bg-slate-950 text-emerald-400 font-bold text-xs border border-slate-700 rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer"
+                  >
+                    {CYCLIC_DIMENSIONS.map((dim) => (
+                      <option key={dim.key} value={dim.key}>{dim.label}</option>
+                    ))}
+                  </select>
 
                   <button
                     onClick={() => setExpandedPanel(expandedPanel === "graph" ? "none" : "graph")}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm"
-                    title={expandedPanel === "graph" ? "Restore Split View" : "Maximize Panel"}
+                    className="p-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg transition cursor-pointer"
                   >
-                    {expandedPanel === "graph" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    {expandedPanel === "graph" ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
 
               {visualizationMode === "donut" ? (
-                <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden print:overflow-visible">
-                  <div className="relative w-56 h-56 flex items-center justify-center shrink-0">
+                <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-6 flex-1 overflow-hidden">
+                  <div className="relative w-44 h-44 flex items-center justify-center shrink-0">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
                       {donutSlices.map((slice, idx) => {
@@ -1146,34 +988,32 @@ export default function QlikViewAnalyticsPage() {
                       })}
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                      <span className="text-xs uppercase font-bold text-slate-400 print:text-slate-600">Total</span>
-                      <span className="text-base font-black text-white print:text-black">
-                        {graphRows.length} items
-                      </span>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Total</span>
+                      <span className="text-sm font-black text-white">{graphRows.length} items</span>
                     </div>
                   </div>
 
-                  <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[460px] [scrollbar-width:thin] print:max-h-none">
+                  <div className="space-y-2 overflow-y-auto pr-2 w-full sm:w-64 max-h-[380px] [scrollbar-width:thin]">
                     {graphRows.map((row) => (
                       <div
                         key={row.label}
                         onClick={() => toggleSelection(graphDimensionKey, row.label)}
-                        className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm print:bg-slate-50 print:border-slate-300 print:text-black"
+                        className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition"
                       >
-                        <div className="flex items-center gap-2.5 truncate mr-2">
-                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                          <span className="font-semibold text-white truncate text-sm print:text-black">{row.label}</span>
+                        <div className="flex items-center gap-2 truncate mr-2">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                          <span className="font-semibold text-white truncate">{row.label}</span>
                         </div>
-                        <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm print:text-emerald-700">{row.share.toFixed(1)}%</div>
+                        <div className="font-mono text-emerald-400 font-bold shrink-0">{row.share.toFixed(1)}%</div>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : (
-                <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col print:overflow-visible">
-                  <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin] print:overflow-visible">
+                <div className="p-4 space-y-3 flex-1 overflow-hidden flex flex-col">
+                  <div className="overflow-y-auto space-y-2.5 pr-1 flex-1 [scrollbar-width:thin]">
                     {graphRows.length === 0 ? (
-                      <div className="p-12 text-center text-slate-500 text-sm">No chart data available.</div>
+                      <div className="p-10 text-center text-slate-500 text-xs">No chart data available.</div>
                     ) : (
                       graphRows.map((row) => {
                         const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
@@ -1187,18 +1027,18 @@ export default function QlikViewAnalyticsPage() {
                           <div
                             key={row.label}
                             onClick={() => toggleSelection(graphDimensionKey, row.label)}
-                            className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm print:bg-slate-50 print:border-slate-300"
+                            className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3 rounded-xl cursor-pointer transition space-y-1.5 group"
                           >
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2 print:text-black">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">
                                 {row.label}
                               </span>
-                              <div className="flex items-center gap-3 font-mono shrink-0">
-                                <span className="text-xs text-slate-400 print:text-slate-600">{row.share.toFixed(1)}%</span>
-                                <span className="font-black text-emerald-400 print:text-emerald-700">{displayVal}</span>
+                              <div className="flex items-center gap-2 font-mono shrink-0">
+                                <span className="text-[10px] text-slate-400">{row.share.toFixed(1)}%</span>
+                                <span className="font-black text-emerald-400">{displayVal}</span>
                               </div>
                             </div>
-                            <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden print:bg-slate-200">
+                            <div className="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden">
                               <div
                                 style={{ width: `${pct}%`, backgroundColor: row.color }}
                                 className="h-full rounded-full transition-all duration-500"
@@ -1214,84 +1054,73 @@ export default function QlikViewAnalyticsPage() {
             </div>
           )}
 
-          {/* RIGHT ITEMIZED PRODUCTS TABLE WITH HIGLY DISTINCT HEADERS & BORDERS */}
+          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN MATRIX */}
           {expandedPanel !== "graph" && (
-            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] print:h-auto print:border print:border-slate-300 print:bg-white ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
-              <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 print:bg-slate-100 print:text-black">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
+            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[580px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
+              <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-black text-white tracking-wide uppercase print:text-black">Product Catalog ({filteredProducts.length})</span>
+                  <span className="text-xs font-black text-white uppercase">Product Catalog ({filteredProducts.length})</span>
                 </div>
 
-                <div className="flex items-center gap-3 print:hidden">
-                  <div className="flex items-center bg-slate-950 border border-slate-700 rounded-xl p-0.5 text-xs shadow-inner">
+                <div className="flex items-center gap-2 print:hidden">
+                  <div className="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5 text-[11px]">
                     <button
                       onClick={() => setProductViewMode("consolidated")}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition cursor-pointer font-medium ${
-                        productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold shadow-sm" : "text-slate-400 hover:text-white"
-                      }`}
+                      className={`px-2.5 py-1 rounded-md transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
                     >
-                      <List className="w-3.5 h-3.5" />
-                      <span>Total Stock</span>
+                      Total Stock
                     </button>
                     <button
                       onClick={() => setProductViewMode("store_breakdown")}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition cursor-pointer font-medium ${
-                        productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold shadow-sm" : "text-slate-400 hover:text-white"
-                      }`}
+                      className={`px-2.5 py-1 rounded-md transition ${productViewMode === "store_breakdown" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}
                     >
-                      <Grid className="w-3.5 h-3.5" />
-                      <span>Store Breakdown Matrix</span>
+                      Store Breakdown
                     </button>
                   </div>
 
-                  <div className="relative w-44 sm:w-52">
-                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Search style..."
-                      value={detailSearch}
-                      onChange={(e) => setDetailSearch(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search style..."
+                    value={detailSearch}
+                    onChange={(e) => setDetailSearch(e.target.value)}
+                    className="w-32 sm:w-36 bg-slate-950 border border-slate-700 text-xs px-2.5 py-1 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
 
                   <button
                     onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm"
-                    title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}
+                    className="p-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg transition cursor-pointer"
                   >
-                    {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    {expandedPanel === "table" ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin] print:overflow-visible">
+              <div className="overflow-x-auto flex-1 overflow-y-auto [scrollbar-width:thin]">
                 {productViewMode === "consolidated" ? (
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 backdrop-blur-md z-10 shadow-md print:bg-slate-200 print:text-black">
+                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-700 sticky top-0 backdrop-blur-md z-10">
                       <tr>
-                        <th className="px-5 py-3.5 border-r border-slate-800">Style / SKU</th>
-                        <th className="px-4 py-3.5 border-r border-slate-800">Class</th>
-                        <th className="px-4 py-3.5 border-r border-slate-800">Color & Size</th>
-                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Price</th>
-                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Total Stock</th>
-                        <th className="px-5 py-3.5 text-right print:hidden">Action</th>
+                        <th className="px-4 py-2.5">Style / Details</th>
+                        <th className="px-3 py-2.5">Tier</th>
+                        <th className="px-3 py-2.5">Color & Size</th>
+                        <th className="px-3 py-2.5 text-right">Price</th>
+                        <th className="px-3 py-2.5 text-right">Total Stock</th>
+                        <th className="px-4 py-2.5 text-right print:hidden">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/80 text-xs">
+                    <tbody className="divide-y divide-slate-800 text-xs">
                       {filteredProducts.length === 0 ? (
-                        <tr><td colSpan={6} className="p-10 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-500">No product records in active state.</td></tr>
                       ) : (
                         filteredProducts.map((prod) => (
-                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                            <td className="px-5 py-3 font-mono border-r border-slate-900/50">
-                              <span className="font-bold text-emerald-400 block text-sm print:text-black">{prod.styleCode}</span>
-                              <span className="text-blue-400 text-xs block">{prod.sku !== "-" ? prod.sku : ""}</span>
+                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
+                            <td className="px-4 py-2 font-mono">
+                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
+                              <span className="text-blue-400 text-[10px] block">{prod.sku !== "-" ? prod.sku : ""}</span>
                             </td>
-                            <td className="px-4 py-3 whitespace-nowrap border-r border-slate-900/50">
-                              <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                                 prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                 prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                                 "bg-slate-800 text-slate-400 border-slate-700"
@@ -1299,18 +1128,18 @@ export default function QlikViewAnalyticsPage() {
                                 Class {prod.abcClass}
                               </span>
                             </td>
-                            <td className="px-4 py-3 max-w-[180px] border-r border-slate-900/50">
-                              <span className="text-white block font-medium text-sm print:text-black" title={prod.styleName}>{prod.styleName}</span>
-                              <span className="text-xs text-slate-400">{prod.color} • <strong className="text-slate-200 print:text-black">{prod.size}</strong></span>
+                            <td className="px-3 py-2 max-w-[140px]">
+                              <span className="text-white block font-medium truncate" title={prod.styleName}>{prod.styleName}</span>
+                              <span className="text-[10px] text-slate-400">{prod.color} • <strong className="text-slate-200">{prod.size}</strong></span>
                             </td>
-                            <td className="px-4 py-3 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50 print:text-black">₱{prod.price.toFixed(0)}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50 print:text-black">{prod.units} pcs</td>
-                            <td className="px-5 py-3 text-right whitespace-nowrap print:hidden">
+                            <td className="px-3 py-2 text-right text-slate-300 font-mono">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">{prod.units} pcs</td>
+                            <td className="px-4 py-2 text-right print:hidden">
                               <button
                                 onClick={() => setInspectedProduct(prod)}
-                                className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                                className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3 h-3" />
                                 <span>Inspect</span>
                               </button>
                             </td>
@@ -1321,36 +1150,36 @@ export default function QlikViewAnalyticsPage() {
                   </table>
                 ) : (
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 backdrop-blur-md z-10 shadow-md print:bg-slate-200 print:text-black">
+                    <thead className="bg-slate-900/95 text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-700 sticky top-0 backdrop-blur-md z-10">
                       <tr>
-                        <th className="px-5 py-3.5 sticky left-0 bg-slate-900 z-20 border-r border-slate-700 print:bg-slate-200">Style / Variant</th>
+                        <th className="px-4 py-2.5 sticky left-0 bg-slate-900 z-20 border-r border-slate-700">Style / Variant</th>
                         {universe.stores.map((st) => (
-                          <th key={st} className="px-3 py-3.5 text-right truncate max-w-[120px] border-r border-slate-800" title={st}>
+                          <th key={st} className="px-2 py-2.5 text-right truncate max-w-[100px]" title={st}>
                             {st}
                           </th>
                         ))}
-                        <th className="px-5 py-3.5 text-right">Total</th>
+                        <th className="px-4 py-2.5 text-right">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/80 text-xs">
+                    <tbody className="divide-y divide-slate-800 text-xs">
                       {filteredProducts.length === 0 ? (
-                        <tr><td colSpan={universe.stores.length + 2} className="p-10 text-center text-slate-500 text-sm">No product records.</td></tr>
+                        <tr><td colSpan={universe.stores.length + 2} className="p-8 text-center text-slate-500">No product records.</td></tr>
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-5 py-3.5 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r-2 border-slate-700 print:bg-white print:text-black">
-                              <span className="font-bold text-emerald-400 block text-sm print:text-black">{prod.styleCode}</span>
-                              <span className="text-xs text-slate-400">{prod.color} / {prod.size}</span>
+                            <td className="px-4 py-2 font-mono sticky left-0 bg-[#0B0F19] z-10 whitespace-nowrap border-r border-slate-700">
+                              <span className="font-bold text-emerald-400 block">{prod.styleCode}</span>
+                              <span className="text-[10px] text-slate-400">{prod.color} / {prod.size}</span>
                             </td>
                             {universe.stores.map((st) => {
                               const storeQty = prod.storeBreakdown[st] || 0;
                               return (
-                                <td key={st} className={`px-3 py-3.5 text-right font-mono text-sm border-r border-slate-900/50 ${storeQty > 0 ? "text-white font-bold print:text-black" : "text-slate-700 print:text-slate-400"}`}>
+                                <td key={st} className={`px-2 py-2 text-right font-mono ${storeQty > 0 ? "text-white font-semibold" : "text-slate-700"}`}>
                                   {storeQty > 0 ? `${storeQty}` : "-"}
                                 </td>
                               );
                             })}
-                            <td className="px-5 py-3.5 text-right font-mono font-black text-emerald-400 text-sm whitespace-nowrap print:text-black">
+                            <td className="px-4 py-2 text-right font-mono font-black text-emerald-400">
                               {prod.units} pcs
                             </td>
                           </tr>
@@ -1365,51 +1194,44 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* CLICK-TO-INSPECT PRODUCT MODAL DRAWER */}
+      {/* INSPECTION MODAL */}
       {inspectedProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 text-left">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  SKU Inspection & Performance Audit
+                  SKU Performance Audit
                 </span>
-                <h2 className="text-lg font-bold text-white mt-1">{inspectedProduct.styleName}</h2>
+                <h2 className="text-base font-bold text-white mt-1">{inspectedProduct.styleName}</h2>
               </div>
-              <button onClick={() => setInspectedProduct(null)} className="text-slate-500 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800">
-                <X className="w-5 h-5" />
+              <button onClick={() => setInspectedProduct(null)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Style Code</p>
-                <p className="text-sm font-mono font-bold text-emerald-400 mt-0.5">{inspectedProduct.styleCode}</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <p className="text-[9px] uppercase font-bold text-slate-500">Style Code</p>
+                <p className="text-xs font-mono font-bold text-emerald-400 mt-0.5">{inspectedProduct.styleCode}</p>
               </div>
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Variant</p>
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <p className="text-[9px] uppercase font-bold text-slate-500">Variant</p>
                 <p className="text-xs font-semibold text-white mt-0.5">{inspectedProduct.color} / {inspectedProduct.size}</p>
               </div>
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Pareto Tier</p>
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <p className="text-[9px] uppercase font-bold text-slate-500">Pareto Tier</p>
                 <p className="text-xs font-bold text-indigo-400 mt-0.5">Class {inspectedProduct.abcClass}</p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs px-1">
-                <span className="text-slate-400 font-bold uppercase tracking-wider">Multi-Branch Sales Breakdown</span>
-                <span className="text-slate-500 font-mono">{inspectedProductBreakdown.totalLogs} total scan logs</span>
-              </div>
-
-              <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Multi-Branch Sales Breakdown</span>
+              <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
                 {inspectedProductBreakdown.stores.map((st) => (
-                  <div key={st.store} className="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
-                      <span className="font-bold text-white">{st.store}</span>
-                    </div>
-                    <div className="flex items-center gap-4 font-mono">
+                  <div key={st.store} className="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between text-xs">
+                    <span className="font-bold text-white">{st.store}</span>
+                    <div className="flex items-center gap-3 font-mono">
                       <span className="text-slate-400">{st.units} pcs</span>
                       <span className="font-bold text-emerald-400">₱{st.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
                     </div>
@@ -1418,59 +1240,54 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end pt-2 border-t border-slate-800">
               <button
                 onClick={() => setInspectedProduct(null)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-1.5 rounded-xl text-xs transition cursor-pointer"
               >
-                Close Inspection
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* BOOKMARKS MANAGER MODAL */}
+      {/* BOOKMARKS MODAL */}
       {isBookmarkModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
+          <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-left">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                  Saved Selection Presets
+                  Presets
                 </span>
-                <h2 className="text-lg font-bold text-white mt-1">Bookmarks Manager</h2>
+                <h2 className="text-base font-bold text-white mt-1">Bookmarks Manager</h2>
               </div>
-              <button onClick={() => setIsBookmarkModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsBookmarkModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={saveBookmark} className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Save Current Filter State
-              </label>
+            <form onSubmit={saveBookmark} className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Save Current Filter State</label>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. Q3 Metro Gaisano Audit..."
+                  placeholder="Preset name..."
                   value={newBookmarkName}
                   onChange={(e) => setNewBookmarkName(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  className="flex-1 bg-slate-950 border border-slate-800 text-xs px-3 py-1.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
-                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer">
-                  Save Preset
+                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">
+                  Save
                 </button>
               </div>
             </form>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2">
-                Your Saved Presets ({bookmarks.length})
-              </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
               {bookmarks.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-xs border border-slate-800 border-dashed rounded-xl">
-                  No bookmarks saved yet. Configure your filters and save a preset!
+                <div className="p-4 text-center text-slate-500 text-xs border border-slate-800 border-dashed rounded-xl">
+                  No bookmarks saved yet.
                 </div>
               ) : (
                 bookmarks.map((bm) => (
@@ -1480,15 +1297,10 @@ export default function QlikViewAnalyticsPage() {
                       loadBookmark(bm);
                       setIsBookmarkModalOpen(false);
                     }}
-                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-3 rounded-xl flex items-center justify-between cursor-pointer transition group"
+                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition"
                   >
-                    <div>
-                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition">{bm.name}</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                        {bm.startDate && bm.endDate ? `${bm.startDate} to ${bm.endDate}` : "All Time"}
-                      </p>
-                    </div>
-                    <button onClick={(e) => deleteBookmark(bm.id, e)} className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer">
+                    <span className="font-bold text-white text-xs">{bm.name}</span>
+                    <button onClick={(e) => deleteBookmark(bm.id, e)} className="text-slate-500 hover:text-rose-400 p-1">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
