@@ -31,6 +31,7 @@ import {
   Upload,
   X,
   Check,
+  Bell,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -136,6 +137,9 @@ export default function InventoryMonitoringPage() {
   const [batchStore, setBatchStore] = useState<string>(STORES[1]);
   const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number }>>([]);
   const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
+
+  // Alert Popup Modal State
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
 
   // Bulk Import Modal State
   const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
@@ -636,6 +640,11 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus, sortKey, sortDirection]);
 
+  // Alert items for the popup notification modal
+  const alertItems = useMemo(() => {
+    return items.filter((i) => i.current_stock <= i.safety_stock);
+  }, [items]);
+
   const totalItems = processedItems.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
   const startIndex = (currentPage - 1) * pageSize;
@@ -746,6 +755,19 @@ export default function InventoryMonitoringPage() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setIsAlertModalOpen(true)}
+            className="relative flex items-center gap-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer"
+          >
+            <Bell className="w-4 h-4 text-rose-400" />
+            <span>Stock Alerts</span>
+            {alertItems.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md animate-pulse">
+                {alertItems.length}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setIsManualModalOpen(true)}
             className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-emerald-900/20"
@@ -1204,6 +1226,88 @@ export default function InventoryMonitoringPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* STOCK ALERTS POPUP NOTIFICATION MODAL */}
+      {isAlertModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20">
+                  <Bell className="w-5 h-5 animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Stock Alerts & Replenishment Notices</h3>
+                  <p className="text-xs text-slate-400">{alertItems.length} items require immediate attention (Low or Depleted)</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-[55vh] [scrollbar-width:thin]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
+                  <tr>
+                    <th className="px-4 py-3">Store Location</th>
+                    <th className="px-4 py-3">Style / Details</th>
+                    <th className="px-4 py-3 text-center">Condition</th>
+                    <th className="px-4 py-3 text-right">Stock / Safety</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {alertItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-emerald-400 font-semibold">
+                        All stores are fully stocked! No alerts at this time.
+                      </td>
+                    </tr>
+                  ) : (
+                    alertItems.map((item) => {
+                      const isOut = item.current_stock <= 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-800/40">
+                          <td className="px-4 py-3 font-medium text-slate-300">{item.store}</td>
+                          <td className="px-4 py-3 font-mono">
+                            <span className="font-bold text-white block">{item.style_name || item.style_code}</span>
+                            <span className="text-[10px] text-slate-400">Code: {item.style_code} • SKU: {item.sku || "-"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {isOut ? (
+                              <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                                Out of Stock
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                                Low Stock
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold">
+                            <span className={isOut ? "text-rose-400" : "text-amber-400"}>{item.current_stock} pcs</span>
+                            <span className="text-slate-500 text-[10px] block">Safety threshold: {item.safety_stock}</span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAlertModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Close Alerts
+              </button>
+            </div>
           </div>
         </div>
       )}
