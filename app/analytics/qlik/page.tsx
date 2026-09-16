@@ -49,7 +49,10 @@ import {
   ShieldAlert,
   Activity,
   Database,
-  ChevronLeft
+  ChevronLeft,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -225,6 +228,11 @@ export default function QlikViewAnalyticsPage() {
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
   const [masterCatalogDeptFilter, setMasterCatalogDeptFilter] = useState<string>("All Departments");
 
+  // Master Catalog Sorting State
+  const [masterSortKey, setMasterSortKey] = useState<string>("unitsSold");
+  const [masterSortDirection, setMasterSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Master Catalog Pagination State
   const [masterPage, setMasterPage] = useState<number>(1);
   const [masterPageSize, setMasterPageSize] = useState<number>(10);
 
@@ -461,7 +469,7 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [graphRows]);
 
-  // Master Catalog: Driven by the `products` table as the primary source of truth
+  // Master Catalog: Driven by the `products` table as the primary source of truth with sorting
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
@@ -570,8 +578,31 @@ export default function QlikViewAnalyticsPage() {
       );
     }
 
-    return filtered.sort((a, b) => b.unitsSold - a.unitsSold);
-  }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter]);
+    // Apply Sorting
+    return filtered.sort((a, b) => {
+      let valA: any = a[masterSortKey as keyof typeof a];
+      let valB: any = b[masterSortKey as keyof typeof b];
+
+      if (typeof valA === "string") {
+        return masterSortDirection === "asc"
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      }
+
+      return masterSortDirection === "asc"
+        ? (Number(valA) || 0) - (Number(valB) || 0)
+        : (Number(valB) || 0) - (Number(valA) || 0);
+    });
+  }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter, masterSortKey, masterSortDirection]);
+
+  const handleMasterSort = (key: string) => {
+    if (masterSortKey === key) {
+      setMasterSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setMasterSortKey(key);
+      setMasterSortDirection("asc");
+    }
+  };
 
   const masterTotalItems = masterCatalogProducts.length;
   const masterTotalPages = Math.ceil(masterTotalItems / masterPageSize) || 1;
@@ -824,12 +855,12 @@ export default function QlikViewAnalyticsPage() {
             <button onClick={() => setProductViewMode("master_catalog")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5 text-indigo-400"/> All Master Catalog</button>
             <button onClick={() => setProductViewMode("replenishment")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment</button>
             <button onClick={() => setProductViewMode("aging_slob")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
-            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
+            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
           </div>
         </div>
       </div>
 
-      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION WITH PAGINATION, SEARCH, STORE FILTER, DEPT PILLS, & ROW INSPECT */}
+      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
       {productViewMode === "master_catalog" ? (
         <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -902,14 +933,56 @@ export default function QlikViewAnalyticsPage() {
 
           <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+              <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                 <tr>
-                  <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Store</th>
-                  <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style / Variant Details</th>
-                  <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
-                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
-                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
-                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Total Units Sold</th>
+                  <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span>Store</span>
+                      {masterSortKey === "store" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
+                  <th onClick={() => handleMasterSort("styleName")} className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span>Style / Variant Details</span>
+                      {masterSortKey === "styleName" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
+                  <th onClick={() => handleMasterSort("color")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span>Color & Size</span>
+                      {masterSortKey === "color" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
+                  <th onClick={() => handleMasterSort("price")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Price</span>
+                      {masterSortKey === "price" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
+                  <th onClick={() => handleMasterSort("currentStock")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Current Stock</span>
+                      {masterSortKey === "currentStock" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
+                  <th onClick={() => handleMasterSort("unitsSold")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Total Units Sold</span>
+                      {masterSortKey === "unitsSold" ? (
+                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                    </div>
+                  </th>
                   <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
                 </tr>
               </thead>
@@ -939,7 +1012,6 @@ export default function QlikViewAnalyticsPage() {
                       <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
                         <button
                           onClick={() => {
-                            // Map master product row into ProductSummaryItem structure for instant audit inspection modal
                             setInspectedProduct({
                               key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
                               styleCode: prod.styleCode,
