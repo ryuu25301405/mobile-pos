@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 
 interface StoreInventoryItem {
-  id: string;
+  id?: string;
   store: string;
   style_code: string;
   sku: string | null;
@@ -50,6 +50,18 @@ interface StoreInventoryItem {
   size?: string;
   department?: string;
   description?: string;
+}
+
+interface ProductMasterRecord {
+  id: string;
+  style_code: string;
+  sku: string;
+  style_name: string;
+  department: string;
+  category: string;
+  color: string;
+  size: string;
+  price: number;
 }
 
 interface BulkImportItem {
@@ -105,6 +117,7 @@ const STORES = [
 
 export default function InventoryMonitoringPage() {
   const [items, setItems] = useState<StoreInventoryItem[]>([]);
+  const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedStore, setSelectedStore] = useState<string>("All Stores");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -135,7 +148,8 @@ export default function InventoryMonitoringPage() {
   // Batch Adjustment Modal State
   const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
   const [batchStore, setBatchStore] = useState<string>(STORES[1]);
-  const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number }>>([]);
+  const [batchSearchQuery, setBatchSearchQuery] = useState<string>("");
+  const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number; current_stock: number }>>([]);
   const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
 
   // Alert Popup Modal State
@@ -211,33 +225,28 @@ export default function InventoryMonitoringPage() {
     setLoading(true);
 
     try {
-      let query = supabase
-        .from("store_inventory")
-        .select("*")
-        .order("current_stock", { ascending: true });
+      const [invRes, prodRes, logsRes] = await Promise.all([
+        supabase.from("store_inventory").select("*").order("current_stock", { ascending: true }),
+        supabase.from("products").select("*"),
+        supabase.from("scanned_logs").select("style_code, style_name, description, color, size, department")
+      ]);
 
-      if (selectedStore !== "All Stores") {
-        query = query.eq("store", selectedStore);
+      if (prodRes.error) throw prodRes.error;
+      if (prodRes.data) {
+        setProductsMaster(prodRes.data as ProductMasterRecord[]);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const { data: logsData } = await supabase
-        .from("scanned_logs")
-        .select("style_code, style_name, description, color, size, department");
-
       const logMap: Record<string, any> = {};
-      if (logsData) {
-        logsData.forEach((l: any) => {
+      if (logsRes.data) {
+        logsRes.data.forEach((l: any) => {
           if (l.style_code) {
             logMap[l.style_code] = l;
           }
         });
       }
 
-      if (data) {
-        const enriched: StoreInventoryItem[] = data.map((row: any) => {
+      if (invRes.data) {
+        const enriched: StoreInventoryItem[] = invRes.data.map((row: any) => {
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
           const calculatedOut = Math.max(0, initial - current);
@@ -268,7 +277,7 @@ export default function InventoryMonitoringPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStore]);
+  }, []);
 
   useEffect(() => {
     fetchInventory();
@@ -289,6 +298,44 @@ export default function InventoryMonitoringPage() {
       supabase.removeChannel(channel);
     };
   }, [fetchInventory]);
+
+  // Load batch adjustment items for the selected branch (combining inventory and full master products)
+  const loadBatchItemsForStore = (targetStore: string) => {
+    const existingMap = new Map<string, StoreInventoryItem>();
+    items
+      .filter((i) => i.store === targetStore)
+      .forEach((i) => existingMap.set(i.style_code, i));
+
+    const combinedList = productsMaster.map((prod) => {
+      const existing = existingMap.get(prod.style_code);
+      return {
+        style_code: prod.style_code,
+        sku: prod.sku || existing?.sku || "",
+        style_name: prod.style_name || prod.style_code,
+        qty_delta: 0,
+        new_safety: existing ? existing.safety_stock : 5,
+        current_stock: existing ? existing.current_stock : 0,
+      };
+    });
+
+    // Also include any inventory items that might not be in the master table for some reason
+    items
+      .filter((i) => i.store === targetStore)
+      .forEach((i) => {
+        if (!combinedList.some((c) => c.style_code === i.style_code)) {
+          combinedList.push({
+            style_code: i.style_code,
+            sku: i.sku || "",
+            style_name: i.style_name || i.style_code,
+            qty_delta: 0,
+            new_safety: i.safety_stock,
+            current_stock: i.current_stock,
+          });
+        }
+      });
+
+    setBatchAdjustments(combinedList);
+  };
 
   // Single Restock Submission
   const handleRestockSubmit = async (e: React.FormEvent) => {
@@ -786,16 +833,8 @@ export default function InventoryMonitoringPage() {
 
           <button
             onClick={() => {
-              const storeItems = items
-                .filter((i) => i.store === batchStore)
-                .map((i) => ({
-                  style_code: i.style_code,
-                  sku: i.sku || "",
-                  style_name: i.style_name || i.style_code,
-                  qty_delta: 0,
-                  new_safety: i.safety_stock,
-                }));
-              setBatchAdjustments(storeItems);
+              setBatchSearchQuery("");
+              loadBatchItemsForStore(batchStore);
               setIsBatchModalOpen(true);
             }}
             className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-amber-900/20"
@@ -1326,31 +1365,34 @@ export default function InventoryMonitoringPage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <span className="text-xs font-semibold text-slate-400">Target Branch:</span>
-              <select
-                value={batchStore}
-                onChange={(e) => {
-                  const newStore = e.target.value;
-                  setBatchStore(newStore);
-                  const storeItems = items
-                    .filter((i) => i.store === newStore)
-                    .map((i) => ({
-                      style_code: i.style_code,
-                      sku: i.sku || "",
-                      style_name: i.style_name || i.style_code,
-                      qty_delta: 0,
-                      new_safety: i.safety_stock,
-                    }));
-                  setBatchAdjustments(storeItems);
-                }}
-                className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-3 py-1.5 focus:outline-none font-bold cursor-pointer"
-              >
-                {STORES.filter((s) => s !== "All Stores").map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              <span className="text-xs text-slate-500 font-mono ml-auto">{batchAdjustments.length} items loaded for editing</span>
+            <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-400 shrink-0">Target Branch:</span>
+                <select
+                  value={batchStore}
+                  onChange={(e) => {
+                    const newStore = e.target.value;
+                    setBatchStore(newStore);
+                    loadBatchItemsForStore(newStore);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-3 py-1.5 focus:outline-none font-bold cursor-pointer"
+                >
+                  {STORES.filter((s) => s !== "All Stores").map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative flex-1 w-full">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter items by style code or name..."
+                  value={batchSearchQuery}
+                  onChange={(e) => setBatchSearchQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
 
             <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-[50vh] [scrollbar-width:thin]">
@@ -1359,48 +1401,59 @@ export default function InventoryMonitoringPage() {
                   <tr>
                     <th className="px-4 py-3">Style / Variant</th>
                     <th className="px-4 py-3">SKU</th>
+                    <th className="px-4 py-3 text-right">Current Stock</th>
                     <th className="px-4 py-3 text-right">Adjustment (+/- Qty)</th>
                     <th className="px-4 py-3 text-right">New Safety Level</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {batchAdjustments.map((row, index) => (
-                    <tr key={row.style_code} className="hover:bg-slate-800/40">
-                      <td className="px-4 py-2.5 font-mono">
-                        <span className="font-bold text-white block">{row.style_name}</span>
-                        <span className="text-[10px] text-slate-400">Code: {row.style_code}</span>
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-blue-400">{row.sku || "-"}</td>
-                      <td className="px-4 py-2.5 text-right font-mono">
-                        <input
-                          type="number"
-                          value={row.qty_delta}
-                          onChange={(e) => {
-                            const val = Number(e.target.value) || 0;
-                            setBatchAdjustments((prev) =>
-                              prev.map((item, idx) => (idx === index ? { ...item, qty_delta: val } : item))
-                            );
-                          }}
-                          placeholder="0"
-                          className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
-                        />
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono">
-                        <input
-                          type="number"
-                          min={0}
-                          value={row.new_safety}
-                          onChange={(e) => {
-                            const val = Number(e.target.value) || 0;
-                            setBatchAdjustments((prev) =>
-                              prev.map((item, idx) => (idx === index ? { ...item, new_safety: val } : item))
-                            );
-                          }}
-                          className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {batchAdjustments
+                    .filter(
+                      (row) =>
+                        row.style_code.toLowerCase().includes(batchSearchQuery.toLowerCase()) ||
+                        row.style_name.toLowerCase().includes(batchSearchQuery.toLowerCase()) ||
+                        row.sku.toLowerCase().includes(batchSearchQuery.toLowerCase())
+                    )
+                    .map((row) => (
+                      <tr key={row.style_code} className="hover:bg-slate-800/40">
+                        <td className="px-4 py-2.5 font-mono">
+                          <span className="font-bold text-white block">{row.style_name}</span>
+                          <span className="text-[10px] text-slate-400">Code: {row.style_code}</span>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-blue-400">{row.sku || "-"}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-400">
+                          {row.current_stock} pcs
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono">
+                          <input
+                            type="number"
+                            value={row.qty_delta}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || 0;
+                              setBatchAdjustments((prev) =>
+                                prev.map((item) => (item.style_code === row.style_code ? { ...item, qty_delta: val } : item))
+                              );
+                            }}
+                            placeholder="0"
+                            className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
+                          />
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono">
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.new_safety}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || 0;
+                              setBatchAdjustments((prev) =>
+                                prev.map((item) => (item.style_code === row.style_code ? { ...item, new_safety: val } : item))
+                              );
+                            }}
+                            className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
+                          />
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -1443,6 +1496,21 @@ export default function InventoryMonitoringPage() {
                             last_replenished_at: adj.qty_delta > 0 ? now : existing.last_replenished_at,
                           })
                           .eq("id", existing.id);
+                      } else {
+                        // If it didn't exist in store inventory yet, insert it fresh
+                        if (adj.qty_delta > 0 || adj.new_safety > 0) {
+                          await supabase
+                            .from("store_inventory")
+                            .insert({
+                              store: batchStore,
+                              style_code: adj.style_code,
+                              sku: adj.sku || null,
+                              initial_stock: Math.max(0, adj.qty_delta),
+                              current_stock: Math.max(0, adj.qty_delta),
+                              safety_stock: adj.new_safety || 5,
+                              last_replenished_at: now,
+                            });
+                        }
                       }
                     }
 
