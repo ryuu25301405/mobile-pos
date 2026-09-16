@@ -60,6 +60,7 @@ interface SalesRecord {
   style_code: string;
   sku: string;
   style_name: string;
+  description: string;
   color: string;
   size: string;
   category: string;
@@ -222,6 +223,7 @@ export default function QlikViewAnalyticsPage() {
   
   const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
+  const [masterCatalogDeptFilter, setMasterCatalogDeptFilter] = useState<string>("All Departments");
 
   const [masterPage, setMasterPage] = useState<number>(1);
   const [masterPageSize, setMasterPageSize] = useState<number>(10);
@@ -294,7 +296,7 @@ export default function QlikViewAnalyticsPage() {
 
   useEffect(() => {
     setMasterPage(1);
-  }, [masterCatalogSearch, masterCatalogStoreFilter]);
+  }, [masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter]);
 
   const saveBookmark = (e: React.FormEvent) => {
     e.preventDefault();
@@ -459,6 +461,7 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [graphRows]);
 
+  // Master Catalog: Driven by the `products` table as the primary source of truth
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
@@ -487,6 +490,7 @@ export default function QlikViewAnalyticsPage() {
       price: number;
       unitsSold: number;
       revenue: number;
+      storeBreakdown: Record<string, number>;
     }> = [];
 
     const storesList = universe.stores.length > 0 ? universe.stores : ["Unassigned Store"];
@@ -495,6 +499,11 @@ export default function QlikViewAnalyticsPage() {
       productsMaster.forEach((prod) => {
         storesList.forEach((st) => {
           const k = `${st}-${prod.style_code}`;
+          const storeBreakdown: Record<string, number> = {};
+          storesList.forEach(s => {
+            storeBreakdown[s] = stockMap[`${s}-${prod.style_code}`] || 0;
+          });
+
           list.push({
             id: prod.id,
             store: st,
@@ -509,12 +518,18 @@ export default function QlikViewAnalyticsPage() {
             price: Number(prod.price) || 299.00,
             unitsSold: salesMap[k]?.units || 0,
             revenue: salesMap[k]?.revenue || 0,
+            storeBreakdown,
           });
         });
       });
     } else {
       inventoryData.forEach((inv) => {
         const k = `${inv.store}-${inv.style_code}`;
+        const storeBreakdown: Record<string, number> = {};
+        storesList.forEach(s => {
+          storeBreakdown[s] = stockMap[`${s}-${inv.style_code}`] || 0;
+        });
+
         list.push({
           id: inv.id,
           store: inv.store || "Unassigned Store",
@@ -529,6 +544,7 @@ export default function QlikViewAnalyticsPage() {
           price: Number(inv.price) || 299.00,
           unitsSold: salesMap[k]?.units || 0,
           revenue: salesMap[k]?.revenue || 0,
+          storeBreakdown,
         });
       });
     }
@@ -536,6 +552,9 @@ export default function QlikViewAnalyticsPage() {
     let filtered = list;
     if (masterCatalogStoreFilter !== "All Stores") {
       filtered = filtered.filter((p) => p.store === masterCatalogStoreFilter);
+    }
+    if (masterCatalogDeptFilter !== "All Departments") {
+      filtered = filtered.filter((p) => p.department === masterCatalogDeptFilter);
     }
 
     if (masterCatalogSearch.trim()) {
@@ -552,7 +571,7 @@ export default function QlikViewAnalyticsPage() {
     }
 
     return filtered.sort((a, b) => b.unitsSold - a.unitsSold);
-  }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter]);
+  }, [productsMaster, inventoryData, data, universe.stores, masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter]);
 
   const masterTotalItems = masterCatalogProducts.length;
   const masterTotalPages = Math.ceil(masterTotalItems / masterPageSize) || 1;
@@ -805,12 +824,12 @@ export default function QlikViewAnalyticsPage() {
             <button onClick={() => setProductViewMode("master_catalog")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5 text-indigo-400"/> All Master Catalog</button>
             <button onClick={() => setProductViewMode("replenishment")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment</button>
             <button onClick={() => setProductViewMode("aging_slob")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
-            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
+            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
           </div>
         </div>
       </div>
 
-      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION WITH PAGINATION */}
+      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED, DISPLAY AS ITS OWN FULL-WIDTH SECTION WITH PAGINATION, SEARCH, STORE FILTER, DEPT PILLS, & ROW INSPECT */}
       {productViewMode === "master_catalog" ? (
         <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -853,6 +872,34 @@ export default function QlikViewAnalyticsPage() {
             </div>
           </div>
 
+          {/* DEPARTMENT QUICK FILTER PILLS */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
+            <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Department:</span>
+            <button
+              onClick={() => setMasterCatalogDeptFilter("All Departments")}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                masterCatalogDeptFilter === "All Departments"
+                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                  : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+              }`}
+            >
+              All
+            </button>
+            {universe.departments.map((dept) => (
+              <button
+                key={dept}
+                onClick={() => setMasterCatalogDeptFilter(dept)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                  masterCatalogDeptFilter === dept
+                    ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                    : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+                }`}
+              >
+                {dept}
+              </button>
+            ))}
+          </div>
+
           <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
@@ -862,19 +909,24 @@ export default function QlikViewAnalyticsPage() {
                   <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
                   <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
                   <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Current Stock</th>
-                  <th className="px-4 py-3.5 text-right bg-slate-900">Total Units Sold</th>
+                  <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Total Units Sold</th>
+                  <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 text-xs">
                 {paginatedMasterProducts.length === 0 ? (
-                  <tr><td colSpan={6} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
+                  <tr><td colSpan={7} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
                 ) : (
                   paginatedMasterProducts.map((prod, idx) => (
                     <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
                       <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
-                      <td className="px-5 py-3 font-mono border-r border-slate-900/50">
+                      <td className="px-5 py-3 font-mono border-r border-slate-900/50 space-y-1">
                         <span className="font-bold text-white block text-sm">{prod.styleName}</span>
-                        <span className="text-[11px] text-slate-400">Code: {prod.styleCode} {prod.sku !== "-" ? `• SKU: ${prod.sku}` : ""}</span>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                          <span>Code: {prod.styleCode}</span>
+                          {prod.sku !== "-" && <span className="text-blue-400">SKU: {prod.sku}</span>}
+                          <span className="bg-slate-900 text-indigo-300 px-1.5 py-0.2 rounded border border-slate-800">{prod.department}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
                         {prod.color} / <strong className="text-white">{prod.size}</strong>
@@ -883,7 +935,39 @@ export default function QlikViewAnalyticsPage() {
                       <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                         {prod.currentStock} pcs
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold text-sm">{prod.unitsSold} pcs</td>
+                      <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold border-r border-slate-900/50 text-sm">{prod.unitsSold} pcs</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
+                        <button
+                          onClick={() => {
+                            // Map master product row into ProductSummaryItem structure for instant audit inspection modal
+                            setInspectedProduct({
+                              key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
+                              styleCode: prod.styleCode,
+                              sku: prod.sku,
+                              styleName: prod.styleName,
+                              color: prod.color,
+                              size: prod.size,
+                              category: prod.category,
+                              department: prod.department,
+                              price: prod.price,
+                              units: prod.unitsSold,
+                              revenue: prod.revenue,
+                              abcClass: "B",
+                              storeBreakdown: prod.storeBreakdown,
+                              currentStock: prod.currentStock,
+                              safetyStock: 5,
+                              velocity: 0,
+                              daysOfSupply: 30,
+                              stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
+                              slobStatus: "ACTIVE",
+                              tiedUpCapital: prod.currentStock * prod.price
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                        >
+                          <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
