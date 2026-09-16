@@ -131,6 +131,12 @@ export default function InventoryMonitoringPage() {
   const [restockQty, setRestockQty] = useState<number>(10);
   const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
 
+  // Batch Adjustment Modal State
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
+  const [batchStore, setBatchStore] = useState<string>(STORES[1]);
+  const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number }>>([]);
+  const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
+
   // Bulk Import Modal State
   const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
   const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
@@ -738,7 +744,7 @@ export default function InventoryMonitoringPage() {
           </div>
         </div>
 
-        {/* Action Buttons: Restock, Bulk Delivery, Manual Sales Encoding */}
+        {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setIsManualModalOpen(true)}
@@ -754,6 +760,26 @@ export default function InventoryMonitoringPage() {
           >
             <PlusCircle className="w-4 h-4" />
             <span>Single Delivery</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const storeItems = items
+                .filter((i) => i.store === batchStore)
+                .map((i) => ({
+                  style_code: i.style_code,
+                  sku: i.sku || "",
+                  style_name: i.style_name || i.style_code,
+                  qty_delta: 0,
+                  new_safety: i.safety_stock,
+                }));
+              setBatchAdjustments(storeItems);
+              setIsBatchModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-amber-900/20"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>Batch Adjustment</span>
           </button>
 
           <label className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer">
@@ -1182,6 +1208,159 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
+      {/* BATCH STOCK ADJUSTMENT MODAL */}
+      {isBatchModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-4xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white">Batch Stock & Safety Level Adjustment</h3>
+                <p className="text-xs text-slate-400">Quickly adjust incoming/outgoing quantities or safety thresholds for multiple items</p>
+              </div>
+              <button onClick={() => setIsBatchModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span className="text-xs font-semibold text-slate-400">Target Branch:</span>
+              <select
+                value={batchStore}
+                onChange={(e) => {
+                  const newStore = e.target.value;
+                  setBatchStore(newStore);
+                  const storeItems = items
+                    .filter((i) => i.store === newStore)
+                    .map((i) => ({
+                      style_code: i.style_code,
+                      sku: i.sku || "",
+                      style_name: i.style_name || i.style_code,
+                      qty_delta: 0,
+                      new_safety: i.safety_stock,
+                    }));
+                  setBatchAdjustments(storeItems);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-3 py-1.5 focus:outline-none font-bold cursor-pointer"
+              >
+                {STORES.filter((s) => s !== "All Stores").map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-500 font-mono ml-auto">{batchAdjustments.length} items loaded for editing</span>
+            </div>
+
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-[50vh] [scrollbar-width:thin]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
+                  <tr>
+                    <th className="px-4 py-3">Style / Variant</th>
+                    <th className="px-4 py-3">SKU</th>
+                    <th className="px-4 py-3 text-right">Adjustment (+/- Qty)</th>
+                    <th className="px-4 py-3 text-right">New Safety Level</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {batchAdjustments.map((row, index) => (
+                    <tr key={row.style_code} className="hover:bg-slate-800/40">
+                      <td className="px-4 py-2.5 font-mono">
+                        <span className="font-bold text-white block">{row.style_name}</span>
+                        <span className="text-[10px] text-slate-400">Code: {row.style_code}</span>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-blue-400">{row.sku || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">
+                        <input
+                          type="number"
+                          value={row.qty_delta}
+                          onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setBatchAdjustments((prev) =>
+                              prev.map((item, idx) => (idx === index ? { ...item, qty_delta: val } : item))
+                            );
+                          }}
+                          placeholder="0"
+                          className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono">
+                        <input
+                          type="number"
+                          min={0}
+                          value={row.new_safety}
+                          onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setBatchAdjustments((prev) =>
+                              prev.map((item, idx) => (idx === index ? { ...item, new_safety: val } : item))
+                            );
+                          }}
+                          className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={batchSubmitting || batchAdjustments.length === 0}
+                onClick={async () => {
+                  setBatchSubmitting(true);
+                  try {
+                    const now = new Date().toISOString();
+                    for (const adj of batchAdjustments) {
+                      if (adj.qty_delta === 0 && adj.new_safety === undefined) continue;
+
+                      const { data: existing } = await supabase
+                        .from("store_inventory")
+                        .select("*")
+                        .eq("store", batchStore)
+                        .eq("style_code", adj.style_code)
+                        .maybeSingle();
+
+                      if (existing) {
+                        const newInitial = (Number(existing.initial_stock) || 0) + (adj.qty_delta > 0 ? adj.qty_delta : 0);
+                        const newCurrent = Math.max(0, (Number(existing.current_stock) || 0) + adj.qty_delta);
+
+                        await supabase
+                          .from("store_inventory")
+                          .update({
+                            initial_stock: newInitial,
+                            current_stock: newCurrent,
+                            safety_stock: adj.new_safety,
+                            last_replenished_at: adj.qty_delta > 0 ? now : existing.last_replenished_at,
+                          })
+                          .eq("id", existing.id);
+                      }
+                    }
+
+                    setIsBatchModalOpen(false);
+                    fetchInventory();
+                    alert("Batch adjustments successfully saved!");
+                  } catch (err) {
+                    console.error("Batch update error:", err);
+                    alert("Failed to commit batch adjustments.");
+                  } finally {
+                    setBatchSubmitting(false);
+                  }
+                }}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {batchSubmitting ? "Saving Changes..." : "Save All Adjustments"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* BULK IMPORT PREVIEW MODAL */}
       {isBulkOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1204,7 +1383,7 @@ export default function InventoryMonitoringPage() {
               <select
                 value={bulkDefaultStore}
                 onChange={(e) => setBulkDefaultStore(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none"
+                className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none cursor-pointer"
               >
                 {STORES.filter((s) => s !== "All Stores").map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -1298,7 +1477,7 @@ export default function InventoryMonitoringPage() {
                 <select
                   value={manualStore}
                   onChange={(e) => setManualStore(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer font-bold"
                 >
                   {STORES.filter((s) => s !== "All Stores").map((s) => (
                     <option key={s} value={s}>{s}</option>
