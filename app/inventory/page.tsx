@@ -151,6 +151,10 @@ export default function InventoryMonitoringPage() {
   const [batchSearchQuery, setBatchSearchQuery] = useState<string>("");
   const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number; current_stock: number }>>([]);
   const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
+  
+  // Batch Pagination State
+  const [batchPage, setBatchPage] = useState<number>(1);
+  const [batchPageSize, setBatchPageSize] = useState<number>(10);
 
   // Alert Popup Modal State
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
@@ -220,6 +224,10 @@ export default function InventoryMonitoringPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedStore, searchQuery, filterStockStatus, pageSize, sortKey, sortDirection]);
+
+  useEffect(() => {
+    setBatchPage(1);
+  }, [batchSearchQuery, batchStore]);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -318,7 +326,6 @@ export default function InventoryMonitoringPage() {
       };
     });
 
-    // Also include any inventory items that might not be in the master table for some reason
     items
       .filter((i) => i.store === targetStore)
       .forEach((i) => {
@@ -540,7 +547,6 @@ export default function InventoryMonitoringPage() {
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
-      // Deduct from inventory
       const { error: invErr } = await supabase
         .from("store_inventory")
         .update({ current_stock: newCurrentStock })
@@ -548,7 +554,6 @@ export default function InventoryMonitoringPage() {
 
       if (invErr) throw invErr;
 
-      // Log sale transaction
       const { error: logErr } = await supabase
         .from("scanned_logs")
         .insert({
@@ -687,10 +692,27 @@ export default function InventoryMonitoringPage() {
     });
   }, [items, searchQuery, filterStockStatus, sortKey, sortDirection]);
 
-  // Alert items for the popup notification modal
   const alertItems = useMemo(() => {
     return items.filter((i) => i.current_stock <= i.safety_stock);
   }, [items]);
+
+  // Filtered list for batch modal search
+  const filteredBatchAdjustments = useMemo(() => {
+    const q = batchSearchQuery.toLowerCase();
+    return batchAdjustments.filter(
+      (row) =>
+        row.style_code.toLowerCase().includes(q) ||
+        row.style_name.toLowerCase().includes(q) ||
+        row.sku.toLowerCase().includes(q)
+    );
+  }, [batchAdjustments, batchSearchQuery]);
+
+  const batchTotalItems = filteredBatchAdjustments.length;
+  const batchTotalPages = Math.ceil(batchTotalItems / batchPageSize) || 1;
+  const batchStartIndex = (batchPage - 1) * batchPageSize;
+  const paginatedBatchItems = useMemo(() => {
+    return filteredBatchAdjustments.slice(batchStartIndex, batchStartIndex + batchPageSize);
+  }, [filteredBatchAdjustments, batchStartIndex, batchPageSize]);
 
   const totalItems = processedItems.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -834,6 +856,7 @@ export default function InventoryMonitoringPage() {
           <button
             onClick={() => {
               setBatchSearchQuery("");
+              setBatchPage(1);
               loadBatchItemsForStore(batchStore);
               setIsBatchModalOpen(true);
             }}
@@ -1373,6 +1396,7 @@ export default function InventoryMonitoringPage() {
                   onChange={(e) => {
                     const newStore = e.target.value;
                     setBatchStore(newStore);
+                    setBatchPage(1);
                     loadBatchItemsForStore(newStore);
                   }}
                   className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-3 py-1.5 focus:outline-none font-bold cursor-pointer"
@@ -1389,7 +1413,10 @@ export default function InventoryMonitoringPage() {
                   type="text"
                   placeholder="Filter items by style code or name..."
                   value={batchSearchQuery}
-                  onChange={(e) => setBatchSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setBatchSearchQuery(e.target.value);
+                    setBatchPage(1);
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -1407,14 +1434,14 @@ export default function InventoryMonitoringPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {batchAdjustments
-                    .filter(
-                      (row) =>
-                        row.style_code.toLowerCase().includes(batchSearchQuery.toLowerCase()) ||
-                        row.style_name.toLowerCase().includes(batchSearchQuery.toLowerCase()) ||
-                        row.sku.toLowerCase().includes(batchSearchQuery.toLowerCase())
-                    )
-                    .map((row) => (
+                  {paginatedBatchItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                        No products found matching your search.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedBatchItems.map((row) => (
                       <tr key={row.style_code} className="hover:bg-slate-800/40">
                         <td className="px-4 py-2.5 font-mono">
                           <span className="font-bold text-white block">{row.style_name}</span>
@@ -1453,9 +1480,41 @@ export default function InventoryMonitoringPage() {
                           />
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Batch Modal Pagination Footer */}
+            <div className="p-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 rounded-xl">
+              <span>
+                Showing <strong className="text-slate-200">{batchTotalItems === 0 ? 0 : batchStartIndex + 1}</strong> to{" "}
+                <strong className="text-slate-200">{Math.min(batchStartIndex + batchPageSize, batchTotalItems)}</strong> of{" "}
+                <strong className="text-slate-200">{batchTotalItems}</strong> entries
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBatchPage((p) => Math.max(p - 1, 1))}
+                  disabled={batchPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 cursor-pointer text-slate-200"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="px-2.5 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
+                  {batchPage} / {batchTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBatchPage((p) => Math.min(p + 1, batchTotalPages))}
+                  disabled={batchPage === batchTotalPages}
+                  className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 cursor-pointer text-slate-200"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
@@ -1497,7 +1556,6 @@ export default function InventoryMonitoringPage() {
                           })
                           .eq("id", existing.id);
                       } else {
-                        // If it didn't exist in store inventory yet, insert it fresh
                         if (adj.qty_delta > 0 || adj.new_safety > 0) {
                           await supabase
                             .from("store_inventory")
