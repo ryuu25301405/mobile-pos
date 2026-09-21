@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx-js-style";
@@ -56,7 +56,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FolderSearch,
-  CalendarDays
+  CalendarDays,
+  Rows3,
+  Rows2
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -249,6 +251,43 @@ export default function QlikViewAnalyticsPage() {
   const [activeSidebarTab, setActiveSidebarTab] = useState<DimensionKey>("store");
   const [drawerSearch, setDrawerSearch] = useState("");
 
+  // Table UI Enhancements: Density & Column Width States
+  const [tableDensity, setTableDensity] = useState<"compact" | "comfortable">("comfortable");
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    style: 280,
+    class: 100,
+    variant: 160,
+    price: 110,
+    units: 110,
+  });
+
+  const resizingColumnRef = useRef<string | null>(null);
+  const startXRef = useRef<number>(0);
+  const startWidthRef = useRef<number>(0);
+
+  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    resizingColumnRef.current = colKey;
+    startXRef.current = e.clientX;
+    startWidthRef.current = columnWidths[colKey] || 150;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizingColumnRef.current) return;
+      const diff = moveEvent.clientX - startXRef.current;
+      const newWidth = Math.max(80, startWidthRef.current + diff);
+      setColumnWidths((prev) => ({ ...prev, [resizingColumnRef.current!]: newWidth }));
+    };
+
+    const handleMouseUp = () => {
+      resizingColumnRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -308,7 +347,6 @@ export default function QlikViewAnalyticsPage() {
     setMasterPage(1);
   }, [masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter]);
 
-  // Date Preset Chip Handler
   const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "month" | "clear") => {
     const now = new Date();
     const formatDate = (d: Date) => d.toISOString().split("T")[0];
@@ -830,7 +868,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* FILTER, DATE RANGE PRESETS & BOOKMARKS BAR */}
+      {/* FILTER, DATE RANGE PRESETS & TABLE DENSITY TOGGLE BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
         <div className="flex flex-wrap items-center gap-2">
           <button 
@@ -855,6 +893,24 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* TABLE ROW DENSITY TOGGLE */}
+          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+            <button
+              onClick={() => setTableDensity("comfortable")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${tableDensity === "comfortable" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+              title="Comfortable Density"
+            >
+              <Rows3 className="w-3.5 h-3.5" /><span>Comfortable</span>
+            </button>
+            <button
+              onClick={() => setTableDensity("compact")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${tableDensity === "compact" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+              title="Compact Density"
+            >
+              <Rows2 className="w-3.5 h-3.5" /><span>Compact</span>
+            </button>
+          </div>
+
           <button onClick={() => setIsBookmarkModalOpen(true)} className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
             <Bookmark className="w-3.5 h-3.5" /><span>Presets</span>
           </button>
@@ -963,7 +1019,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH POLISHED EMPTY STATES */}
+        {/* MAIN WORKSPACE AREA WITH RESIZABLE COLUMNS */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
@@ -1222,7 +1278,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH POLISHED EMPTY STATES */
+          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH RESIZABLE COLUMNS & DENSITY */
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
             
             {/* Workspace Controls */}
@@ -1346,7 +1402,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               )}
 
-              {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS WITH FIXED HEADERS */}
+              {/* RIGHT PANEL: PRODUCT CATALOG WITH RESIZABLE COLUMNS & DENSITY */}
               {expandedPanel !== "graph" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
@@ -1365,20 +1421,35 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* FIXED CONTAINER WITH STICKY HEADERS */}
+                  {/* FIXED CONTAINER WITH RESIZABLE HEADERS */}
                   <div className="relative flex-1 overflow-hidden flex flex-col">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                       
                       {productViewMode === "consolidated" && (
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                        <table className="w-full text-left text-xs border-collapse table-fixed">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                             <tr>
-                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Name / Details</th>
-                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Class</th>
-                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold</th>
-                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                              <th style={{ width: columnWidths.style }} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
+                                <div className="truncate">Style Name / Details</div>
+                                <div onMouseDown={(e) => handleResizeStart(e, "style")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
+                              </th>
+                              <th style={{ width: columnWidths.class }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
+                                <div className="truncate">Class</div>
+                                <div onMouseDown={(e) => handleResizeStart(e, "class")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
+                              </th>
+                              <th style={{ width: columnWidths.variant }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
+                                <div className="truncate">Color & Size</div>
+                                <div onMouseDown={(e) => handleResizeStart(e, "variant")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
+                              </th>
+                              <th style={{ width: columnWidths.price }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group">
+                                <div className="truncate">Price</div>
+                                <div onMouseDown={(e) => handleResizeStart(e, "price")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
+                              </th>
+                              <th style={{ width: columnWidths.units }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group">
+                                <div className="truncate">Units Sold</div>
+                                <div onMouseDown={(e) => handleResizeStart(e, "units")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
+                              </th>
+                              <th className="px-3 py-3.5 text-right print:hidden bg-slate-900 w-20">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/80 text-xs">
@@ -1403,33 +1474,30 @@ export default function QlikViewAnalyticsPage() {
                             ) : (
                               filteredProducts.map((prod) => (
                                 <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                                  <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                                    <span className="font-black text-emerald-400 block text-sm tracking-wide">
+                                  <td className={`px-4 font-mono border-r border-slate-900/50 truncate ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-black text-emerald-400 block text-xs truncate">
                                       {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
                                     </span>
-                                    <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
-                                      <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {prod.styleCode}</span>
-                                      {prod.sku !== "-" && <span className="text-blue-400 font-mono">SKU: {prod.sku}</span>}
-                                    </div>
+                                    <span className="text-[10px] text-slate-400 block truncate">Code: {prod.styleCode}</span>
                                   </td>
-                                  <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
-                                    <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                                  <td className={`px-3 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                                       prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                       prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                                       "bg-slate-800 text-slate-400 border-slate-700"
                                     }`}>
-                                      Class {prod.abcClass}
+                                      {prod.abcClass}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3.5 max-w-[180px] border-r border-slate-900/50">
-                                    <span className="text-white block font-semibold text-xs">{prod.color}</span>
-                                    <span className="text-[11px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
+                                  <td className={`px-3 border-r border-slate-900/50 truncate ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="text-white block font-semibold truncate">{prod.color}</span>
+                                    <span className="text-[10px] text-slate-400 block truncate">{prod.size}</span>
                                   </td>
-                                  <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
-                                  <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50">{prod.units} pcs</td>
-                                  <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                      <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
+                                  <td className={`px-3 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.price.toFixed(0)}</td>
+                                  <td className={`px-3 text-right font-mono font-bold text-emerald-400 text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units} pcs</td>
+                                  <td className={`px-3 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
+                                      <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
                                   </td>
                                 </tr>
@@ -1467,28 +1535,28 @@ export default function QlikViewAnalyticsPage() {
                             ) : (
                               filteredProducts.sort((a,b) => a.daysOfSupply - b.daysOfSupply).map((prod) => (
                                 <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                                  <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                                    <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
-                                    <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
+                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide">{prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400">{prod.color} ({prod.size})</span>
                                   </td>
-                                  <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     {prod.stockStatus === "CRITICAL" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> OUT OF STOCK</span>}
                                     {prod.stockStatus === "WARNING" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><ShieldAlert className="w-3 h-3"/> LOW STOCK</span>}
                                     {prod.stockStatus === "HEALTHY" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Check className="w-3 h-3"/> HEALTHY</span>}
                                   </td>
-                                  <td className="px-4 py-3.5 text-right border-r border-slate-900/50">
-                                    <span className={`font-black text-sm ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                      {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[10px] font-sans text-slate-500">Days</span>
+                                  <td className={`px-4 text-right border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className={`font-black text-xs ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                      {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[9px] font-sans text-slate-500">Days</span>
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">{prod.velocity.toFixed(2)}/d</td>
-                                  <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">
+                                  <td className={`px-4 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.velocity.toFixed(2)}/d</td>
+                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <span className={prod.currentStock <= prod.safetyStock ? "text-rose-400" : "text-emerald-400"}>{prod.currentStock}</span>
                                     <span className="text-slate-500"> / {prod.safetyStock}</span>
                                   </td>
-                                  <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                      <Eye className="w-3.5 h-3.5" /><span>View</span>
+                                  <td className={`px-5 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
+                                      <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
                                   </td>
                                 </tr>
@@ -1526,23 +1594,23 @@ export default function QlikViewAnalyticsPage() {
                             ) : (
                               filteredProducts.sort((a,b) => b.daysOfSupply - a.daysOfSupply).map((prod) => (
                                 <tr key={prod.key} className={`transition-colors group ${prod.slobStatus === 'DEAD' ? 'bg-rose-950/10 hover:bg-rose-950/20' : 'hover:bg-slate-900/60'}`}>
-                                  <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                                    <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
-                                    <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
+                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide">{prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400">{prod.color} ({prod.size})</span>
                                   </td>
-                                  <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     {prod.slobStatus === "DEAD" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> DEAD STOCK</span>}
                                     {prod.slobStatus === "SLOW" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><Clock className="w-3 h-3"/> SLOW MOVING</span>}
                                     {prod.slobStatus === "ACTIVE" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Activity className="w-3 h-3"/> ACTIVE</span>}
                                   </td>
-                                  <td className="px-4 py-3.5 text-right border-r border-slate-900/50 font-bold text-slate-300">{prod.units}</td>
-                                  <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50 text-emerald-400">
+                                  <td className={`px-4 text-right border-r border-slate-900/50 font-bold text-slate-300 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units}</td>
+                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 text-emerald-400 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     {prod.currentStock}
                                   </td>
-                                  <td className="px-4 py-3.5 text-right text-rose-400 font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.tiedUpCapital.toLocaleString()}</td>
-                                  <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                      <Eye className="w-3.5 h-3.5" /><span>View</span>
+                                  <td className={`px-4 text-right text-rose-400 font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.tiedUpCapital.toLocaleString()}</td>
+                                  <td className={`px-5 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
+                                      <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
                                   </td>
                                 </tr>
