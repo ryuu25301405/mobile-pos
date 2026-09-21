@@ -55,7 +55,8 @@ import {
   ArrowDown,
   PanelLeftClose,
   PanelLeftOpen,
-  FolderSearch
+  FolderSearch,
+  CalendarDays
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -306,6 +307,36 @@ export default function QlikViewAnalyticsPage() {
   useEffect(() => {
     setMasterPage(1);
   }, [masterCatalogSearch, masterCatalogStoreFilter, masterCatalogDeptFilter]);
+
+  // Date Preset Chip Handler
+  const applyDatePreset = (preset: "today" | "yesterday" | "7days" | "month" | "clear") => {
+    const now = new Date();
+    const formatDate = (d: Date) => d.toISOString().split("T")[0];
+
+    if (preset === "today") {
+      const todayStr = formatDate(now);
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === "yesterday") {
+      const yest = new Date();
+      yest.setDate(now.getDate() - 1);
+      const yestStr = formatDate(yest);
+      setStartDate(yestStr);
+      setEndDate(yestStr);
+    } else if (preset === "7days") {
+      const past = new Date();
+      past.setDate(now.getDate() - 7);
+      setStartDate(formatDate(past));
+      setEndDate(formatDate(now));
+    } else if (preset === "month") {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(formatDate(firstDay));
+      setEndDate(formatDate(now));
+    } else if (preset === "clear") {
+      setStartDate("");
+      setEndDate("");
+    }
+  };
 
   const saveBookmark = (e: React.FormEvent) => {
     e.preventDefault();
@@ -799,9 +830,9 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* FILTER & BOOKMARKS TOP CONTROLS BAR */}
+      {/* FILTER, DATE RANGE PRESETS & BOOKMARKS BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
@@ -810,11 +841,16 @@ export default function QlikViewAnalyticsPage() {
             <span>{isSidebarOpen ? "Hide Filter Sidebar" : "Show Filter Sidebar"}</span>
           </button>
 
-          <div className="flex items-center gap-1 text-slate-400 text-xs font-mono ml-2">
-            <span>Active Facets:</span>
-            <span className="text-emerald-400 font-bold">
-              {Object.values(stateA).reduce((sum, arr) => sum + arr.length, 0)} selected
-            </span>
+          {/* QUICK DATE RANGE PRESETS CHIP BAR */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 ml-2">
+            <CalendarDays className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
+            <button onClick={() => applyDatePreset("today")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Today</button>
+            <button onClick={() => applyDatePreset("yesterday")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Yesterday</button>
+            <button onClick={() => applyDatePreset("7days")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Last 7D</button>
+            <button onClick={() => applyDatePreset("month")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">This Month</button>
+            {(startDate || endDate) && (
+              <button onClick={() => applyDatePreset("clear")} className="px-2 py-1 rounded-lg text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition cursor-pointer">Clear</button>
+            )}
           </div>
         </div>
 
