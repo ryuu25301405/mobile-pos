@@ -62,7 +62,8 @@ import {
   Sigma,
   FileSpreadsheet,
   FileText,
-  Share2
+  Share2,
+  Tag
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -264,7 +265,6 @@ export default function QlikViewAnalyticsPage() {
     units: 110,
   });
 
-  // Export Dropdown Menu State
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -784,7 +784,6 @@ export default function QlikViewAnalyticsPage() {
     return list;
   }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
 
-  // Quick Export Handlers
   const handleExportExcel = () => {
     const exportData = filteredProducts.map((p) => ({
       "Style Code": p.styleCode,
@@ -942,7 +941,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </nav>
 
-      {/* EXECUTIVE KPI STRIP (WITH SKELETON LOADERS WHEN LOADING) */}
+      {/* EXECUTIVE KPI STRIP */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (
@@ -996,7 +995,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* FILTER, RESTORED DATE RANGE FILTERS & TABLE DENSITY TOGGLE BAR */}
+      {/* FILTER, DATE RANGE & CONTROLS BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
         <div className="flex flex-wrap items-center gap-2.5">
           <button 
@@ -1016,7 +1015,7 @@ export default function QlikViewAnalyticsPage() {
             <button onClick={() => applyDatePreset("month")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">This Month</button>
           </div>
 
-          {/* RESTORED CUSTOM DATE INPUT PICKERS */}
+          {/* CUSTOM DATE INPUT PICKERS */}
           <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs">
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <input
@@ -1071,6 +1070,62 @@ export default function QlikViewAnalyticsPage() {
           )}
         </div>
       </div>
+
+      {/* ACTIVE FACETS PILL TRAY */}
+      {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0) && (
+        <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden">
+          <div className="flex items-center gap-1.5 text-slate-400 font-bold mr-1">
+            <Tag className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Active Filters:</span>
+          </div>
+
+          {stateA.stores.map((val) => (
+            <span key={`store-${val}`} className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Store: {val}</span>
+              <button onClick={() => toggleSelection("store", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.departments.map((val) => (
+            <span key={`dept-${val}`} className="inline-flex items-center gap-1.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Dept: {val}</span>
+              <button onClick={() => toggleSelection("department", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.categories.map((val) => (
+            <span key={`cat-${val}`} className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-300 border border-blue-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Category: {val}</span>
+              <button onClick={() => toggleSelection("category", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.colors.map((val) => (
+            <span key={`color-${val}`} className="inline-flex items-center gap-1.5 bg-purple-500/10 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Color: {val}</span>
+              <button onClick={() => toggleSelection("color", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.sizes.map((val) => (
+            <span key={`size-${val}`} className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Size: {val}</span>
+              <button onClick={() => toggleSelection("size", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.styles.map((val) => (
+            <span key={`style-${val}`} className="inline-flex items-center gap-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Style: {val}</span>
+              <button onClick={() => toggleSelection("style_code", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          <button onClick={clearCurrentStateSelections} className="text-xs text-slate-400 hover:text-rose-400 font-semibold underline ml-2 cursor-pointer">
+            Clear All Filters
+          </button>
+        </div>
+      )}
 
       {/* MAIN LAYOUT WITH UNIFIED HEIGHT & FIXED HEADER WORKSPACE */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
@@ -1169,7 +1224,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH STICKY SUMMARY ROW */}
+        {/* MAIN WORKSPACE AREA WITH ACTIVE FACETS PILL TRAY */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
