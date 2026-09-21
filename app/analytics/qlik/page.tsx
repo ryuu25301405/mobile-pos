@@ -59,7 +59,10 @@ import {
   CalendarDays,
   Rows3,
   Rows2,
-  Sigma
+  Sigma,
+  FileSpreadsheet,
+  FileText,
+  Share2
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -260,6 +263,20 @@ export default function QlikViewAnalyticsPage() {
     price: 110,
     units: 110,
   });
+
+  // Export Dropdown Menu State
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const resizingColumnRef = useRef<string | null>(null);
   const startXRef = useRef<number>(0);
@@ -767,7 +784,60 @@ export default function QlikViewAnalyticsPage() {
     return list;
   }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
 
-  const handlePrintExecutivePDF = () => window.print();
+  // Quick Export Handlers
+  const handleExportExcel = () => {
+    const exportData = filteredProducts.map((p) => ({
+      "Style Code": p.styleCode,
+      "Style Name": p.styleName,
+      "SKU": p.sku,
+      "Department": p.department,
+      "Category": p.category,
+      "Color": p.color,
+      "Size": p.size,
+      "ABC Class": p.abcClass,
+      "Price (PHP)": p.price,
+      "Units Sold": p.units,
+      "Revenue (PHP)": p.revenue,
+      "Current Stock": p.currentStock,
+      "Days of Supply": p.daysOfSupply > 365 ? "999+" : p.daysOfSupply.toFixed(0),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sales Analytics");
+    XLSX.writeFile(workbook, `Retail_Analytics_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportCSV = () => {
+    const exportData = filteredProducts.map((p) => ({
+      StyleCode: p.styleCode,
+      StyleName: p.styleName,
+      Department: p.department,
+      Class: p.abcClass,
+      Price: p.price,
+      UnitsSold: p.units,
+      Revenue: p.revenue,
+      Stock: p.currentStock,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csvOutput], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Retail_Analytics_Export_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setIsExportMenuOpen(false);
+  };
+
+  const handlePrintExecutivePDF = () => {
+    setIsExportMenuOpen(false);
+    window.print();
+  };
 
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black">
@@ -824,9 +894,45 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={handlePrintExecutivePDF} className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
-            <Printer className="w-3.5 h-3.5 text-indigo-400" /><span>Export PDF</span>
-          </button>
+          {/* QUICK EXPORT DROPDOWN MENU */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+              className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Export Reports</span>
+              <ChevronDown className="w-3 h-3 text-indigo-400 ml-0.5" />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                <button
+                  onClick={handleExportExcel}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 transition cursor-pointer text-left"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <span>Export Excel (.xlsx)</span>
+                </button>
+                <button
+                  onClick={handleExportCSV}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 transition cursor-pointer text-left"
+                >
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  <span>Export CSV</span>
+                </button>
+                <div className="border-t border-slate-800 my-1"></div>
+                <button
+                  onClick={handlePrintExecutivePDF}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 transition cursor-pointer text-left"
+                >
+                  <Printer className="w-4 h-4 text-purple-400" />
+                  <span>Print Report (PDF)</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <Link href="/inventory" className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
             <Boxes className="w-3.5 h-3.5 text-indigo-400" /><span>Inventory</span>
           </Link>
