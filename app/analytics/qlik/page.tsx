@@ -210,8 +210,6 @@ export default function QlikViewAnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   const [stateA, setStateA] = useState<StateSelection>(EMPTY_SELECTIONS);
-  const [stateB, setStateB] = useState<StateSelection>(EMPTY_SELECTIONS);
-
   const [bookmarks, setBookmarks] = useState<BookmarkPreset[]>([]);
   const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
   const [newBookmarkName, setNewBookmarkName] = useState("");
@@ -228,11 +226,9 @@ export default function QlikViewAnalyticsPage() {
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
   const [masterCatalogDeptFilter, setMasterCatalogDeptFilter] = useState<string>("All Departments");
 
-  // Master Catalog Sorting State
   const [masterSortKey, setMasterSortKey] = useState<string>("unitsSold");
   const [masterSortDirection, setMasterSortDirection] = useState<"asc" | "desc">("desc");
 
-  // Master Catalog Pagination State
   const [masterPage, setMasterPage] = useState<number>(1);
   const [masterPageSize, setMasterPageSize] = useState<number>(10);
 
@@ -469,7 +465,6 @@ export default function QlikViewAnalyticsPage() {
     });
   }, [graphRows]);
 
-  // Master Catalog: Driven by the `products` table as the primary source of truth with sorting
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
@@ -578,7 +573,6 @@ export default function QlikViewAnalyticsPage() {
       );
     }
 
-    // Apply Sorting
     return filtered.sort((a, b) => {
       let valA: any = a[masterSortKey as keyof typeof a];
       let valB: any = b[masterSortKey as keyof typeof b];
@@ -697,7 +691,7 @@ export default function QlikViewAnalyticsPage() {
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black">
       
-      {/* HEADER & NAV */}
+      {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
@@ -714,15 +708,46 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
+        {/* CONSOLIDATED VIEW SWITCHERS IN HEADER */}
+        <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+          <button 
+            onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} 
+            className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            Sales Analytics
+          </button>
+          <button 
+            onClick={() => setProductViewMode("master_catalog")} 
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            <Database className="w-3.5 h-3.5 text-indigo-400"/> Master Catalog
+          </button>
+          <button 
+            onClick={() => setProductViewMode("replenishment")} 
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment
+          </button>
+          <button 
+            onClick={() => setProductViewMode("aging_slob")} 
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB
+          </button>
+          <button 
+            onClick={() => setProductViewMode("stores_grid")} 
+            className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            Branches
+          </button>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={handlePrintExecutivePDF} className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
-            <Printer className="w-3.5 h-3.5 text-indigo-400" /><span>Export Executive PDF</span>
+            <Printer className="w-3.5 h-3.5 text-indigo-400" /><span>Export PDF</span>
           </button>
-          <Link href="/analytics/qlik" className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition">
-            <BarChart3 className="w-3.5 h-3.5" /><span>Analytics Hub</span>
-          </Link>
           <Link href="/inventory" className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
-            <Boxes className="w-3.5 h-3.5 text-indigo-400" /><span>Store Inventory</span>
+            <Boxes className="w-3.5 h-3.5 text-indigo-400" /><span>Inventory</span>
           </Link>
           <Link href="/scanview" className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
             <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" /><span>Scanner</span>
@@ -846,20 +871,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* VIEW SELECTOR TOGGLE BAR FOR WORKSPACE / MASTER CATALOG */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">View Mode:</span>
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-            <button onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Sales Analytics Workspace</button>
-            <button onClick={() => setProductViewMode("master_catalog")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Database className="w-3.5 h-3.5 text-indigo-400"/> All Master Catalog</button>
-            <button onClick={() => setProductViewMode("replenishment")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment</button>
-            <button onClick={() => setProductViewMode("aging_slob")} className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}><Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB</button>
-            <button onClick={() => setProductViewMode("stores_grid")} className={`px-3.5 py-1.5 rounded-lg transition ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Branches</button>
-          </div>
-        </div>
-      </div>
-
       {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
       {productViewMode === "master_catalog" ? (
         <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
@@ -874,7 +885,6 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            {/* SEPARATED TOOLBAR CONTROLS */}
             <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
               <div className="relative flex-1 md:w-72">
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -903,7 +913,6 @@ export default function QlikViewAnalyticsPage() {
             </div>
           </div>
 
-          {/* DEPARTMENT QUICK FILTER PILLS */}
           <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Department:</span>
             <button
@@ -1099,7 +1108,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       ) : (
 
-      /* 4. FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
+      /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
       <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
         
         {/* Workspace Controls */}
@@ -1216,7 +1225,6 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              {/* FIXED RELATIVE CONTAINER WITH FLUSH STICKY HEADER */}
               <div className="relative flex-1 overflow-hidden flex flex-col">
                 <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                   
@@ -1426,7 +1434,6 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            {/* SEARCH & FILTER CONTROLS INSIDE MODAL */}
             <div className="flex flex-wrap items-center gap-3 pt-1 shrink-0">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
