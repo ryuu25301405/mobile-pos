@@ -890,9 +890,9 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* FILTER, DATE RANGE PRESETS & TABLE DENSITY TOGGLE BAR */}
+      {/* FILTER, RESTORED DATE RANGE FILTERS & TABLE DENSITY TOGGLE BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
@@ -902,14 +902,36 @@ export default function QlikViewAnalyticsPage() {
           </button>
 
           {/* QUICK DATE RANGE PRESETS CHIP BAR */}
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 ml-2">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1">
             <CalendarDays className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
             <button onClick={() => applyDatePreset("today")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Today</button>
             <button onClick={() => applyDatePreset("yesterday")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Yesterday</button>
             <button onClick={() => applyDatePreset("7days")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Last 7D</button>
             <button onClick={() => applyDatePreset("month")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">This Month</button>
+          </div>
+
+          {/* RESTORED CUSTOM DATE INPUT PICKERS */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+              title="Start Date"
+            />
+            <span className="text-slate-500 font-mono">to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
+              title="End Date"
+            />
             {(startDate || endDate) && (
-              <button onClick={() => applyDatePreset("clear")} className="px-2 py-1 rounded-lg text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition cursor-pointer">Clear</button>
+              <button onClick={() => applyDatePreset("clear")} className="text-rose-400 hover:text-rose-300 ml-1 p-0.5 rounded cursor-pointer" title="Clear Date Filter">
+                <X className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
         </div>
@@ -1041,7 +1063,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH SKELETON LOADERS & STICKY SUMMARY ROW */}
+        {/* MAIN WORKSPACE AREA WITH STICKY SUMMARY ROW */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
