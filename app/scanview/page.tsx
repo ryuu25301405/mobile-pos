@@ -370,12 +370,12 @@ export default function ScanViewPage() {
           </Link>
 
           <Link
-  href="/inventory"
-  className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
->
-  <Boxes className="h-4 w-4 text-indigo-400" />
-  <span>Live Inventory</span>
-</Link>
+            href="/inventory"
+            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
+          >
+            <Boxes className="h-4 w-4 text-indigo-400" />
+            <span>Live Inventory</span>
+          </Link>
 
           <button
             onClick={fetchScannedLogs}
@@ -498,7 +498,7 @@ export default function ScanViewPage() {
             className="w-full bg-transparent text-xs font-bold text-emerald-400 focus:outline-none cursor-pointer"
           >
             {STORES.map((store) => (
-              <option key={store} value={store} className="bg-slate-900 text-white font-normal">
+              <option key={store} value={store} className="bg-slate-950 text-white font-normal">
                 {store}
               </option>
             ))}
@@ -512,10 +512,10 @@ export default function ScanViewPage() {
             onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
             className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="store_style">Group: Store + QR Code</option>
-            <option value="category">Group: Category</option>
-            <option value="department">Group: Department</option>
-            <option value="none">Group: None (Raw Entries)</option>
+            <option value="store_style" className="bg-slate-950 text-white">Group: Store + QR Code</option>
+            <option value="category" className="bg-slate-950 text-white">Group: Category</option>
+            <option value="department" className="bg-slate-950 text-white">Group: Department</option>
+            <option value="none" className="bg-slate-950 text-white">Group: None (Raw Entries)</option>
           </select>
         </div>
 
@@ -526,11 +526,11 @@ export default function ScanViewPage() {
             onChange={(e) => setSortBy(e.target.value as SortOption)}
             className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="newest">Sort: Newest</option>
-            <option value="oldest">Sort: Oldest</option>
-            <option value="qty_desc">Sort: Highest Qty</option>
-            <option value="qty_asc">Sort: Lowest Qty</option>
-            <option value="name_asc">Sort: Product A-Z</option>
+            <option value="newest" className="bg-slate-950 text-white">Sort: Newest</option>
+            <option value="oldest" className="bg-slate-950 text-white">Sort: Oldest</option>
+            <option value="qty_desc" className="bg-slate-950 text-white">Sort: Highest Qty</option>
+            <option value="qty_asc" className="bg-slate-950 text-white">Sort: Lowest Qty</option>
+            <option value="name_asc" className="bg-slate-950 text-white">Sort: Product A-Z</option>
           </select>
         </div>
       </section>
@@ -668,10 +668,10 @@ export default function ScanViewPage() {
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
                   className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
                 >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
+                  <option value={10} className="bg-slate-950 text-white">10</option>
+                  <option value={25} className="bg-slate-950 text-white">25</option>
+                  <option value={50} className="bg-slate-950 text-white">50</option>
+                  <option value={100} className="bg-slate-950 text-white">100</option>
                 </select>
               </div>
             </div>
