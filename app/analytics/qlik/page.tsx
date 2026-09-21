@@ -830,7 +830,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* MAIN LAYOUT WITH STICKY SIDEBAR FILTER PANE */}
+      {/* MAIN LAYOUT WITH UNIFIED HEIGHT & FIXED HEADER WORKSPACE */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         
         {/* STICKY SIDEBAR FILTER PANE */}
@@ -927,7 +927,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA */}
+        {/* MAIN WORKSPACE AREA WITH UNIFIED PANE HEIGHTS & FIXED TABLE HEADERS */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
@@ -999,120 +999,123 @@ export default function QlikViewAnalyticsPage() {
                 ))}
               </div>
 
-              <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
-                    <tr>
-                      <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-between">
-                          <span>Store</span>
-                          {masterSortKey === "store" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th onClick={() => handleMasterSort("styleName")} className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-between">
-                          <span>Style / Variant Details</span>
-                          {masterSortKey === "styleName" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th onClick={() => handleMasterSort("color")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-between">
-                          <span>Color & Size</span>
-                          {masterSortKey === "color" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th onClick={() => handleMasterSort("price")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Price</span>
-                          {masterSortKey === "price" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th onClick={() => handleMasterSort("currentStock")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Current Stock</span>
-                          {masterSortKey === "currentStock" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th onClick={() => handleMasterSort("unitsSold")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Total Units Sold</span>
-                          {masterSortKey === "unitsSold" ? (
-                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                        </div>
-                      </th>
-                      <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/80 text-xs">
-                    {paginatedMasterProducts.length === 0 ? (
-                      <tr><td colSpan={7} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
-                    ) : (
-                      paginatedMasterProducts.map((prod, idx) => (
-                        <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
-                          <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
-                          <td className="px-5 py-3 font-mono border-r border-slate-900/50 space-y-1">
-                            <span className="font-bold text-white block text-sm">{prod.styleName}</span>
-                            <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                              <span>Code: {prod.styleCode}</span>
-                              {prod.sku !== "-" && <span className="text-blue-400">SKU: {prod.sku}</span>}
-                              <span className="bg-slate-900 text-indigo-300 px-1.5 py-0.2 rounded border border-slate-800">{prod.department}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
-                            {prod.color} / <strong className="text-white">{prod.size}</strong>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
-                          <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                            {prod.currentStock} pcs
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold border-r border-slate-900/50 text-sm">{prod.unitsSold} pcs</td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
-                            <button
-                              onClick={() => {
-                                setInspectedProduct({
-                                  key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
-                                  styleCode: prod.styleCode,
-                                  sku: prod.sku,
-                                  styleName: prod.styleName,
-                                  color: prod.color,
-                                  size: prod.size,
-                                  category: prod.category,
-                                  department: prod.department,
-                                  price: prod.price,
-                                  units: prod.unitsSold,
-                                  revenue: prod.revenue,
-                                  abcClass: "B",
-                                  storeBreakdown: prod.storeBreakdown,
-                                  currentStock: prod.currentStock,
-                                  safetyStock: 5,
-                                  velocity: 0,
-                                  daysOfSupply: 30,
-                                  stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
-                                  slobStatus: "ACTIVE",
-                                  tiedUpCapital: prod.currentStock * prod.price
-                                });
-                              }}
-                              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
-                            >
-                              <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              {/* UNIFIED CONTAINER WITH FIXED HEADER & SCROLLABLE BODY */}
+              <div className="relative overflow-hidden border border-slate-800 rounded-2xl h-[560px] flex flex-col">
+                <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
+                      <tr>
+                        <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-between">
+                            <span>Store</span>
+                            {masterSortKey === "store" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th onClick={() => handleMasterSort("styleName")} className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-between">
+                            <span>Style / Variant Details</span>
+                            {masterSortKey === "styleName" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th onClick={() => handleMasterSort("color")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-between">
+                            <span>Color & Size</span>
+                            {masterSortKey === "color" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th onClick={() => handleMasterSort("price")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Price</span>
+                            {masterSortKey === "price" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th onClick={() => handleMasterSort("currentStock")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Current Stock</span>
+                            {masterSortKey === "currentStock" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th onClick={() => handleMasterSort("unitsSold")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Total Units Sold</span>
+                            {masterSortKey === "unitsSold" ? (
+                              masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                            ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80 text-xs">
+                      {paginatedMasterProducts.length === 0 ? (
+                        <tr><td colSpan={7} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
+                      ) : (
+                        paginatedMasterProducts.map((prod, idx) => (
+                          <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
+                            <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
+                            <td className="px-5 py-3 font-mono border-r border-slate-900/50 space-y-1">
+                              <span className="font-bold text-white block text-sm">{prod.styleName}</span>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                                <span>Code: {prod.styleCode}</span>
+                                {prod.sku !== "-" && <span className="text-blue-400">SKU: {prod.sku}</span>}
+                                <span className="bg-slate-900 text-indigo-300 px-1.5 py-0.2 rounded border border-slate-800">{prod.department}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
+                              {prod.color} / <strong className="text-white">{prod.size}</strong>
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
+                            <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                              {prod.currentStock} pcs
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold border-r border-slate-900/50 text-sm">{prod.unitsSold} pcs</td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
+                              <button
+                                onClick={() => {
+                                  setInspectedProduct({
+                                    key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
+                                    styleCode: prod.styleCode,
+                                    sku: prod.sku,
+                                    styleName: prod.styleName,
+                                    color: prod.color,
+                                    size: prod.size,
+                                    category: prod.category,
+                                    department: prod.department,
+                                    price: prod.price,
+                                    units: prod.unitsSold,
+                                    revenue: prod.revenue,
+                                    abcClass: "B",
+                                    storeBreakdown: prod.storeBreakdown,
+                                    currentStock: prod.currentStock,
+                                    safetyStock: 5,
+                                    velocity: 0,
+                                    daysOfSupply: 30,
+                                    stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
+                                    slobStatus: "ACTIVE",
+                                    tiedUpCapital: prod.currentStock * prod.price
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                              >
+                                <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Master Catalog Pagination Footer */}
@@ -1167,7 +1170,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
+          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH UNIFIED HEIGHT & FIXED HEADERS */
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
             
             {/* Workspace Controls */}
@@ -1182,12 +1185,12 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            {/* EXPANDED SIDE-BY-SIDE GRID */}
+            {/* EXPANDED SIDE-BY-SIDE GRID WITH UNIFIED HEIGHT */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
               
               {/* LEFT PANEL: CHART STAGE */}
               {expandedPanel !== "table" && (
-                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
+                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
                     <div className="flex items-center gap-2.5">
                       <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
@@ -1222,7 +1225,7 @@ export default function QlikViewAnalyticsPage() {
                           <span className="text-base font-black text-white">{graphRows.length} items</span>
                         </div>
                       </div>
-                      <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[460px] [scrollbar-width:thin]">
+                      <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[420px] [scrollbar-width:thin]">
                         {graphRows.map((row) => (
                           <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm">
                             <div className="flex items-center gap-2.5 truncate mr-2">
@@ -1265,9 +1268,9 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               )}
 
-              {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS */}
+              {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS WITH FIXED HEADERS */}
               {expandedPanel !== "graph" && (
-                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
+                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
                     <div className="flex items-center gap-2.5">
                       <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
@@ -1284,6 +1287,7 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
+                  {/* FIXED CONTAINER WITH STICKY HEADERS */}
                   <div className="relative flex-1 overflow-hidden flex flex-col">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                       
