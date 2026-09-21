@@ -738,7 +738,6 @@ export default function QlikViewAnalyticsPage() {
     return classifiedList.filter((p) => p.styleCode.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.styleName.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q));
   }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
 
-  // Calculated Totals for Sticky Footer Summary Row
   const tableTotals = useMemo(() => {
     const totalUnits = filteredProducts.reduce((acc, p) => acc + p.units, 0);
     const totalRevenue = filteredProducts.reduce((acc, p) => acc + (p.price * p.units), 0);
@@ -837,44 +836,59 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </nav>
 
-      {/* EXECUTIVE KPI STRIP */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4">
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
-            <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
-            <p className="text-[10px] text-emerald-400 font-mono mt-1">{metricsA.shareOfTotal.toFixed(1)}% of total universe</p>
-          </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl"><DollarSign className="w-5 h-5" /></div>
+      {/* EXECUTIVE KPI STRIP (WITH SKELETON LOADERS WHEN LOADING) */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl animate-pulse">
+              <div className="space-y-2 w-2/3">
+                <div className="h-2.5 bg-slate-800 rounded w-1/2"></div>
+                <div className="h-6 bg-slate-800 rounded w-3/4"></div>
+                <div className="h-2 bg-slate-800 rounded w-1/3"></div>
+              </div>
+              <div className="w-10 h-10 bg-slate-800 rounded-2xl"></div>
+            </div>
+          ))}
         </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4">
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
+              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
+              <p className="text-[10px] text-emerald-400 font-mono mt-1">{metricsA.shareOfTotal.toFixed(1)}% of total universe</p>
+            </div>
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl"><DollarSign className="w-5 h-5" /></div>
+          </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold</p>
-            <h3 className="text-2xl font-black text-white mt-1">{metricsA.units.toLocaleString()} pcs</h3>
-            <p className="text-[10px] text-indigo-400 font-mono mt-1">out of {universe.totalUnits.toLocaleString()} total units</p>
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold</p>
+              <h3 className="text-2xl font-black text-white mt-1">{metricsA.units.toLocaleString()} pcs</h3>
+              <p className="text-[10px] text-indigo-400 font-mono mt-1">out of {universe.totalUnits.toLocaleString()} total units</p>
+            </div>
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl"><ShoppingBag className="w-5 h-5" /></div>
           </div>
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl"><ShoppingBag className="w-5 h-5" /></div>
-        </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
-            <h3 className="text-2xl font-black text-white mt-1">{metricsA.transactions.toLocaleString()} logs</h3>
-            <p className="text-[10px] text-blue-400 font-mono mt-1">scanned audit records</p>
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
+              <h3 className="text-2xl font-black text-white mt-1">{metricsA.transactions.toLocaleString()} logs</h3>
+              <p className="text-[10px] text-blue-400 font-mono mt-1">scanned audit records</p>
+            </div>
+            <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl"><TrendingUp className="w-5 h-5" /></div>
           </div>
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl"><TrendingUp className="w-5 h-5" /></div>
-        </div>
 
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Unit Retail (AUR)</p>
-            <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
-            <p className="text-[10px] text-purple-400 font-mono mt-1">per unit retail avg</p>
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Unit Retail (AUR)</p>
+              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
+              <p className="text-[10px] text-purple-400 font-mono mt-1">per unit retail avg</p>
+            </div>
+            <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl"><Layers className="w-5 h-5" /></div>
           </div>
-          <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl"><Layers className="w-5 h-5" /></div>
         </div>
-      </div>
+      )}
 
       {/* FILTER, DATE RANGE PRESETS & TABLE DENSITY TOGGLE BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
@@ -1027,7 +1041,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH STICKY SUMMARY ROW */}
+        {/* MAIN WORKSPACE AREA WITH SKELETON LOADERS & STICKY SUMMARY ROW */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
@@ -1157,7 +1171,19 @@ export default function QlikViewAnalyticsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/80 text-xs">
-                      {paginatedMasterProducts.length === 0 ? (
+                      {loading ? (
+                        Array.from({ length: 6 }).map((_, idx) => (
+                          <tr key={idx} className="animate-pulse">
+                            <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-20"></div></td>
+                            <td className="px-5 py-4"><div className="h-4 bg-slate-800 rounded w-36 mb-1"></div><div className="h-2.5 bg-slate-800 rounded w-24"></div></td>
+                            <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-16"></div></td>
+                            <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                            <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                            <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                            <td className="px-4 py-4 text-right"><div className="h-6 bg-slate-800 rounded w-16 ml-auto"></div></td>
+                          </tr>
+                        ))
+                      ) : paginatedMasterProducts.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-16 text-center">
                             <div className="max-w-sm mx-auto space-y-3">
@@ -1286,7 +1312,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH STICKY FOOTER TOTALS */
+          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH SKELETONS & STICKY FOOTER */
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
             
             {/* Workspace Controls */}
@@ -1322,7 +1348,19 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  {visualizationMode === "donut" ? (
+                  {loading ? (
+                    <div className="p-6 space-y-3 flex-1 flex flex-col justify-center">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="bg-slate-900/60 border border-slate-800 p-3.5 rounded-2xl animate-pulse space-y-2">
+                          <div className="flex justify-between">
+                            <div className="h-3 bg-slate-800 rounded w-1/3"></div>
+                            <div className="h-3 bg-slate-800 rounded w-1/4"></div>
+                          </div>
+                          <div className="h-2.5 bg-slate-800 rounded w-full"></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : visualizationMode === "donut" ? (
                     <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden">
                       {graphRows.length === 0 ? (
                         <div className="w-full text-center space-y-3">
@@ -1410,7 +1448,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               )}
 
-              {/* RIGHT PANEL: PRODUCT CATALOG WITH STICKY FOOTER TOTALS */}
+              {/* RIGHT PANEL: PRODUCT CATALOG WITH SKELETON LOADERS */}
               {expandedPanel !== "graph" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
@@ -1461,7 +1499,18 @@ export default function QlikViewAnalyticsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/80 text-xs">
-                            {filteredProducts.length === 0 ? (
+                            {loading ? (
+                              Array.from({ length: 6 }).map((_, idx) => (
+                                <tr key={idx} className="animate-pulse">
+                                  <td className="px-4 py-3"><div className="h-3 bg-slate-800 rounded w-32 mb-1"></div><div className="h-2 bg-slate-800 rounded w-20"></div></td>
+                                  <td className="px-3 py-3"><div className="h-4 bg-slate-800 rounded w-8"></div></td>
+                                  <td className="px-3 py-3"><div className="h-3 bg-slate-800 rounded w-20 mb-1"></div><div className="h-2 bg-slate-800 rounded w-12"></div></td>
+                                  <td className="px-3 py-3 text-right"><div className="h-3 bg-slate-800 rounded w-10 ml-auto"></div></td>
+                                  <td className="px-3 py-3 text-right"><div className="h-3 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                                  <td className="px-3 py-3 text-right"><div className="h-5 bg-slate-800 rounded w-12 ml-auto"></div></td>
+                                </tr>
+                              ))
+                            ) : filteredProducts.length === 0 ? (
                               <tr>
                                 <td colSpan={6} className="p-16 text-center">
                                   <div className="max-w-sm mx-auto space-y-3">
