@@ -52,7 +52,9 @@ import {
   ChevronLeft,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  PanelLeftClose,
+  PanelLeftOpen
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -240,7 +242,10 @@ export default function QlikViewAnalyticsPage() {
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
   const [detailSearch, setDetailSearch] = useState("");
-  const [activeFilterDrawer, setActiveFilterDrawer] = useState<DimensionKey | null>(null);
+  
+  // Sidebar Filter Pane State
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<DimensionKey>("store");
   const [drawerSearch, setDrawerSearch] = useState("");
 
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
@@ -794,25 +799,23 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* STREAMLINED FILTER & CONTROLS BAR */}
+      {/* FILTER & BOOKMARKS TOP CONTROLS BAR */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-slate-300 font-bold uppercase tracking-wider text-[11px] mr-1">
-            <SlidersHorizontal className="w-4 h-4 text-emerald-400" /><span>Facets:</span>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+            <span>{isSidebarOpen ? "Hide Filter Sidebar" : "Show Filter Sidebar"}</span>
+          </button>
+
+          <div className="flex items-center gap-1 text-slate-400 text-xs font-mono ml-2">
+            <span>Active Facets:</span>
+            <span className="text-emerald-400 font-bold">
+              {Object.values(stateA).reduce((sum, arr) => sum + arr.length, 0)} selected
+            </span>
           </div>
-          {CYCLIC_DIMENSIONS.map((dim) => {
-            const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
-            const count = stateA[fieldKeyMap[dim.key]]?.length || 0;
-            return (
-              <button key={dim.key} onClick={() => setActiveFilterDrawer(activeFilterDrawer === dim.key ? null : dim.key)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${count > 0 ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : activeFilterDrawer === dim.key ? "bg-slate-800 text-white border-slate-700" : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"}`}
-              >
-                <span>{dim.label}</span>
-                {count > 0 && <span className="bg-emerald-500 text-slate-950 px-1.5 py-0.2 rounded-md text-[10px] font-black">{count}</span>}
-                <ChevronDown className="w-3 h-3 opacity-60" />
-              </button>
-            );
-          })}
         </div>
 
         <div className="flex items-center gap-2">
@@ -827,578 +830,636 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* FILTER DRAWER POPUP */}
-      {activeFilterDrawer && (
-        <div className="bg-[#0E1526] border border-slate-700/80 rounded-2xl p-4 shadow-2xl space-y-3 print:hidden">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">Filtering: {CYCLIC_DIMENSIONS.find((d) => d.key === activeFilterDrawer)?.label}</h3>
-            </div>
-            <button onClick={() => { setActiveFilterDrawer(null); setDrawerSearch(""); }} className="text-slate-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800"><X className="w-4 h-4" /></button>
-          </div>
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input type="text" placeholder="Search filter values..." value={drawerSearch} onChange={(e) => setDrawerSearch(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" autoFocus />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto pr-1">
-            {(() => {
-              const fieldMap: Record<DimensionKey, { items: string[]; sel: string[]; poss: Set<string>; freq: Record<string, number> }> = {
-                store: { items: universe.stores, sel: stateA.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
-                department: { items: universe.departments, sel: stateA.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
-                category: { items: universe.categories, sel: stateA.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
-                color: { items: universe.colors, sel: stateA.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
-                size: { items: universe.sizes, sel: stateA.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
-                style_code: { items: universe.styles, sel: stateA.styles, poss: new Set(universe.styles), freq: {} },
-              };
-              const current = fieldMap[activeFilterDrawer];
-              const filteredList = current.items.filter((i) => i.toLowerCase().includes(drawerSearch.toLowerCase()));
-              if (filteredList.length === 0) return <div className="col-span-full py-4 text-center text-slate-500 text-xs italic">No matching options found.</div>;
-
-              return filteredList.map((val) => {
-                const isSelected = current.sel.includes(val);
-                const isPossible = activeFilterDrawer === "style_code" || current.poss.has(val);
-                const freq = current.freq[val] || 0;
-                return (
-                  <div key={val} onClick={() => toggleSelection(activeFilterDrawer, val)} className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between text-xs border ${isSelected ? "bg-emerald-600 text-white font-bold border-emerald-500 shadow-md" : isPossible ? "bg-slate-950/80 text-slate-200 border-slate-800 hover:border-slate-700" : "bg-slate-950/30 text-slate-600 border-slate-900 opacity-40"}`}>
-                    <span className="truncate mr-1">{val}</span>
-                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isSelected ? "bg-emerald-700 text-white" : "bg-slate-900 text-slate-400"}`}>{freq}</span>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
-      {productViewMode === "master_catalog" ? (
-        <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
-                <Database className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-white uppercase tracking-wide">All Master Product Catalog</h2>
-                <p className="text-xs text-slate-400 font-mono">Complete database listing with stock and lifetime transaction performance</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-              <div className="relative flex-1 md:w-72">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search master catalog by name, style code, SKU..."
-                  value={masterCatalogSearch}
-                  onChange={(e) => setMasterCatalogSearch(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-                <StoreIcon className="w-4 h-4 text-indigo-400" />
-                <select
-                  value={masterCatalogStoreFilter}
-                  onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
-                  className="bg-transparent text-slate-200 focus:outline-none cursor-pointer font-bold"
-                >
-                  <option value="All Stores" className="bg-slate-900">All Stores</option>
-                  {universe.stores.map((st) => (
-                    <option key={st} value={st} className="bg-slate-900">{st}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Department:</span>
-            <button
-              onClick={() => setMasterCatalogDeptFilter("All Departments")}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                masterCatalogDeptFilter === "All Departments"
-                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
-                  : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
-              }`}
-            >
-              All
-            </button>
-            {universe.departments.map((dept) => (
-              <button
-                key={dept}
-                onClick={() => setMasterCatalogDeptFilter(dept)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                  masterCatalogDeptFilter === dept
-                    ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
-                    : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
-                }`}
-              >
-                {dept}
-              </button>
-            ))}
-          </div>
-
-          <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
-                <tr>
-                  <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span>Store</span>
-                      {masterSortKey === "store" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th onClick={() => handleMasterSort("styleName")} className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span>Style / Variant Details</span>
-                      {masterSortKey === "styleName" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th onClick={() => handleMasterSort("color")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span>Color & Size</span>
-                      {masterSortKey === "color" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th onClick={() => handleMasterSort("price")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Price</span>
-                      {masterSortKey === "price" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th onClick={() => handleMasterSort("currentStock")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Current Stock</span>
-                      {masterSortKey === "currentStock" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th onClick={() => handleMasterSort("unitsSold")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Total Units Sold</span>
-                      {masterSortKey === "unitsSold" ? (
-                        masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                      ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
-                    </div>
-                  </th>
-                  <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/80 text-xs">
-                {paginatedMasterProducts.length === 0 ? (
-                  <tr><td colSpan={7} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
-                ) : (
-                  paginatedMasterProducts.map((prod, idx) => (
-                    <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
-                      <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
-                      <td className="px-5 py-3 font-mono border-r border-slate-900/50 space-y-1">
-                        <span className="font-bold text-white block text-sm">{prod.styleName}</span>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                          <span>Code: {prod.styleCode}</span>
-                          {prod.sku !== "-" && <span className="text-blue-400">SKU: {prod.sku}</span>}
-                          <span className="bg-slate-900 text-indigo-300 px-1.5 py-0.2 rounded border border-slate-800">{prod.department}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
-                        {prod.color} / <strong className="text-white">{prod.size}</strong>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
-                      <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        {prod.currentStock} pcs
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold border-r border-slate-900/50 text-sm">{prod.unitsSold} pcs</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
-                        <button
-                          onClick={() => {
-                            setInspectedProduct({
-                              key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
-                              styleCode: prod.styleCode,
-                              sku: prod.sku,
-                              styleName: prod.styleName,
-                              color: prod.color,
-                              size: prod.size,
-                              category: prod.category,
-                              department: prod.department,
-                              price: prod.price,
-                              units: prod.unitsSold,
-                              revenue: prod.revenue,
-                              abcClass: "B",
-                              storeBreakdown: prod.storeBreakdown,
-                              currentStock: prod.currentStock,
-                              safetyStock: 5,
-                              velocity: 0,
-                              daysOfSupply: 30,
-                              stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
-                              slobStatus: "ACTIVE",
-                              tiedUpCapital: prod.currentStock * prod.price
-                            });
-                          }}
-                          className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
-                        >
-                          <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Master Catalog Pagination Footer */}
-          <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 rounded-2xl">
-            <div className="flex items-center gap-3">
-              <span>
-                Showing <strong className="text-slate-200">{masterTotalItems === 0 ? 0 : masterStartIndex + 1}</strong> to{" "}
-                <strong className="text-slate-200">{Math.min(masterStartIndex + masterPageSize, masterTotalItems)}</strong> of{" "}
-                <strong className="text-slate-200">{masterTotalItems}</strong> entries
-              </span>
-
-              <div className="flex items-center gap-1.5">
-                <span>| Show</span>
-                <select
-                  value={masterPageSize}
-                  onChange={(e) => {
-                    setMasterPageSize(Number(e.target.value));
-                    setMasterPage(1);
-                  }}
-                  className="bg-slate-900 border border-slate-700 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setMasterPage((p) => Math.max(p - 1, 1))}
-                disabled={masterPage === 1 || loading}
-                className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
-                {masterPage} / {masterTotalPages}
-              </span>
-
-              <button
-                onClick={() => setMasterPage((p) => Math.min(p + 1, masterTotalPages))}
-                disabled={masterPage === masterTotalPages || loading}
-                className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-
-      /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
-      <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
+      {/* MAIN LAYOUT WITH STICKY SIDEBAR FILTER PANE */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         
-        {/* Workspace Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden">
-          <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
-            <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
-          </button>
+        {/* STICKY SIDEBAR FILTER PANE */}
+        {isSidebarOpen && (
+          <div className="lg:col-span-3 bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:hidden sticky top-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white">Associative Facets</h3>
+              </div>
+              <button onClick={() => setIsSidebarOpen(false)} className="text-slate-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-            <button onClick={() => setVisualizationMode("chart")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Bars</button>
-            <button onClick={() => setVisualizationMode("donut")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Proportion Ring</button>
+            {/* Dimension Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+              {CYCLIC_DIMENSIONS.map((dim) => {
+                const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
+                const count = stateA[fieldKeyMap[dim.key]]?.length || 0;
+                return (
+                  <button
+                    key={dim.key}
+                    onClick={() => setActiveSidebarTab(dim.key)}
+                    className={`py-2 px-1 rounded-lg font-bold transition truncate cursor-pointer relative ${
+                      activeSidebarTab === dim.key
+                        ? "bg-slate-800 text-emerald-400 shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {dim.label}
+                    {count > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 px-1 py-0.2 rounded-full text-[9px] font-black">
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Search Input for Current Tab */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder={`Search ${activeSidebarTab}...`}
+                value={drawerSearch}
+                onChange={(e) => setDrawerSearch(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Filter Values List */}
+            <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {(() => {
+                const fieldMap: Record<DimensionKey, { items: string[]; sel: string[]; poss: Set<string>; freq: Record<string, number> }> = {
+                  store: { items: universe.stores, sel: stateA.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
+                  department: { items: universe.departments, sel: stateA.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
+                  category: { items: universe.categories, sel: stateA.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
+                  color: { items: universe.colors, sel: stateA.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
+                  size: { items: universe.sizes, sel: stateA.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
+                  style_code: { items: universe.styles, sel: stateA.styles, poss: new Set(universe.styles), freq: {} },
+                };
+                const current = fieldMap[activeSidebarTab];
+                const filteredList = current.items.filter((i) => i.toLowerCase().includes(drawerSearch.toLowerCase()));
+                if (filteredList.length === 0) return <div className="py-8 text-center text-slate-500 text-xs italic">No matching options found.</div>;
+
+                return filteredList.map((val) => {
+                  const isSelected = current.sel.includes(val);
+                  const isPossible = activeSidebarTab === "style_code" || current.poss.has(val);
+                  const freq = current.freq[val] || 0;
+                  return (
+                    <div
+                      key={val}
+                      onClick={() => toggleSelection(activeSidebarTab, val)}
+                      className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between text-xs border ${
+                        isSelected
+                          ? "bg-emerald-600 text-white font-bold border-emerald-500 shadow-md"
+                          : isPossible
+                          ? "bg-slate-950 text-slate-200 border-slate-800 hover:border-slate-700"
+                          : "bg-slate-950/30 text-slate-600 border-slate-900 opacity-40"
+                      }`}
+                    >
+                      <span className="truncate mr-2">{val}</span>
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${isSelected ? "bg-emerald-700 text-white" : "bg-slate-900 text-slate-400"}`}>
+                        {freq}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* EXPANDED SIDE-BY-SIDE GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
-          
-          {/* LEFT PANEL: CHART STAGE */}
-          {expandedPanel !== "table" && (
-            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
-              <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
-                  <span className="text-sm font-black text-white tracking-wide uppercase">{visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}</span>
+        {/* MAIN WORKSPACE AREA */}
+        <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
+
+          {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
+          {productViewMode === "master_catalog" ? (
+            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white uppercase tracking-wide">All Master Product Catalog</h2>
+                    <p className="text-xs text-slate-400 font-mono">Complete database listing with stock and lifetime transaction performance</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 print:hidden">
-                  <select value={graphDimensionKey} onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)} className="bg-slate-900 text-emerald-400 font-bold text-xs border border-slate-700 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer">
-                    {CYCLIC_DIMENSIONS.map((dim) => (<option key={dim.key} value={dim.key}>{dim.label}</option>))}
-                  </select>
-                  <button onClick={() => setExpandedPanel(expandedPanel === "graph" ? "none" : "graph")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer" title={expandedPanel === "graph" ? "Restore Split View" : "Maximize Panel"}>
-                    {expandedPanel === "graph" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="relative flex-1 md:w-72">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search master catalog by name, style code, SKU..."
+                      value={masterCatalogSearch}
+                      onChange={(e) => setMasterCatalogSearch(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs">
+                    <StoreIcon className="w-4 h-4 text-indigo-400" />
+                    <select
+                      value={masterCatalogStoreFilter}
+                      onChange={(e) => setMasterCatalogStoreFilter(e.target.value)}
+                      className="bg-transparent text-slate-200 focus:outline-none cursor-pointer font-bold"
+                    >
+                      <option value="All Stores" className="bg-slate-900">All Stores</option>
+                      {universe.stores.map((st) => (
+                        <option key={st} value={st} className="bg-slate-900">{st}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Department:</span>
+                <button
+                  onClick={() => setMasterCatalogDeptFilter("All Departments")}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                    masterCatalogDeptFilter === "All Departments"
+                      ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                      : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+                  }`}
+                >
+                  All
+                </button>
+                {universe.departments.map((dept) => (
+                  <button
+                    key={dept}
+                    onClick={() => setMasterCatalogDeptFilter(dept)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                      masterCatalogDeptFilter === dept
+                        ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+                    }`}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative overflow-x-auto min-h-[420px] [scrollbar-width:thin]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
+                    <tr>
+                      <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-between">
+                          <span>Store</span>
+                          {masterSortKey === "store" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th onClick={() => handleMasterSort("styleName")} className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-between">
+                          <span>Style / Variant Details</span>
+                          {masterSortKey === "styleName" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th onClick={() => handleMasterSort("color")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-between">
+                          <span>Color & Size</span>
+                          {masterSortKey === "color" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th onClick={() => handleMasterSort("price")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Price</span>
+                          {masterSortKey === "price" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th onClick={() => handleMasterSort("currentStock")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Current Stock</span>
+                          {masterSortKey === "currentStock" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th onClick={() => handleMasterSort("unitsSold")} className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Total Units Sold</span>
+                          {masterSortKey === "unitsSold" ? (
+                            masterSortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-indigo-400" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-60" />}
+                        </div>
+                      </th>
+                      <th className="px-4 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 text-xs">
+                    {paginatedMasterProducts.length === 0 ? (
+                      <tr><td colSpan={7} className="p-16 text-center text-slate-500 text-sm">No products found matching your search or branch filter.</td></tr>
+                    ) : (
+                      paginatedMasterProducts.map((prod, idx) => (
+                        <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-900/60 transition-colors">
+                          <td className="px-4 py-3 font-bold text-indigo-300 border-r border-slate-900/50">{prod.store}</td>
+                          <td className="px-5 py-3 font-mono border-r border-slate-900/50 space-y-1">
+                            <span className="font-bold text-white block text-sm">{prod.styleName}</span>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                              <span>Code: {prod.styleCode}</span>
+                              {prod.sku !== "-" && <span className="text-blue-400">SKU: {prod.sku}</span>}
+                              <span className="bg-slate-900 text-indigo-300 px-1.5 py-0.2 rounded border border-slate-800">{prod.department}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
+                            {prod.color} / <strong className="text-white">{prod.size}</strong>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
+                          <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {prod.currentStock} pcs
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-indigo-400 font-bold border-r border-slate-900/50 text-sm">{prod.unitsSold} pcs</td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap print:hidden">
+                            <button
+                              onClick={() => {
+                                setInspectedProduct({
+                                  key: `${prod.styleCode}-${prod.sku}-${prod.size}-${prod.color}`,
+                                  styleCode: prod.styleCode,
+                                  sku: prod.sku,
+                                  styleName: prod.styleName,
+                                  color: prod.color,
+                                  size: prod.size,
+                                  category: prod.category,
+                                  department: prod.department,
+                                  price: prod.price,
+                                  units: prod.unitsSold,
+                                  revenue: prod.revenue,
+                                  abcClass: "B",
+                                  storeBreakdown: prod.storeBreakdown,
+                                  currentStock: prod.currentStock,
+                                  safetyStock: 5,
+                                  velocity: 0,
+                                  daysOfSupply: 30,
+                                  stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
+                                  slobStatus: "ACTIVE",
+                                  tiedUpCapital: prod.currentStock * prod.price
+                                });
+                              }}
+                              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                            >
+                              <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Master Catalog Pagination Footer */}
+              <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 rounded-2xl">
+                <div className="flex items-center gap-3">
+                  <span>
+                    Showing <strong className="text-slate-200">{masterTotalItems === 0 ? 0 : masterStartIndex + 1}</strong> to{" "}
+                    <strong className="text-slate-200">{Math.min(masterStartIndex + masterPageSize, masterTotalItems)}</strong> of{" "}
+                    <strong className="text-slate-200">{masterTotalItems}</strong> entries
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <span>| Show</span>
+                    <select
+                      value={masterPageSize}
+                      onChange={(e) => {
+                        setMasterPageSize(Number(e.target.value));
+                        setMasterPage(1);
+                      }}
+                      className="bg-slate-900 border border-slate-700 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMasterPage((p) => Math.max(p - 1, 1))}
+                    disabled={masterPage === 1 || loading}
+                    className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
+                    {masterPage} / {masterTotalPages}
+                  </span>
+
+                  <button
+                    onClick={() => setMasterPage((p) => Math.min(p + 1, masterTotalPages))}
+                    disabled={masterPage === masterTotalPages || loading}
+                    className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
+                  >
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
+            </div>
+          ) : (
 
-              {visualizationMode === "donut" ? (
-                <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden">
-                  <div className="relative w-56 h-56 flex items-center justify-center shrink-0">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
-                      {donutSlices.map((slice, idx) => {
-                        const circumference = 2 * Math.PI * 40;
-                        const strokeDasharray = `${(slice.share / 100) * circumference} ${circumference}`;
-                        const strokeDashoffset = -((donutSlices.slice(0, idx).reduce((acc, s) => acc + s.share, 0)) / 100) * circumference;
-                        return (
-                          <circle key={slice.label} cx="50" cy="50" r="40" fill="transparent" stroke={slice.color} strokeWidth="16" strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} onClick={() => toggleSelection(graphDimensionKey, slice.label)} className="cursor-pointer hover:opacity-80 transition-all duration-300" />
-                        );
-                      })}
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                      <span className="text-xs uppercase font-bold text-slate-400">Total</span>
-                      <span className="text-base font-black text-white">{graphRows.length} items</span>
+          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE FOR OTHER VIEWS */
+          <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
+            
+            {/* Workspace Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden">
+              <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
+                <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
+              </button>
+
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+                <button onClick={() => setVisualizationMode("chart")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Bars</button>
+                <button onClick={() => setVisualizationMode("donut")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Proportion Ring</button>
+              </div>
+            </div>
+
+            {/* EXPANDED SIDE-BY-SIDE GRID */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
+              
+              {/* LEFT PANEL: CHART STAGE */}
+              {expandedPanel !== "table" && (
+                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
+                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
+                      <span className="text-sm font-black text-white tracking-wide uppercase">{visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}</span>
+                    </div>
+                    <div className="flex items-center gap-3 print:hidden">
+                      <select value={graphDimensionKey} onChange={(e) => setGraphDimensionKey(e.target.value as DimensionKey)} className="bg-slate-900 text-emerald-400 font-bold text-xs border border-slate-700 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer">
+                        {CYCLIC_DIMENSIONS.map((dim) => (<option key={dim.key} value={dim.key}>{dim.label}</option>))}
+                      </select>
+                      <button onClick={() => setExpandedPanel(expandedPanel === "graph" ? "none" : "graph")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer" title={expandedPanel === "graph" ? "Restore Split View" : "Maximize Panel"}>
+                        {expandedPanel === "graph" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
-                  <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[460px] [scrollbar-width:thin]">
-                    {graphRows.map((row) => (
-                      <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm">
-                        <div className="flex items-center gap-2.5 truncate mr-2">
-                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                          <span className="font-semibold text-white truncate text-sm">{row.label}</span>
+
+                  {visualizationMode === "donut" ? (
+                    <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden">
+                      <div className="relative w-56 h-56 flex items-center justify-center shrink-0">
+                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                          <circle cx="50" cy="50" r="40" fill="transparent" stroke="#1E293B" strokeWidth="16" />
+                          {donutSlices.map((slice, idx) => {
+                            const circumference = 2 * Math.PI * 40;
+                            const strokeDasharray = `${(slice.share / 100) * circumference} ${circumference}`;
+                            const strokeDashoffset = -((donutSlices.slice(0, idx).reduce((acc, s) => acc + s.share, 0)) / 100) * circumference;
+                            return (
+                              <circle key={slice.label} cx="50" cy="50" r="40" fill="transparent" stroke={slice.color} strokeWidth="16" strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} onClick={() => toggleSelection(graphDimensionKey, slice.label)} className="cursor-pointer hover:opacity-80 transition-all duration-300" />
+                            );
+                          })}
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                          <span className="text-xs uppercase font-bold text-slate-400">Total</span>
+                          <span className="text-base font-black text-white">{graphRows.length} items</span>
                         </div>
-                        <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm">{row.share.toFixed(1)}%</div>
                       </div>
-                    ))}
-                  </div>
+                      <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[460px] [scrollbar-width:thin]">
+                        {graphRows.map((row) => (
+                          <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm">
+                            <div className="flex items-center gap-2.5 truncate mr-2">
+                              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                              <span className="font-semibold text-white truncate text-sm">{row.label}</span>
+                            </div>
+                            <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm">{row.share.toFixed(1)}%</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col">
+                      <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin]">
+                        {graphRows.length === 0 ? (
+                          <div className="p-12 text-center text-slate-500 text-sm">No chart data available.</div>
+                        ) : (
+                          graphRows.map((row) => {
+                            const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
+                            const displayVal = activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` : activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` : activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+                            return (
+                              <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">{row.label}</span>
+                                  <div className="flex items-center gap-3 font-mono shrink-0">
+                                    <span className="text-xs text-slate-400">{row.share.toFixed(1)}%</span>
+                                    <span className="font-black text-emerald-400">{displayVal}</span>
+                                  </div>
+                                </div>
+                                <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden">
+                                  <div style={{ width: `${pct}%`, backgroundColor: row.color }} className="h-full rounded-full transition-all duration-500" />
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col">
-                  <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin]">
-                    {graphRows.length === 0 ? (
-                      <div className="p-12 text-center text-slate-500 text-sm">No chart data available.</div>
-                    ) : (
-                      graphRows.map((row) => {
-                        const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
-                        const displayVal = activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` : activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` : activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
-                        return (
-                          <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">{row.label}</span>
-                              <div className="flex items-center gap-3 font-mono shrink-0">
-                                <span className="text-xs text-slate-400">{row.share.toFixed(1)}%</span>
-                                <span className="font-black text-emerald-400">{displayVal}</span>
+              )}
+
+              {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS */}
+              {expandedPanel !== "graph" && (
+                <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
+                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
+                      <Package className="w-4 h-4 text-emerald-400" />
+                      <span className="text-sm font-black text-white tracking-wide uppercase">Product Catalog & Branches</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 print:hidden">
+                      <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
+
+                      <button onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm" title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}>
+                        {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative flex-1 overflow-hidden flex flex-col">
+                    <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
+                      
+                      {productViewMode === "consolidated" && (
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                            <tr>
+                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Name / Details</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Class</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold</th>
+                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                            {filteredProducts.length === 0 ? (
+                              <tr><td colSpan={6} className="p-12 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
+                            ) : (
+                              filteredProducts.map((prod) => (
+                                <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
+                                  <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
+                                    <span className="font-black text-emerald-400 block text-sm tracking-wide">
+                                      {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
+                                    </span>
+                                    <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
+                                      <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {prod.styleCode}</span>
+                                      {prod.sku !== "-" && <span className="text-blue-400 font-mono">SKU: {prod.sku}</span>}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                                    <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                                      prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                                      prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
+                                      "bg-slate-800 text-slate-400 border-slate-700"
+                                    }`}>
+                                      Class {prod.abcClass}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3.5 max-w-[180px] border-r border-slate-900/50">
+                                    <span className="text-white block font-semibold text-xs">{prod.color}</span>
+                                    <span className="text-[11px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
+                                  </td>
+                                  <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
+                                  <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50">{prod.units} pcs</td>
+                                  <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
+                                    <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
+                                      <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {productViewMode === "replenishment" && (
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                            <tr>
+                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Status</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Days of Supply</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Daily Vel.</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Stock vs Safety</th>
+                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                            {filteredProducts.sort((a,b) => a.daysOfSupply - b.daysOfSupply).map((prod) => (
+                              <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
+                                <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
+                                  <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
+                                  <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
+                                </td>
+                                <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                                  {prod.stockStatus === "CRITICAL" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> OUT OF STOCK</span>}
+                                  {prod.stockStatus === "WARNING" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><ShieldAlert className="w-3 h-3"/> LOW STOCK</span>}
+                                  {prod.stockStatus === "HEALTHY" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Check className="w-3 h-3"/> HEALTHY</span>}
+                                </td>
+                                <td className="px-4 py-3.5 text-right border-r border-slate-900/50">
+                                  <span className={`font-black text-sm ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[10px] font-sans text-slate-500">Days</span>
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">{prod.velocity.toFixed(2)}/d</td>
+                                <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">
+                                  <span className={prod.currentStock <= prod.safetyStock ? "text-rose-400" : "text-emerald-400"}>{prod.currentStock}</span>
+                                  <span className="text-slate-500"> / {prod.safetyStock}</span>
+                                </td>
+                                <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
+                                  <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
+                                    <Eye className="w-3.5 h-3.5" /><span>View</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {productViewMode === "aging_slob" && (
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                            <tr>
+                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">SLOB Status</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold (Period)</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Remaining Stock</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Tied Capital</th>
+                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                            {filteredProducts.sort((a,b) => b.daysOfSupply - a.daysOfSupply).map((prod) => (
+                              <tr key={prod.key} className={`transition-colors group ${prod.slobStatus === 'DEAD' ? 'bg-rose-950/10 hover:bg-rose-950/20' : 'hover:bg-slate-900/60'}`}>
+                                <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
+                                  <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
+                                  <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
+                                </td>
+                                <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
+                                  {prod.slobStatus === "DEAD" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> DEAD STOCK</span>}
+                                  {prod.slobStatus === "SLOW" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><Clock className="w-3 h-3"/> SLOW MOVING</span>}
+                                  {prod.slobStatus === "ACTIVE" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Activity className="w-3 h-3"/> ACTIVE</span>}
+                                </td>
+                                <td className="px-4 py-3.5 text-right border-r border-slate-900/50 font-bold text-slate-300">{prod.units}</td>
+                                <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50 text-emerald-400">
+                                  {prod.currentStock}
+                                </td>
+                                <td className="px-4 py-3.5 text-right text-rose-400 font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.tiedUpCapital.toLocaleString()}</td>
+                                <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
+                                  <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
+                                    <Eye className="w-3.5 h-3.5" /><span>View</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {productViewMode === "stores_grid" && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                          {storeCardsSummary.map((storeCard) => (
+                            <div key={storeCard.store} onClick={() => { setSelectedBranchDetail(storeCard.store); setBranchModalSearch(""); setBranchModalTierFilter("ALL"); setIsBranchModalExpanded(false); }} className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5 truncate mr-2">
+                                  <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition shrink-0"><Building2 className="w-4 h-4" /></div>
+                                  <h4 className="font-bold text-white text-xs truncate">{storeCard.store}</h4>
+                                </div>
+                                <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition shrink-0" />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs font-mono">
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                                  <span className="text-[9px] text-slate-500 uppercase block font-sans">Units Sold</span>
+                                  <span className="text-emerald-400 font-bold text-sm">{storeCard.totalUnits.toLocaleString()} pcs</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                                  <span className="text-[9px] text-slate-500 uppercase block font-sans">Branch Revenue</span>
+                                  <span className="text-indigo-400 font-bold text-sm">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
+                                </div>
                               </div>
                             </div>
-                            <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden">
-                              <div style={{ width: `${pct}%`, backgroundColor: row.color }} className="h-full rounded-full transition-all duration-500" />
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* RIGHT PANEL: PRODUCT CATALOG & STORE BREAKDOWN CARDS */}
-          {expandedPanel !== "graph" && (
-            <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
-              <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
-                  <Package className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-black text-white tracking-wide uppercase">Product Catalog & Branches</span>
-                </div>
-
-                <div className="flex items-center gap-3 print:hidden">
-                  <input type="text" placeholder="Search product..." value={detailSearch} onChange={(e) => setDetailSearch(e.target.value)} className="w-36 sm:w-44 bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner" />
-
-                  <button onClick={() => setExpandedPanel(expandedPanel === "table" ? "none" : "table")} className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl transition cursor-pointer shadow-sm" title={expandedPanel === "table" ? "Restore Split View" : "Maximize Panel"}>
-                    {expandedPanel === "table" ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative flex-1 overflow-hidden flex flex-col">
-                <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
-                  
-                  {productViewMode === "consolidated" && (
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
-                        <tr>
-                          <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Name / Details</th>
-                          <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Class</th>
-                          <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Color & Size</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Price</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold</th>
-                          <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/80 text-xs">
-                        {filteredProducts.length === 0 ? (
-                          <tr><td colSpan={6} className="p-12 text-center text-slate-500 text-sm">No product records in active state.</td></tr>
-                        ) : (
-                          filteredProducts.map((prod) => (
-                            <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                              <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                                <span className="font-black text-emerald-400 block text-sm tracking-wide">
-                                  {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
-                                </span>
-                                <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center gap-2">
-                                  <span className="bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 border border-slate-800">Code: {prod.styleCode}</span>
-                                  {prod.sku !== "-" && <span className="text-blue-400 font-mono">SKU: {prod.sku}</span>}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
-                                <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
-                                  prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
-                                  prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
-                                  "bg-slate-800 text-slate-400 border-slate-700"
-                                }`}>
-                                  Class {prod.abcClass}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3.5 max-w-[180px] border-r border-slate-900/50">
-                                <span className="text-white block font-semibold text-xs">{prod.color}</span>
-                                <span className="text-[11px] text-slate-400">Size: <strong className="text-slate-200">{prod.size}</strong></span>
-                              </td>
-                              <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.price.toFixed(0)}</td>
-                              <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-400 text-sm whitespace-nowrap border-r border-slate-900/50">{prod.units} pcs</td>
-                              <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                                <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                  <Eye className="w-3.5 h-3.5" /><span>Inspect</span>
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {productViewMode === "replenishment" && (
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
-                        <tr>
-                          <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
-                          <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Status</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Days of Supply</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Daily Vel.</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Stock vs Safety</th>
-                          <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/80 text-xs">
-                        {filteredProducts.sort((a,b) => a.daysOfSupply - b.daysOfSupply).map((prod) => (
-                          <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                            <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                              <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
-                              <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
-                            </td>
-                            <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
-                              {prod.stockStatus === "CRITICAL" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> OUT OF STOCK</span>}
-                              {prod.stockStatus === "WARNING" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><ShieldAlert className="w-3 h-3"/> LOW STOCK</span>}
-                              {prod.stockStatus === "HEALTHY" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Check className="w-3 h-3"/> HEALTHY</span>}
-                            </td>
-                            <td className="px-4 py-3.5 text-right border-r border-slate-900/50">
-                              <span className={`font-black text-sm ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[10px] font-sans text-slate-500">Days</span>
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5 text-right text-slate-300 font-mono text-sm whitespace-nowrap border-r border-slate-900/50">{prod.velocity.toFixed(2)}/d</td>
-                            <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">
-                              <span className={prod.currentStock <= prod.safetyStock ? "text-rose-400" : "text-emerald-400"}>{prod.currentStock}</span>
-                              <span className="text-slate-500"> / {prod.safetyStock}</span>
-                            </td>
-                            <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                              <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                <Eye className="w-3.5 h-3.5" /><span>View</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {productViewMode === "aging_slob" && (
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
-                        <tr>
-                          <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
-                          <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">SLOB Status</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold (Period)</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Remaining Stock</th>
-                          <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Tied Capital</th>
-                          <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/80 text-xs">
-                        {filteredProducts.sort((a,b) => b.daysOfSupply - a.daysOfSupply).map((prod) => (
-                          <tr key={prod.key} className={`transition-colors group ${prod.slobStatus === 'DEAD' ? 'bg-rose-950/10 hover:bg-rose-950/20' : 'hover:bg-slate-900/60'}`}>
-                            <td className="px-5 py-3.5 font-mono border-r border-slate-900/50 space-y-1">
-                              <span className="font-bold text-emerald-400 block text-sm tracking-wide">{prod.styleCode}</span>
-                              <span className="text-[11px] text-slate-400">{prod.color} ({prod.size})</span>
-                            </td>
-                            <td className="px-4 py-3.5 whitespace-nowrap border-r border-slate-900/50">
-                              {prod.slobStatus === "DEAD" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> DEAD STOCK</span>}
-                              {prod.slobStatus === "SLOW" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><Clock className="w-3 h-3"/> SLOW MOVING</span>}
-                              {prod.slobStatus === "ACTIVE" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Activity className="w-3 h-3"/> ACTIVE</span>}
-                            </td>
-                            <td className="px-4 py-3.5 text-right border-r border-slate-900/50 font-bold text-slate-300">{prod.units}</td>
-                            <td className="px-4 py-3.5 text-right font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50 text-emerald-400">
-                              {prod.currentStock}
-                            </td>
-                            <td className="px-4 py-3.5 text-right text-rose-400 font-mono font-bold text-sm whitespace-nowrap border-r border-slate-900/50">₱{prod.tiedUpCapital.toLocaleString()}</td>
-                            <td className="px-5 py-3.5 text-right whitespace-nowrap print:hidden">
-                              <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm">
-                                <Eye className="w-3.5 h-3.5" /><span>View</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {productViewMode === "stores_grid" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      {storeCardsSummary.map((storeCard) => (
-                        <div key={storeCard.store} onClick={() => { setSelectedBranchDetail(storeCard.store); setBranchModalSearch(""); setBranchModalTierFilter("ALL"); setIsBranchModalExpanded(false); }} className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5 truncate mr-2">
-                              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition shrink-0"><Building2 className="w-4 h-4" /></div>
-                              <h4 className="font-bold text-white text-xs truncate">{storeCard.store}</h4>
-                            </div>
-                            <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition shrink-0" />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs font-mono">
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                              <span className="text-[9px] text-slate-500 uppercase block font-sans">Units Sold</span>
-                              <span className="text-emerald-400 font-bold text-sm">{storeCard.totalUnits.toLocaleString()} pcs</span>
-                            </div>
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                              <span className="text-[9px] text-slate-500 uppercase block font-sans">Branch Revenue</span>
-                              <span className="text-indigo-400 font-bold text-sm">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+          </div>
           )}
         </div>
       </div>
-      )}
 
       {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH EXPANDED VIEW TOGGLE */}
       {selectedBranchDetail && (
