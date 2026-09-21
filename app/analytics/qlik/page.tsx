@@ -58,7 +58,8 @@ import {
   FolderSearch,
   CalendarDays,
   Rows3,
-  Rows2
+  Rows2,
+  Sigma
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -251,7 +252,6 @@ export default function QlikViewAnalyticsPage() {
   const [activeSidebarTab, setActiveSidebarTab] = useState<DimensionKey>("store");
   const [drawerSearch, setDrawerSearch] = useState("");
 
-  // Table UI Enhancements: Density & Column Width States
   const [tableDensity, setTableDensity] = useState<"compact" | "comfortable">("comfortable");
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
     style: 280,
@@ -738,6 +738,14 @@ export default function QlikViewAnalyticsPage() {
     return classifiedList.filter((p) => p.styleCode.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.styleName.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q));
   }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
 
+  // Calculated Totals for Sticky Footer Summary Row
+  const tableTotals = useMemo(() => {
+    const totalUnits = filteredProducts.reduce((acc, p) => acc + p.units, 0);
+    const totalRevenue = filteredProducts.reduce((acc, p) => acc + (p.price * p.units), 0);
+    const avgPrice = filteredProducts.length > 0 ? filteredProducts.reduce((acc, p) => acc + p.price, 0) / filteredProducts.length : 0;
+    return { totalUnits, totalRevenue, avgPrice };
+  }, [filteredProducts]);
+
   const storeCardsSummary = useMemo(() => {
     const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
     universe.stores.forEach((st) => map[st] = { store: st, totalUnits: 0, totalRevenue: 0 });
@@ -1019,7 +1027,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH RESIZABLE COLUMNS */}
+        {/* MAIN WORKSPACE AREA WITH STICKY SUMMARY ROW */}
         <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
 
           {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
@@ -1278,7 +1286,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH RESIZABLE COLUMNS & DENSITY */
+          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH STICKY FOOTER TOTALS */
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
             
             {/* Workspace Controls */}
@@ -1402,7 +1410,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               )}
 
-              {/* RIGHT PANEL: PRODUCT CATALOG WITH RESIZABLE COLUMNS & DENSITY */}
+              {/* RIGHT PANEL: PRODUCT CATALOG WITH STICKY FOOTER TOTALS */}
               {expandedPanel !== "graph" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
@@ -1421,7 +1429,7 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* FIXED CONTAINER WITH RESIZABLE HEADERS */}
+                  {/* FIXED CONTAINER WITH STICKY FOOTER TOTALS */}
                   <div className="relative flex-1 overflow-hidden flex flex-col">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                       
@@ -1658,6 +1666,21 @@ export default function QlikViewAnalyticsPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* STICKY FOOTER SUMMARY ROW FOR CONSOLIDATED VIEW */}
+                    {productViewMode === "consolidated" && filteredProducts.length > 0 && (
+                      <div className="bg-slate-900 border-t-2 border-emerald-500/40 px-5 py-3 flex items-center justify-between text-xs font-mono font-bold text-white shrink-0 shadow-lg">
+                        <div className="flex items-center gap-2">
+                          <Sigma className="w-4 h-4 text-emerald-400" />
+                          <span>Filtered Totals ({filteredProducts.length} styles):</span>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <span>Avg Price: <strong className="text-indigo-400">₱{tableTotals.avgPrice.toFixed(2)}</strong></span>
+                          <span>Total Units: <strong className="text-emerald-400">{tableTotals.totalUnits.toLocaleString()} pcs</strong></span>
+                          <span className="text-emerald-300">Est. Revenue: <strong>₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</strong></span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
