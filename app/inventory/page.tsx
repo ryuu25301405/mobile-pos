@@ -307,7 +307,6 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
-  // Load batch adjustment items for the selected branch (combining inventory and full master products)
   const loadBatchItemsForStore = (targetStore: string) => {
     const existingMap = new Map<string, StoreInventoryItem>();
     items
@@ -344,7 +343,6 @@ export default function InventoryMonitoringPage() {
     setBatchAdjustments(combinedList);
   };
 
-  // Single Restock Submission
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!restockStyleCode.trim()) return;
@@ -406,7 +404,6 @@ export default function InventoryMonitoringPage() {
     }
   };
 
-  // Bulk File Upload Parser
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -467,7 +464,6 @@ export default function InventoryMonitoringPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Confirm Bulk Import
   const handleBulkSubmit = async () => {
     if (bulkPreview.length === 0) return;
 
@@ -526,7 +522,6 @@ export default function InventoryMonitoringPage() {
     }
   };
 
-  // Manual Sales Submission
   const handleManualSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedManualItem || manualQty <= 0) return;
@@ -566,7 +561,6 @@ export default function InventoryMonitoringPage() {
           department: selectedManualItem.department || "General",
           price: unitPrice,
           quantity: manualQty,
-          revenue: totalRev,
           scanned_at: now,
         });
 
@@ -641,8 +635,15 @@ export default function InventoryMonitoringPage() {
     persistColumns(updated);
   };
 
+  // Processed Items with Store Dropdown Filtering Fixed
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
+      // 1. Store Filter Check
+      if (selectedStore !== "All Stores" && item.store !== selectedStore) {
+        return false;
+      }
+
+      // 2. Search Keyword Check
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         item.style_code?.toLowerCase().includes(q) ||
@@ -652,6 +653,7 @@ export default function InventoryMonitoringPage() {
 
       if (!matchesSearch) return false;
 
+      // 3. Stock Status Filter Check
       if (filterStockStatus === "LOW") {
         return item.current_stock > 0 && item.current_stock <= item.safety_stock;
       }
@@ -690,13 +692,12 @@ export default function InventoryMonitoringPage() {
         ? (valA ?? 0) - (typeof valB === "number" ? valB : 0)
         : (typeof valB === "number" ? valB : 0) - (valA ?? 0);
     });
-  }, [items, searchQuery, filterStockStatus, sortKey, sortDirection]);
+  }, [items, selectedStore, searchQuery, filterStockStatus, sortKey, sortDirection]);
 
   const alertItems = useMemo(() => {
     return items.filter((i) => i.current_stock <= i.safety_stock);
   }, [items]);
 
-  // Filtered list for batch modal search
   const filteredBatchAdjustments = useMemo(() => {
     const q = batchSearchQuery.toLowerCase();
     return batchAdjustments.filter(
