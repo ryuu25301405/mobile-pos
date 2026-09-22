@@ -105,19 +105,14 @@ export default function DailySalesReportPage() {
     setCurrentPage(1);
   }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
 
-  // Fetch Sales Logs with fixed UTC day boundaries
+  // Fetch Sales Logs with flexible date prefix matching
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
-
-    // Create explicit UTC start and end bounds for the selected YYYY-MM-DD string
-    const startIso = `${selectedDate}T00:00:00.000Z`;
-    const endIso = `${selectedDate}T23:59:59.999Z`;
 
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .gte("scanned_at", startIso)
-      .lte("scanned_at", endIso)
+      .ilike("scanned_at", `${selectedDate}%`)
       .order("scanned_at", { ascending: false });
 
     if (selectedStore !== "ALL") query = query.eq("store", selectedStore);
@@ -251,8 +246,10 @@ export default function DailySalesReportPage() {
       const date = new Date(item.scanned_at);
       const h = date.getHours();
       const qty = item.quantity ?? 1;
-      hours[h].revenue += Number(item.price || 0) * qty;
-      hours[h].count += qty;
+      if (!isNaN(h) && h >= 0 && h < 24) {
+        hours[h].revenue += Number(item.price || 0) * qty;
+        hours[h].count += qty;
+      }
     });
 
     const maxRevenue = Math.max(...hours.map((h) => h.revenue), 1);
