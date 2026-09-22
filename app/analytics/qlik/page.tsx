@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { logUserActivity } from "@/lib/logger";
 import * as XLSX from "xlsx-js-style";
 import {
   Filter,
@@ -63,7 +64,8 @@ import {
   FileSpreadsheet,
   FileText,
   Share2,
-  Tag
+  Tag,
+  History
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +117,15 @@ interface ProductMasterRecord {
   price: number;
 }
 
+interface AuditLogRecord {
+  id: string;
+  user_email: string;
+  action_type: string;
+  details: string;
+  store: string;
+  created_at: string;
+}
+
 type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code";
 type MeasureKey = "revenue" | "units" | "aur" | "transactions";
 
@@ -130,26 +141,10 @@ interface MeasureConfig {
 }
 
 const MEASURES: MeasureConfig[] = [
-  {
-    key: "revenue",
-    label: "Total Revenue (₱)",
-    format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
-  },
-  {
-    key: "units",
-    label: "Units Sold",
-    format: (v) => `${v.toLocaleString()} pcs`,
-  },
-  {
-    key: "aur",
-    label: "Average Unit Retail (₱)",
-    format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`,
-  },
-  {
-    key: "transactions",
-    label: "Transaction Logs",
-    format: (v) => `${v.toLocaleString()} logs`,
-  },
+  { key: "revenue", label: "Total Revenue (₱)", format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` },
+  { key: "units", label: "Units Sold", format: (v) => `${v.toLocaleString()} pcs` },
+  { key: "aur", label: "Average Unit Retail (₱)", format: (v) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` },
+  { key: "transactions", label: "Transaction Logs", format: (v) => `${v.toLocaleString()} logs` },
 ];
 
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
@@ -218,6 +213,7 @@ export default function QlikViewAnalyticsPage() {
   const [data, setData] = useState<SalesRecord[]>([]);
   const [inventoryData, setInventoryData] = useState<InventoryRecord[]>([]);
   const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [stateA, setStateA] = useState<StateSelection>(EMPTY_SELECTIONS);
@@ -231,7 +227,7 @@ export default function QlikViewAnalyticsPage() {
 
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  const [productViewMode, setProductViewMode] = useState<"consolidated" | "master_catalog" | "stores_grid" | "replenishment" | "aging_slob">("consolidated");
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "master_catalog" | "stores_grid" | "replenishment" | "aging_slob" | "audit_logs">("consolidated");
   
   const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
@@ -309,10 +305,11 @@ export default function QlikViewAnalyticsPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [logsRes, invRes, prodRes] = await Promise.all([
+    const [logsRes, invRes, prodRes, auditRes] = await Promise.all([
       supabase.from("scanned_logs").select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at").order("scanned_at", { ascending: false }),
       supabase.from("store_inventory").select("*"),
-      supabase.from("products").select("*")
+      supabase.from("products").select("*"),
+      supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100)
     ]);
 
     if (!logsRes.error && logsRes.data) {
@@ -341,13 +338,9 @@ export default function QlikViewAnalyticsPage() {
       setData(parsed);
     }
 
-    if (!invRes.error && invRes.data) {
-      setInventoryData(invRes.data as InventoryRecord[]);
-    }
-
-    if (!prodRes.error && prodRes.data) {
-      setProductsMaster(prodRes.data as ProductMasterRecord[]);
-    }
+    if (!invRes.error && invRes.data) setInventoryData(invRes.data as InventoryRecord[]);
+    if (!prodRes.error && prodRes.data) setProductsMaster(prodRes.data as ProductMasterRecord[]);
+    if (!auditRes.error && auditRes.data) setAuditLogs(auditRes.data as AuditLogRecord[]);
 
     setLoading(false);
   }, []);
@@ -391,6 +384,7 @@ export default function QlikViewAnalyticsPage() {
       setStartDate("");
       setEndDate("");
     }
+    logUserActivity("DATE_PRESET_APPLIED", `Applied filter preset: ${preset}`);
   };
 
   const saveBookmark = (e: React.FormEvent) => {
@@ -402,12 +396,14 @@ export default function QlikViewAnalyticsPage() {
     localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
     setNewBookmarkName("");
     setIsBookmarkModalOpen(false);
+    logUserActivity("PRESET_SAVED", `Saved bookmark preset: ${newBm.name}`);
   };
 
   const loadBookmark = (bm: BookmarkPreset) => {
     setStateA(() => bm.selection);
     setStartDate(bm.startDate);
     setEndDate(bm.endDate);
+    logUserActivity("PRESET_LOADED", `Loaded bookmark preset: ${bm.name}`);
   };
 
   const deleteBookmark = (id: string, e: React.MouseEvent) => {
@@ -415,6 +411,7 @@ export default function QlikViewAnalyticsPage() {
     const updated = bookmarks.filter((b) => b.id !== id);
     setBookmarks(updated);
     localStorage.setItem("qlik_analytics_bookmarks", JSON.stringify(updated));
+    logUserActivity("PRESET_DELETED", `Deleted bookmark ID: ${id}`);
   };
 
   const dateFilteredData = useMemo(() => {
@@ -806,6 +803,7 @@ export default function QlikViewAnalyticsPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Sales Analytics");
     XLSX.writeFile(workbook, `Retail_Analytics_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
     setIsExportMenuOpen(false);
+    logUserActivity("EXPORT_EXCEL", "Exported sales analytics to Excel spreadsheet");
   };
 
   const handleExportCSV = () => {
@@ -831,11 +829,13 @@ export default function QlikViewAnalyticsPage() {
     link.click();
     document.body.removeChild(link);
     setIsExportMenuOpen(false);
+    logUserActivity("EXPORT_CSV", "Exported sales analytics to CSV format");
   };
 
   const handlePrintExecutivePDF = () => {
     setIsExportMenuOpen(false);
     window.print();
+    logUserActivity("PRINT_REPORT", "Triggered executive PDF print report");
   };
 
   return (
@@ -889,6 +889,12 @@ export default function QlikViewAnalyticsPage() {
             className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
           >
             Branches
+          </button>
+          <button 
+            onClick={() => setProductViewMode("audit_logs")} 
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "audit_logs" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
+          >
+            <History className="w-3.5 h-3.5 text-purple-400"/> Audit Trail
           </button>
         </div>
 
@@ -1127,11 +1133,11 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* MAIN LAYOUT WITH UNIFIED HEIGHT & FIXED HEADER WORKSPACE */}
+      {/* MAIN LAYOUT WITH AUDIT LOG TAB SUPPORT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         
         {/* STICKY SIDEBAR FILTER PANE */}
-        {isSidebarOpen && (
+        {isSidebarOpen && productViewMode !== "audit_logs" && (
           <div className="lg:col-span-3 bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:hidden sticky top-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
@@ -1224,11 +1230,68 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH ACTIVE FACETS PILL TRAY */}
-        <div className={`space-y-4 ${isSidebarOpen ? "lg:col-span-9" : "lg:col-span-12"}`}>
+        {/* MAIN WORKSPACE AREA WITH AUDIT LOG TAB */}
+        <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9" : "lg:col-span-12"}>
 
-          {/* CONDITIONAL RENDERING: IF ALL MASTER IS SELECTED */}
-          {productViewMode === "master_catalog" ? (
+          {/* CONDITIONAL RENDERING: AUDIT LOGS VIEW */}
+          {productViewMode === "audit_logs" ? (
+            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-400">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white uppercase tracking-wide">System Audit Trail & Session Logs</h2>
+                    <p className="text-xs text-slate-400 font-mono">Real-time operational activity ledger recorded across multi-branch terminals</p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchData}
+                  className="bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Refresh Logs
+                </button>
+              </div>
+
+              <div className="relative overflow-hidden border border-slate-800 rounded-2xl h-[560px] flex flex-col bg-slate-950">
+                <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                      <tr>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Timestamp</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Action Type</th>
+                        <th className="px-5 py-3.5 border-r border-slate-800">Details / Description</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Store Context</th>
+                        <th className="px-4 py-3.5">User Operator</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80 text-xs font-mono">
+                      {auditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-16 text-center text-slate-500 italic">No audit log entries recorded yet.</td>
+                        </tr>
+                      ) : (
+                        auditLogs.map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
+                            <td className="px-4 py-3 text-slate-400 border-r border-slate-900/50">{new Date(log.created_at).toLocaleString()}</td>
+                            <td className="px-4 py-3 border-r border-slate-900/50">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                                {log.action_type}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-white border-r border-slate-900/50 font-sans">{log.details}</td>
+                            <td className="px-4 py-3 text-indigo-300 border-r border-slate-900/50">{log.store}</td>
+                            <td className="px-4 py-3 text-slate-400">{log.user_email}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : productViewMode === "master_catalog" ? (
             <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
