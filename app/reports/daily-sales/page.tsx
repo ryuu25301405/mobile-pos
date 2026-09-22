@@ -105,14 +105,18 @@ export default function DailySalesReportPage() {
     setCurrentPage(1);
   }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
 
-  // Fetch Sales Logs with flexible date prefix matching
+  // Fetch Sales Logs with precise UTC day range boundaries
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
+
+    const startIso = `${selectedDate}T00:00:00.000Z`;
+    const endIso = `${selectedDate}T23:59:59.999Z`;
 
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .ilike("scanned_at", `${selectedDate}%`)
+      .gte("scanned_at", startIso)
+      .lte("scanned_at", endIso)
       .order("scanned_at", { ascending: false });
 
     if (selectedStore !== "ALL") query = query.eq("store", selectedStore);
