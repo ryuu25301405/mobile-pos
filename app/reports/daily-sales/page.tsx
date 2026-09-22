@@ -105,19 +105,19 @@ export default function DailySalesReportPage() {
     setCurrentPage(1);
   }, [selectedDate, selectedStore, selectedDepartment, selectedCategory, searchQuery, pageSize]);
 
-  // Fetch Sales Logs
+  // Fetch Sales Logs with fixed UTC day boundaries
   const fetchDailySales = useCallback(async () => {
     setLoading(true);
 
-    const [year, month, day] = selectedDate.split("-").map(Number);
-    const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+    // Create explicit UTC start and end bounds for the selected YYYY-MM-DD string
+    const startIso = `${selectedDate}T00:00:00.000Z`;
+    const endIso = `${selectedDate}T23:59:59.999Z`;
 
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .gte("scanned_at", startDate.toISOString())
-      .lte("scanned_at", endDate.toISOString())
+      .gte("scanned_at", startIso)
+      .lte("scanned_at", endIso)
       .order("scanned_at", { ascending: false });
 
     if (selectedStore !== "ALL") query = query.eq("store", selectedStore);
