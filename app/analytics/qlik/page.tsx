@@ -642,7 +642,6 @@ export default function QlikViewAnalyticsPage() {
       filtered = filtered.filter((p) => p.department === masterCatalogDeptFilter);
     }
 
-    // FIXED: Robust unified search index ensuring color, size, style, name, and SKU are searched reliably
     if (masterCatalogSearch.trim()) {
       const q = masterCatalogSearch.toLowerCase().trim();
       filtered = filtered.filter((p) => {
