@@ -642,17 +642,26 @@ export default function QlikViewAnalyticsPage() {
       filtered = filtered.filter((p) => p.department === masterCatalogDeptFilter);
     }
 
+    // FIXED: Robust unified search index ensuring color, size, style, name, and SKU are searched reliably
     if (masterCatalogSearch.trim()) {
       const q = masterCatalogSearch.toLowerCase().trim();
-      filtered = filtered.filter(
-        (p) =>
-          (p.styleCode && p.styleCode.toLowerCase().includes(q)) ||
-          (p.styleName && p.styleName.toLowerCase().includes(q)) ||
-          (p.sku && p.sku.toLowerCase().includes(q)) ||
-          (p.store && p.store.toLowerCase().includes(q)) ||
-          (p.color && p.color.toLowerCase().includes(q)) ||
-          (p.size && p.size.toLowerCase().includes(q))
-      );
+      filtered = filtered.filter((p) => {
+        const searchableText = [
+          p.styleCode,
+          p.styleName,
+          p.sku,
+          p.store,
+          p.color,
+          p.size,
+          p.department,
+          p.category
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return searchableText.includes(q);
+      });
     }
 
     return filtered.sort((a, b) => {
@@ -743,13 +752,21 @@ export default function QlikViewAnalyticsPage() {
 
     if (!detailSearch.trim()) return classifiedList;
     const q = detailSearch.toLowerCase().trim();
-    return classifiedList.filter((p) => 
-      (p.styleCode && p.styleCode.toLowerCase().includes(q)) || 
-      (p.sku && p.sku.toLowerCase().includes(q)) || 
-      (p.styleName && p.styleName.toLowerCase().includes(q)) || 
-      (p.color && p.color.toLowerCase().includes(q)) || 
-      (p.size && p.size.toLowerCase().includes(q))
-    );
+    return classifiedList.filter((p) => {
+      const searchableText = [
+        p.styleCode,
+        p.styleName,
+        p.sku,
+        p.color,
+        p.size,
+        p.department,
+        p.category
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchableText.includes(q);
+    });
   }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
 
   const tableTotals = useMemo(() => {
@@ -776,13 +793,10 @@ export default function QlikViewAnalyticsPage() {
     if (branchModalTierFilter !== "ALL") list = list.filter((p) => p.abcClass === branchModalTierFilter);
     if (branchModalSearch.trim()) {
       const q = branchModalSearch.toLowerCase().trim();
-      list = list.filter((p) => 
-        (p.styleCode && p.styleCode.toLowerCase().includes(q)) || 
-        (p.styleName && p.styleName.toLowerCase().includes(q)) || 
-        (p.color && p.color.toLowerCase().includes(q)) || 
-        (p.size && p.size.toLowerCase().includes(q)) || 
-        (p.sku && p.sku.toLowerCase().includes(q))
-      );
+      list = list.filter((p) => {
+        const searchableText = [p.styleCode, p.styleName, p.color, p.size, p.sku].filter(Boolean).join(" ").toLowerCase();
+        return searchableText.includes(q);
+      });
     }
     return list;
   }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
