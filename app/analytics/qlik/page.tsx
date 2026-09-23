@@ -9,37 +9,26 @@ import {
   Filter,
   RotateCcw,
   Boxes,
-  BarChart3,
   Layers,
-  ArrowRightLeft,
   Check,
   X,
   TrendingUp,
   DollarSign,
   ShoppingBag,
-  CornerLeftUp,
   ChevronRight,
   Package,
   Search,
   Calendar,
   Download,
-  GitCompare,
   ArrowUpRight,
   ArrowDownRight,
-  BarChart2,
-  PieChart as PieChartIcon,
-  Table,
   ChevronDown,
   Bookmark,
-  BookmarkPlus,
   Trash2,
   ScanBarcode,
   LayoutDashboard,
-  SlidersHorizontal,
   Eye,
   Store as StoreIcon,
-  Grid,
-  List,
   Maximize2,
   Minimize2,
   Printer,
@@ -63,7 +52,6 @@ import {
   Sigma,
   FileSpreadsheet,
   FileText,
-  Share2,
   Tag,
   History
 } from "lucide-react";
@@ -556,15 +544,19 @@ export default function QlikViewAnalyticsPage() {
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
     inventoryData.forEach((inv) => {
-      stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
+      if (inv.store && inv.style_code) {
+        stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
+      }
     });
 
     const salesMap: Record<string, { units: number; revenue: number }> = {};
     data.forEach((log) => {
-      const k = `${log.store}-${log.style_code}`;
-      if (!salesMap[k]) salesMap[k] = { units: 0, revenue: 0 };
-      salesMap[k].units += log.quantity;
-      salesMap[k].revenue += log.revenue;
+      if (log.store && log.style_code) {
+        const k = `${log.store}-${log.style_code}`;
+        if (!salesMap[k]) salesMap[k] = { units: 0, revenue: 0 };
+        salesMap[k].units += log.quantity;
+        salesMap[k].revenue += log.revenue;
+      }
     });
 
     const list: Array<{
@@ -615,18 +607,20 @@ export default function QlikViewAnalyticsPage() {
       });
     } else {
       inventoryData.forEach((inv) => {
-        const k = `${inv.store}-${inv.style_code}`;
+        const st = inv.store || "Unassigned Store";
+        const styleCode = inv.style_code || "-";
+        const k = `${st}-${styleCode}`;
         const storeBreakdown: Record<string, number> = {};
         storesList.forEach(s => {
-          storeBreakdown[s] = stockMap[`${s}-${inv.style_code}`] || 0;
+          storeBreakdown[s] = stockMap[`${s}-${styleCode}`] || 0;
         });
 
         list.push({
           id: inv.id,
-          store: inv.store || "Unassigned Store",
-          styleCode: inv.style_code || "-",
+          store: st,
+          styleCode: styleCode,
           sku: inv.sku || "-",
-          styleName: inv.style_name || inv.style_code,
+          styleName: inv.style_name || styleCode,
           color: inv.color || "Default",
           size: inv.size || "Free Size",
           department: inv.department || "General",
@@ -649,15 +643,15 @@ export default function QlikViewAnalyticsPage() {
     }
 
     if (masterCatalogSearch.trim()) {
-      const q = masterCatalogSearch.toLowerCase();
+      const q = masterCatalogSearch.toLowerCase().trim();
       filtered = filtered.filter(
         (p) =>
-          p.styleCode.toLowerCase().includes(q) ||
-          p.styleName.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.store.toLowerCase().includes(q) ||
-          p.color.toLowerCase().includes(q) ||
-          p.size.toLowerCase().includes(q)
+          (p.styleCode && p.styleCode.toLowerCase().includes(q)) ||
+          (p.styleName && p.styleName.toLowerCase().includes(q)) ||
+          (p.sku && p.sku.toLowerCase().includes(q)) ||
+          (p.store && p.store.toLowerCase().includes(q)) ||
+          (p.color && p.color.toLowerCase().includes(q)) ||
+          (p.size && p.size.toLowerCase().includes(q))
       );
     }
 
@@ -748,8 +742,14 @@ export default function QlikViewAnalyticsPage() {
     });
 
     if (!detailSearch.trim()) return classifiedList;
-    const q = detailSearch.toLowerCase();
-    return classifiedList.filter((p) => p.styleCode.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.styleName.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q));
+    const q = detailSearch.toLowerCase().trim();
+    return classifiedList.filter((p) => 
+      (p.styleCode && p.styleCode.toLowerCase().includes(q)) || 
+      (p.sku && p.sku.toLowerCase().includes(q)) || 
+      (p.styleName && p.styleName.toLowerCase().includes(q)) || 
+      (p.color && p.color.toLowerCase().includes(q)) || 
+      (p.size && p.size.toLowerCase().includes(q))
+    );
   }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
 
   const tableTotals = useMemo(() => {
@@ -775,8 +775,14 @@ export default function QlikViewAnalyticsPage() {
     let list = filteredProducts.filter((p) => (p.storeBreakdown[selectedBranchDetail] || 0) > 0).sort((a, b) => (b.storeBreakdown[selectedBranchDetail] || 0) - (a.storeBreakdown[selectedBranchDetail] || 0));
     if (branchModalTierFilter !== "ALL") list = list.filter((p) => p.abcClass === branchModalTierFilter);
     if (branchModalSearch.trim()) {
-      const q = branchModalSearch.toLowerCase();
-      list = list.filter((p) => p.styleCode.toLowerCase().includes(q) || p.styleName.toLowerCase().includes(q) || p.color.toLowerCase().includes(q) || p.size.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
+      const q = branchModalSearch.toLowerCase().trim();
+      list = list.filter((p) => 
+        (p.styleCode && p.styleCode.toLowerCase().includes(q)) || 
+        (p.styleName && p.styleName.toLowerCase().includes(q)) || 
+        (p.color && p.color.toLowerCase().includes(q)) || 
+        (p.size && p.size.toLowerCase().includes(q)) || 
+        (p.sku && p.sku.toLowerCase().includes(q))
+      );
     }
     return list;
   }, [filteredProducts, selectedBranchDetail, branchModalSearch, branchModalTierFilter]);
@@ -839,10 +845,10 @@ export default function QlikViewAnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black">
+    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black select-none">
       
       {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
-      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden">
+      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden select-none">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
             <LayoutDashboard className="w-5 h-5" />
@@ -949,9 +955,9 @@ export default function QlikViewAnalyticsPage() {
 
       {/* EXECUTIVE KPI STRIP */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 select-none">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl animate-pulse">
+            <div key={i} className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl animate-pulse select-none">
               <div className="space-y-2 w-2/3">
                 <div className="h-2.5 bg-slate-800 rounded w-1/2"></div>
                 <div className="h-6 bg-slate-800 rounded w-3/4"></div>
@@ -962,8 +968,8 @@ export default function QlikViewAnalyticsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4">
-          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4 select-none">
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
               <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
@@ -972,7 +978,7 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl"><DollarSign className="w-5 h-5" /></div>
           </div>
 
-          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold</p>
               <h3 className="text-2xl font-black text-white mt-1">{metricsA.units.toLocaleString()} pcs</h3>
@@ -981,7 +987,7 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl"><ShoppingBag className="w-5 h-5" /></div>
           </div>
 
-          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transactions</p>
               <h3 className="text-2xl font-black text-white mt-1">{metricsA.transactions.toLocaleString()} logs</h3>
@@ -990,7 +996,7 @@ export default function QlikViewAnalyticsPage() {
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl"><TrendingUp className="w-5 h-5" /></div>
           </div>
 
-          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
+          <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Unit Retail (AUR)</p>
               <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
@@ -1002,7 +1008,7 @@ export default function QlikViewAnalyticsPage() {
       )}
 
       {/* FILTER, DATE RANGE & CONTROLS BAR */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden">
+      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden select-none">
         <div className="flex flex-wrap items-center gap-2.5">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -1013,7 +1019,7 @@ export default function QlikViewAnalyticsPage() {
           </button>
 
           {/* QUICK DATE RANGE PRESETS CHIP BAR */}
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 select-none">
             <CalendarDays className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
             <button onClick={() => applyDatePreset("today")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Today</button>
             <button onClick={() => applyDatePreset("yesterday")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Yesterday</button>
@@ -1022,7 +1028,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
 
           {/* CUSTOM DATE INPUT PICKERS */}
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs">
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs select-none">
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <input
               type="date"
@@ -1047,7 +1053,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 select-none">
           {/* TABLE ROW DENSITY TOGGLE */}
           <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
             <button
@@ -1079,7 +1085,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* ACTIVE FACETS PILL TRAY */}
       {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0) && (
-        <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden">
+        <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden select-none">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold mr-1">
             <Tag className="w-3.5 h-3.5 text-emerald-400" />
             <span>Active Filters:</span>
@@ -1134,11 +1140,11 @@ export default function QlikViewAnalyticsPage() {
       )}
 
       {/* MAIN LAYOUT WITH AUDIT LOG TAB SUPPORT */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start select-none">
         
         {/* STICKY SIDEBAR FILTER PANE */}
         {isSidebarOpen && productViewMode !== "audit_logs" && (
-          <div className="lg:col-span-3 bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:hidden sticky top-4">
+          <div className="lg:col-span-3 bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:hidden sticky top-4 select-none">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-emerald-400" />
@@ -1231,11 +1237,11 @@ export default function QlikViewAnalyticsPage() {
         )}
 
         {/* MAIN WORKSPACE AREA WITH AUDIT LOG TAB */}
-        <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9" : "lg:col-span-12"}>
+        <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9 select-none" : "lg:col-span-12 select-none"}>
 
           {/* CONDITIONAL RENDERING: AUDIT LOGS VIEW */}
           {productViewMode === "audit_logs" ? (
-            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4 select-none">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-400">
@@ -1292,7 +1298,7 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
           ) : productViewMode === "master_catalog" ? (
-            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4 select-none">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
@@ -1559,10 +1565,10 @@ export default function QlikViewAnalyticsPage() {
           ) : (
 
           /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH SKELETONS & STICKY FOOTER */
-          <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none">
+          <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none select-none">
             
             {/* Workspace Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden select-none">
               <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
                 <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
               </button>
@@ -1574,12 +1580,12 @@ export default function QlikViewAnalyticsPage() {
             </div>
 
             {/* EXPANDED SIDE-BY-SIDE GRID WITH UNIFIED HEIGHT */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1 select-none">
               
               {/* LEFT PANEL: CHART STAGE */}
               {expandedPanel !== "table" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
-                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
+                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 select-none">
                     <div className="flex items-center gap-2.5">
                       <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
                       <span className="text-sm font-black text-white tracking-wide uppercase">{visualizationMode === "donut" ? "Proportion Share Breakdown" : "Bar Chart Breakdown"}</span>
@@ -1607,7 +1613,7 @@ export default function QlikViewAnalyticsPage() {
                       ))}
                     </div>
                   ) : visualizationMode === "donut" ? (
-                    <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden">
+                    <div className="p-8 flex flex-col sm:flex-row items-center justify-center gap-10 flex-1 overflow-hidden select-none">
                       {graphRows.length === 0 ? (
                         <div className="w-full text-center space-y-3">
                           <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
@@ -1633,19 +1639,19 @@ export default function QlikViewAnalyticsPage() {
                                 );
                               })}
                             </svg>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none select-none">
                               <span className="text-xs uppercase font-bold text-slate-400">Total</span>
                               <span className="text-base font-black text-white">{graphRows.length} items</span>
                             </div>
                           </div>
-                          <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[420px] [scrollbar-width:thin]">
+                          <div className="space-y-2.5 overflow-y-auto pr-2 w-full sm:w-72 max-h-[420px] [scrollbar-width:thin] select-none">
                             {graphRows.map((row) => (
-                              <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm">
-                                <div className="flex items-center gap-2.5 truncate mr-2">
+                              <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 cursor-pointer transition shadow-sm select-none">
+                                <div className="flex items-center gap-2.5 truncate mr-2 select-none">
                                   <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                                  <span className="font-semibold text-white truncate text-sm">{row.label}</span>
+                                  <span className="font-semibold text-white truncate text-sm select-none">{row.label}</span>
                                 </div>
-                                <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm">{row.share.toFixed(1)}%</div>
+                                <div className="font-mono text-emerald-400 font-bold shrink-0 text-sm select-none">{row.share.toFixed(1)}%</div>
                               </div>
                             ))}
                           </div>
@@ -1653,11 +1659,11 @@ export default function QlikViewAnalyticsPage() {
                       )}
                     </div>
                   ) : (
-                    <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col">
-                      <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin]">
+                    <div className="p-6 space-y-3.5 flex-1 overflow-hidden flex flex-col select-none">
+                      <div className="overflow-y-auto space-y-3 pr-1 flex-1 [scrollbar-width:thin] select-none">
                         {graphRows.length === 0 ? (
-                          <div className="h-full flex items-center justify-center p-12 text-center">
-                            <div className="space-y-3">
+                          <div className="h-full flex items-center justify-center p-12 text-center select-none">
+                            <div className="space-y-3 select-none">
                               <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
                                 <FolderSearch className="w-6 h-6" />
                               </div>
@@ -1673,15 +1679,15 @@ export default function QlikViewAnalyticsPage() {
                             const pct = Math.max(6, (row.measureValue / maxGraphMeasureValue) * 100);
                             const displayVal = activeMeasure.key === "units" ? `${row.units.toLocaleString()} pcs` : activeMeasure.key === "transactions" ? `${row.count.toLocaleString()} logs` : activeMeasure.key === "aur" ? `₱${row.aur.toFixed(2)}` : `₱${row.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
                             return (
-                              <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm">
-                                <div className="flex items-center justify-between text-sm">
-                                  <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2">{row.label}</span>
-                                  <div className="flex items-center gap-3 font-mono shrink-0">
-                                    <span className="text-xs text-slate-400">{row.share.toFixed(1)}%</span>
-                                    <span className="font-black text-emerald-400">{displayVal}</span>
+                              <div key={row.label} onClick={() => toggleSelection(graphDimensionKey, row.label)} className="bg-slate-900/60 border border-slate-700/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition space-y-2 group shadow-sm select-none">
+                                <div className="flex items-center justify-between text-sm select-none">
+                                  <span className="font-bold text-white group-hover:text-emerald-400 transition truncate mr-2 select-none">{row.label}</span>
+                                  <div className="flex items-center gap-3 font-mono shrink-0 select-none">
+                                    <span className="text-xs text-slate-400 select-none">{row.share.toFixed(1)}%</span>
+                                    <span className="font-black text-emerald-400 select-none">{displayVal}</span>
                                   </div>
                                 </div>
-                                <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden">
+                                <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden select-none">
                                   <div style={{ width: `${pct}%`, backgroundColor: row.color }} className="h-full rounded-full transition-all duration-500" />
                                 </div>
                               </div>
@@ -1697,7 +1703,7 @@ export default function QlikViewAnalyticsPage() {
               {/* RIGHT PANEL: PRODUCT CATALOG WITH SKELETON LOADERS */}
               {expandedPanel !== "graph" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
-                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0">
+                  <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 select-none">
                     <div className="flex items-center gap-2.5">
                       <div className="w-2.5 h-5 bg-emerald-500 rounded-full"></div>
                       <Package className="w-4 h-4 text-emerald-400" />
@@ -1714,37 +1720,37 @@ export default function QlikViewAnalyticsPage() {
                   </div>
 
                   {/* FIXED CONTAINER WITH STICKY FOOTER TOTALS */}
-                  <div className="relative flex-1 overflow-hidden flex flex-col">
+                  <div className="relative flex-1 overflow-hidden flex flex-col select-none">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                       
                       {productViewMode === "consolidated" && (
-                        <table className="w-full text-left text-xs border-collapse table-fixed">
+                        <table className="w-full text-left text-xs border-collapse table-fixed select-none">
                           <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                             <tr>
-                              <th style={{ width: columnWidths.style }} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
-                                <div className="truncate">Style Name / Details</div>
+                              <th style={{ width: columnWidths.style }} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 relative group select-none">
+                                <div className="truncate select-none">Style Name / Details</div>
                                 <div onMouseDown={(e) => handleResizeStart(e, "style")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
                               </th>
-                              <th style={{ width: columnWidths.class }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
-                                <div className="truncate">Class</div>
+                              <th style={{ width: columnWidths.class }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group select-none">
+                                <div className="truncate select-none">Class</div>
                                 <div onMouseDown={(e) => handleResizeStart(e, "class")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
                               </th>
-                              <th style={{ width: columnWidths.variant }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group">
-                                <div className="truncate">Color & Size</div>
+                              <th style={{ width: columnWidths.variant }} className="px-3 py-3.5 border-r border-slate-800 bg-slate-900 relative group select-none">
+                                <div className="truncate select-none">Color & Size</div>
                                 <div onMouseDown={(e) => handleResizeStart(e, "variant")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
                               </th>
-                              <th style={{ width: columnWidths.price }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group">
-                                <div className="truncate">Price</div>
+                              <th style={{ width: columnWidths.price }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group select-none">
+                                <div className="truncate select-none">Price</div>
                                 <div onMouseDown={(e) => handleResizeStart(e, "price")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
                               </th>
-                              <th style={{ width: columnWidths.units }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group">
-                                <div className="truncate">Units Sold</div>
+                              <th style={{ width: columnWidths.units }} className="px-3 py-3.5 text-right border-r border-slate-800 bg-slate-900 relative group select-none">
+                                <div className="truncate select-none">Units Sold</div>
                                 <div onMouseDown={(e) => handleResizeStart(e, "units")} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500 transition-colors" />
                               </th>
-                              <th className="px-3 py-3.5 text-right print:hidden bg-slate-900 w-20">Action</th>
+                              <th className="px-3 py-3.5 text-right print:hidden bg-slate-900 w-20 select-none">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                          <tbody className="divide-y divide-slate-800/80 text-xs select-none">
                             {loading ? (
                               Array.from({ length: 6 }).map((_, idx) => (
                                 <tr key={idx} className="animate-pulse">
@@ -1776,15 +1782,15 @@ export default function QlikViewAnalyticsPage() {
                               </tr>
                             ) : (
                               filteredProducts.map((prod) => (
-                                <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                                  <td className={`px-4 font-mono border-r border-slate-900/50 truncate ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className="font-black text-emerald-400 block text-xs truncate">
+                                <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group select-none">
+                                  <td className={`px-4 font-mono border-r border-slate-900/50 truncate select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-black text-emerald-400 block text-xs truncate select-none">
                                       {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 block truncate">Code: {prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400 block truncate select-none">Code: {prod.styleCode}</span>
                                   </td>
-                                  <td className={`px-3 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
+                                  <td className={`px-3 whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border select-none ${
                                       prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                       prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                                       "bg-slate-800 text-slate-400 border-slate-700"
@@ -1792,13 +1798,13 @@ export default function QlikViewAnalyticsPage() {
                                       {prod.abcClass}
                                     </span>
                                   </td>
-                                  <td className={`px-3 border-r border-slate-900/50 truncate ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className="text-white block font-semibold truncate">{prod.color}</span>
-                                    <span className="text-[10px] text-slate-400 block truncate">{prod.size}</span>
+                                  <td className={`px-3 border-r border-slate-900/50 truncate select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="text-white block font-semibold truncate select-none">{prod.color}</span>
+                                    <span className="text-[10px] text-slate-400 block truncate select-none">{prod.size}</span>
                                   </td>
-                                  <td className={`px-3 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.price.toFixed(0)}</td>
-                                  <td className={`px-3 text-right font-mono font-bold text-emerald-400 text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units} pcs</td>
-                                  <td className={`px-3 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                  <td className={`px-3 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.price.toFixed(0)}</td>
+                                  <td className={`px-3 text-right font-mono font-bold text-emerald-400 text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units} pcs</td>
+                                  <td className={`px-3 text-right whitespace-nowrap print:hidden select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
                                       <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
@@ -1811,21 +1817,21 @@ export default function QlikViewAnalyticsPage() {
                       )}
 
                       {productViewMode === "replenishment" && (
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                        <table className="w-full text-left text-xs border-collapse select-none">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                             <tr>
-                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
-                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">Status</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Days of Supply</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Daily Vel.</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Stock vs Safety</th>
-                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 select-none">Style Variant</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 select-none">Status</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Days of Supply</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Daily Vel.</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Stock vs Safety</th>
+                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900 select-none">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                          <tbody className="divide-y divide-slate-800/80 text-xs select-none">
                             {filteredProducts.length === 0 ? (
                               <tr>
-                                <td colSpan={6} className="p-16 text-center">
+                                <td colSpan={6} className="p-16 text-center select-none">
                                   <div className="max-w-sm mx-auto space-y-3">
                                     <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
                                       <FolderSearch className="w-6 h-6" />
@@ -1837,27 +1843,27 @@ export default function QlikViewAnalyticsPage() {
                               </tr>
                             ) : (
                               filteredProducts.sort((a,b) => a.daysOfSupply - b.daysOfSupply).map((prod) => (
-                                <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group">
-                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide">{prod.styleCode}</span>
-                                    <span className="text-[10px] text-slate-400">{prod.color} ({prod.size})</span>
+                                <tr key={prod.key} className="hover:bg-slate-900/60 transition-colors group select-none">
+                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide select-none">{prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400 select-none">{prod.color} ({prod.size})</span>
                                   </td>
-                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    {prod.stockStatus === "CRITICAL" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> OUT OF STOCK</span>}
-                                    {prod.stockStatus === "WARNING" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><ShieldAlert className="w-3 h-3"/> LOW STOCK</span>}
-                                    {prod.stockStatus === "HEALTHY" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Check className="w-3 h-3"/> HEALTHY</span>}
+                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    {prod.stockStatus === "CRITICAL" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max select-none"><AlertTriangle className="w-3 h-3"/> OUT OF STOCK</span>}
+                                    {prod.stockStatus === "WARNING" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max select-none"><ShieldAlert className="w-3 h-3"/> LOW STOCK</span>}
+                                    {prod.stockStatus === "HEALTHY" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max select-none"><Check className="w-3 h-3"/> HEALTHY</span>}
                                   </td>
-                                  <td className={`px-4 text-right border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className={`font-black text-xs ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                      {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[9px] font-sans text-slate-500">Days</span>
+                                  <td className={`px-4 text-right border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className={`font-black text-xs select-none ${prod.daysOfSupply < 14 ? 'text-rose-400' : prod.daysOfSupply < 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                      {prod.daysOfSupply > 365 ? "999+" : prod.daysOfSupply.toFixed(0)} <span className="text-[9px] font-sans text-slate-500 select-none">Days</span>
                                     </span>
                                   </td>
-                                  <td className={`px-4 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.velocity.toFixed(2)}/d</td>
-                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                  <td className={`px-4 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.velocity.toFixed(2)}/d</td>
+                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <span className={prod.currentStock <= prod.safetyStock ? "text-rose-400" : "text-emerald-400"}>{prod.currentStock}</span>
                                     <span className="text-slate-500"> / {prod.safetyStock}</span>
                                   </td>
-                                  <td className={`px-5 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                  <td className={`px-5 text-right whitespace-nowrap print:hidden select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
                                       <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
@@ -1870,21 +1876,21 @@ export default function QlikViewAnalyticsPage() {
                       )}
 
                       {productViewMode === "aging_slob" && (
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                        <table className="w-full text-left text-xs border-collapse select-none">
+                          <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                             <tr>
-                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900">Style Variant</th>
-                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900">SLOB Status</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Units Sold (Period)</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Remaining Stock</th>
-                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900">Tied Capital</th>
-                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900">Action</th>
+                              <th className="px-5 py-3.5 border-r border-slate-800 bg-slate-900 select-none">Style Variant</th>
+                              <th className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 select-none">SLOB Status</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Units Sold (Period)</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Remaining Stock</th>
+                              <th className="px-4 py-3.5 text-right border-r border-slate-800 bg-slate-900 select-none">Tied Capital</th>
+                              <th className="px-5 py-3.5 text-right print:hidden bg-slate-900 select-none">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-800/80 text-xs">
+                          <tbody className="divide-y divide-slate-800/80 text-xs select-none">
                             {filteredProducts.length === 0 ? (
                               <tr>
-                                <td colSpan={6} className="p-16 text-center">
+                                <td colSpan={6} className="p-16 text-center select-none">
                                   <div className="max-w-sm mx-auto space-y-3">
                                     <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
                                       <FolderSearch className="w-6 h-6" />
@@ -1896,22 +1902,22 @@ export default function QlikViewAnalyticsPage() {
                               </tr>
                             ) : (
                               filteredProducts.sort((a,b) => b.daysOfSupply - a.daysOfSupply).map((prod) => (
-                                <tr key={prod.key} className={`transition-colors group ${prod.slobStatus === 'DEAD' ? 'bg-rose-950/10 hover:bg-rose-950/20' : 'hover:bg-slate-900/60'}`}>
-                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide">{prod.styleCode}</span>
-                                    <span className="text-[10px] text-slate-400">{prod.color} ({prod.size})</span>
+                                <tr key={prod.key} className={`transition-colors group select-none ${prod.slobStatus === 'DEAD' ? 'bg-rose-950/10 hover:bg-rose-950/20' : 'hover:bg-slate-900/60'}`}>
+                                  <td className={`px-5 font-mono border-r border-slate-900/50 space-y-1 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    <span className="font-bold text-emerald-400 block text-xs tracking-wide select-none">{prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400 select-none">{prod.color} ({prod.size})</span>
                                   </td>
-                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
-                                    {prod.slobStatus === "DEAD" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max"><AlertTriangle className="w-3 h-3"/> DEAD STOCK</span>}
-                                    {prod.slobStatus === "SLOW" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max"><Clock className="w-3 h-3"/> SLOW MOVING</span>}
-                                    {prod.slobStatus === "ACTIVE" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max"><Activity className="w-3 h-3"/> ACTIVE</span>}
+                                  <td className={`px-4 whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                    {prod.slobStatus === "DEAD" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-rose-500/10 text-rose-400 border-rose-500/30 flex items-center gap-1 w-max select-none"><AlertTriangle className="w-3 h-3"/> DEAD STOCK</span>}
+                                    {prod.slobStatus === "SLOW" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 flex items-center gap-1 w-max select-none"><Clock className="w-3 h-3"/> SLOW MOVING</span>}
+                                    {prod.slobStatus === "ACTIVE" && <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1 w-max select-none"><Activity className="w-3 h-3"/> ACTIVE</span>}
                                   </td>
-                                  <td className={`px-4 text-right border-r border-slate-900/50 font-bold text-slate-300 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units}</td>
-                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 text-emerald-400 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                  <td className={`px-4 text-right border-r border-slate-900/50 font-bold text-slate-300 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units}</td>
+                                  <td className={`px-4 text-right font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 text-emerald-400 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     {prod.currentStock}
                                   </td>
-                                  <td className={`px-4 text-right text-rose-400 font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.tiedUpCapital.toLocaleString()}</td>
-                                  <td className={`px-5 text-right whitespace-nowrap print:hidden ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
+                                  <td className={`px-4 text-right text-rose-400 font-mono font-bold text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.tiedUpCapital.toLocaleString()}</td>
+                                  <td className={`px-5 text-right whitespace-nowrap print:hidden select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
                                       <Eye className="w-3 h-3" /><span>View</span>
                                     </button>
@@ -1924,10 +1930,10 @@ export default function QlikViewAnalyticsPage() {
                       )}
 
                       {productViewMode === "stores_grid" && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 select-none">
                           {storeCardsSummary.length === 0 ? (
-                            <div className="col-span-full p-16 text-center">
-                              <div className="max-w-sm mx-auto space-y-3">
+                            <div className="col-span-full p-16 text-center select-none">
+                              <div className="max-w-sm mx-auto space-y-3 select-none">
                                 <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
                                   <FolderSearch className="w-6 h-6" />
                                 </div>
@@ -1937,22 +1943,22 @@ export default function QlikViewAnalyticsPage() {
                             </div>
                           ) : (
                             storeCardsSummary.map((storeCard) => (
-                              <div key={storeCard.store} onClick={() => { setSelectedBranchDetail(storeCard.store); setBranchModalSearch(""); setBranchModalTierFilter("ALL"); setIsBranchModalExpanded(false); }} className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2.5 truncate mr-2">
+                              <div key={storeCard.store} onClick={() => { setSelectedBranchDetail(storeCard.store); setBranchModalSearch(""); setBranchModalTierFilter("ALL"); setIsBranchModalExpanded(false); }} className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-2xl p-4 cursor-pointer transition space-y-3 group shadow-xl select-none">
+                                <div className="flex items-center justify-between select-none">
+                                  <div className="flex items-center gap-2.5 truncate mr-2 select-none">
                                     <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition shrink-0"><Building2 className="w-4 h-4" /></div>
-                                    <h4 className="font-bold text-white text-xs truncate">{storeCard.store}</h4>
+                                    <h4 className="font-bold text-white text-xs truncate select-none">{storeCard.store}</h4>
                                   </div>
-                                  <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition shrink-0" />
+                                  <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition shrink-0 select-none" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs font-mono">
-                                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                                    <span className="text-[9px] text-slate-500 uppercase block font-sans">Units Sold</span>
-                                    <span className="text-emerald-400 font-bold text-sm">{storeCard.totalUnits.toLocaleString()} pcs</span>
+                                <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs font-mono select-none">
+                                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60 select-none">
+                                    <span className="text-[9px] text-slate-500 uppercase block font-sans select-none">Units Sold</span>
+                                    <span className="text-emerald-400 font-bold text-sm select-none">{storeCard.totalUnits.toLocaleString()} pcs</span>
                                   </div>
-                                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                                    <span className="text-[9px] text-slate-500 uppercase block font-sans">Branch Revenue</span>
-                                    <span className="text-indigo-400 font-bold text-sm">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
+                                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/60 select-none">
+                                    <span className="text-[9px] text-slate-500 uppercase block font-sans select-none">Branch Revenue</span>
+                                    <span className="text-indigo-400 font-bold text-sm select-none">₱{storeCard.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 0 })}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1964,15 +1970,15 @@ export default function QlikViewAnalyticsPage() {
 
                     {/* STICKY FOOTER SUMMARY ROW FOR CONSOLIDATED VIEW */}
                     {productViewMode === "consolidated" && filteredProducts.length > 0 && (
-                      <div className="bg-slate-900 border-t-2 border-emerald-500/40 px-5 py-3 flex items-center justify-between text-xs font-mono font-bold text-white shrink-0 shadow-lg">
-                        <div className="flex items-center gap-2">
-                          <Sigma className="w-4 h-4 text-emerald-400" />
-                          <span>Filtered Totals ({filteredProducts.length} styles):</span>
+                      <div className="bg-slate-900 border-t-2 border-emerald-500/40 px-5 py-3 flex items-center justify-between text-xs font-mono font-bold text-white shrink-0 shadow-lg select-none">
+                        <div className="flex items-center gap-2 select-none">
+                          <Sigma className="w-4 h-4 text-emerald-400 select-none" />
+                          <span className="select-none">Filtered Totals ({filteredProducts.length} styles):</span>
                         </div>
-                        <div className="flex items-center gap-6">
-                          <span>Avg Price: <strong className="text-indigo-400">₱{tableTotals.avgPrice.toFixed(2)}</strong></span>
-                          <span>Total Units: <strong className="text-emerald-400">{tableTotals.totalUnits.toLocaleString()} pcs</strong></span>
-                          <span className="text-emerald-300">Est. Revenue: <strong>₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</strong></span>
+                        <div className="flex items-center gap-6 select-none">
+                          <span className="select-none">Avg Price: <strong className="text-indigo-400 select-none">₱{tableTotals.avgPrice.toFixed(2)}</strong></span>
+                          <span className="select-none">Total Units: <strong className="text-emerald-400 select-none">{tableTotals.totalUnits.toLocaleString()} pcs</strong></span>
+                          <span className="text-emerald-300 select-none">Est. Revenue: <strong className="select-none">₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</strong></span>
                         </div>
                       </div>
                     )}
@@ -1987,41 +1993,41 @@ export default function QlikViewAnalyticsPage() {
 
       {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH EXPANDED VIEW TOGGLE */}
       {selectedBranchDetail && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col ${
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
+          <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col select-none ${
             isBranchModalExpanded ? "w-full h-full max-w-none max-h-none m-2" : "w-full max-w-2xl max-h-[90vh]"
           }`}>
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
-                  <Building2 className="w-5 h-5" />
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0 select-none">
+              <div className="flex items-center gap-3 select-none">
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl select-none">
+                  <Building2 className="w-5 h-5 select-none" />
                 </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Branch Inventory Breakdown</span>
-                  <h2 className="text-base font-bold text-white">{selectedBranchDetail}</h2>
+                <div className="select-none">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 select-none">Branch Inventory Breakdown</span>
+                  <h2 className="text-base font-bold text-white select-none">{selectedBranchDetail}</h2>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 select-none">
                 <button
                   onClick={() => setIsBranchModalExpanded(!isBranchModalExpanded)}
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer"
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer select-none"
                   title={isBranchModalExpanded ? "Minimize Modal" : "Expand Full Screen"}
                 >
                   {isBranchModalExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={() => setSelectedBranchDetail(null)}
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer"
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer select-none"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1 shrink-0">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="flex flex-wrap items-center gap-3 pt-1 shrink-0 select-none">
+              <div className="relative flex-1 select-none">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 select-none" />
                 <input
                   type="text"
                   placeholder="Search style code, name, color..."
@@ -2032,13 +2038,13 @@ export default function QlikViewAnalyticsPage() {
                 />
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
-                <span className="text-[10px] uppercase text-slate-500 font-bold px-2">Tier:</span>
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs select-none">
+                <span className="text-[10px] uppercase text-slate-500 font-bold px-2 select-none">Tier:</span>
                 {(["ALL", "A", "B", "C"] as const).map((tier) => (
                   <button
                     key={tier}
                     onClick={() => setBranchModalTierFilter(tier)}
-                    className={`px-3 py-1 rounded-lg transition font-bold text-xs ${
+                    className={`px-3 py-1 rounded-lg transition font-bold text-xs select-none ${
                       branchModalTierFilter === tier
                         ? "bg-emerald-500 text-slate-950"
                         : "text-slate-400 hover:text-white"
@@ -2050,24 +2056,24 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            <div className={`overflow-y-auto space-y-2 pr-1 flex-1 [scrollbar-width:thin]`}>
+            <div className={`overflow-y-auto space-y-2 pr-1 flex-1 [scrollbar-width:thin] select-none`}>
               {selectedBranchProducts.length === 0 ? (
-                <div className="p-16 text-center">
-                  <div className="max-w-sm mx-auto space-y-3">
-                    <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500">
-                      <FolderSearch className="w-6 h-6" />
+                <div className="p-16 text-center select-none">
+                  <div className="max-w-sm mx-auto space-y-3 select-none">
+                    <div className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-500 select-none">
+                      <FolderSearch className="w-6 h-6 select-none" />
                     </div>
-                    <h4 className="font-bold text-white text-sm">No Branch Items Found</h4>
-                    <p className="text-xs text-slate-400">No products match your search or tier filter for this store.</p>
+                    <h4 className="font-bold text-white text-sm select-none">No Branch Items Found</h4>
+                    <p className="text-xs text-slate-400 select-none">No products match your search or tier filter for this store.</p>
                   </div>
                 </div>
               ) : (
                 selectedBranchProducts.map((prod) => (
-                  <div key={prod.key} className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl flex items-center justify-between text-xs">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white block text-sm">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
-                        <span className={`text-[10px] font-black px-2 py-0.2 rounded border ${
+                  <div key={prod.key} className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl flex items-center justify-between text-xs select-none">
+                    <div className="space-y-1 select-none">
+                      <div className="flex items-center gap-2 select-none">
+                        <span className="font-bold text-white block text-sm select-none">{prod.styleName !== "-" ? prod.styleName : prod.styleCode}</span>
+                        <span className={`text-[10px] font-black px-2 py-0.2 rounded border select-none ${
                           prod.abcClass === "A" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                           prod.abcClass === "B" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" :
                           "bg-slate-800 text-slate-400 border-slate-700"
@@ -2075,22 +2081,22 @@ export default function QlikViewAnalyticsPage() {
                           Class {prod.abcClass}
                         </span>
                       </div>
-                      <span className="text-[11px] text-slate-400 font-mono">Code: {prod.styleCode} • {prod.color} ({prod.size})</span>
+                      <span className="text-[11px] text-slate-400 font-mono select-none">Code: {prod.styleCode} • {prod.color} ({prod.size})</span>
                     </div>
-                    <div className="text-right font-mono">
-                      <span className="font-black text-emerald-400 text-base block">{prod.storeBreakdown[selectedBranchDetail] || 0} pcs</span>
-                      <span className="text-[11px] text-slate-500">₱{prod.price.toFixed(0)} / unit</span>
+                    <div className="text-right font-mono select-none">
+                      <span className="font-black text-emerald-400 text-base block select-none">{prod.storeBreakdown[selectedBranchDetail] || 0} pcs</span>
+                      <span className="text-[11px] text-slate-500 select-none">₱{prod.price.toFixed(0)} / unit</span>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400 shrink-0">
-              <span>Showing {selectedBranchProducts.length} items</span>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400 shrink-0 select-none">
+              <span className="select-none">Showing {selectedBranchProducts.length} items</span>
               <button
                 onClick={() => setSelectedBranchDetail(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl transition cursor-pointer select-none"
               >
                 Close Branch View
               </button>
@@ -2101,60 +2107,60 @@ export default function QlikViewAnalyticsPage() {
 
       {/* INSPECTION MODAL */}
       {inspectedProduct && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
+          <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left select-none">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 select-none">
+              <div className="select-none">
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full select-none">
                   SKU Inspection & Performance Audit
                 </span>
-                <h2 className="text-lg font-bold text-white mt-1">{inspectedProduct.styleName}</h2>
+                <h2 className="text-lg font-bold text-white mt-1 select-none">{inspectedProduct.styleName}</h2>
               </div>
-              <button onClick={() => setInspectedProduct(null)} className="text-slate-500 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800">
-                <X className="w-5 h-5" />
+              <button onClick={() => setInspectedProduct(null)} className="text-slate-500 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800 select-none">
+                <X className="w-5 h-5 select-none" />
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Style Code</p>
-                <p className="text-sm font-mono font-bold text-emerald-400 mt-0.5">{inspectedProduct.styleCode}</p>
+            <div className="grid grid-cols-3 gap-3 select-none">
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 select-none">
+                <p className="text-[10px] uppercase font-bold text-slate-500 select-none">Style Code</p>
+                <p className="text-sm font-mono font-bold text-emerald-400 mt-0.5 select-none">{inspectedProduct.styleCode}</p>
               </div>
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Variant</p>
-                <p className="text-xs font-semibold text-white mt-0.5">{inspectedProduct.color} / {inspectedProduct.size}</p>
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 select-none">
+                <p className="text-[10px] uppercase font-bold text-slate-500 select-none">Variant</p>
+                <p className="text-xs font-semibold text-white mt-0.5 select-none">{inspectedProduct.color} / {inspectedProduct.size}</p>
               </div>
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Pareto Tier</p>
-                <p className="text-xs font-bold text-indigo-400 mt-0.5">Class {inspectedProduct.abcClass}</p>
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 select-none">
+                <p className="text-[10px] uppercase font-bold text-slate-500 select-none">Pareto Tier</p>
+                <p className="text-xs font-bold text-indigo-400 mt-0.5 select-none">Class {inspectedProduct.abcClass}</p>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs px-1">
-                <span className="text-slate-400 font-bold uppercase tracking-wider">Multi-Branch Sales Breakdown</span>
-                <span className="text-slate-500 font-mono">total scan logs</span>
+            <div className="space-y-2 select-none">
+              <div className="flex items-center justify-between text-xs px-1 select-none">
+                <span className="text-slate-400 font-bold uppercase tracking-wider select-none">Multi-Branch Sales Breakdown</span>
+                <span className="text-slate-500 font-mono select-none">total scan logs</span>
               </div>
 
-              <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-52 overflow-y-auto space-y-2 pr-1 select-none">
                 {Object.entries(inspectedProduct.storeBreakdown).map(([storeName, qty]) => (
-                  <div key={storeName} className="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <StoreIcon className="w-3.5 h-3.5 text-indigo-400" />
-                      <span className="font-bold text-white">{storeName}</span>
+                  <div key={storeName} className="bg-slate-950/80 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between text-xs select-none">
+                    <div className="flex items-center gap-2 select-none">
+                      <StoreIcon className="w-3.5 h-3.5 text-indigo-400 select-none" />
+                      <span className="font-bold text-white select-none">{storeName}</span>
                     </div>
-                    <div className="flex items-center gap-4 font-mono">
-                      <span className="text-emerald-400 font-bold">{qty} pcs</span>
+                    <div className="flex items-center gap-4 font-mono select-none">
+                      <span className="text-emerald-400 font-bold select-none">{qty} pcs</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800 select-none">
               <button
                 onClick={() => setInspectedProduct(null)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer select-none"
               >
                 Close Inspection
               </button>
@@ -2165,25 +2171,25 @@ export default function QlikViewAnalyticsPage() {
 
       {/* BOOKMARKS MANAGER MODAL */}
       {isBookmarkModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
+          <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left select-none">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 select-none">
+              <div className="select-none">
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full select-none">
                   Saved Selection Presets
                 </span>
-                <h2 className="text-lg font-bold text-white mt-1">Bookmarks Manager</h2>
+                <h2 className="text-lg font-bold text-white mt-1 select-none">Bookmarks Manager</h2>
               </div>
-              <button onClick={() => setIsBookmarkModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsBookmarkModalOpen(false)} className="text-slate-500 hover:text-white cursor-pointer select-none">
+                <X className="w-5 h-5 select-none" />
               </button>
             </div>
 
-            <form onSubmit={saveBookmark} className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+            <form onSubmit={saveBookmark} className="space-y-3 select-none">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block select-none">
                 Save Current Filter State
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 select-none">
                 <input
                   type="text"
                   placeholder="e.g. Q3 Metro Gaisano Audit..."
@@ -2191,18 +2197,18 @@ export default function QlikViewAnalyticsPage() {
                   onChange={(e) => setNewBookmarkName(e.target.value)}
                   className="flex-1 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
-                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer">
+                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer select-none">
                   Save Preset
                 </button>
               </div>
             </form>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2">
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1 select-none">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2 select-none">
                 Your Saved Presets ({bookmarks.length})
               </p>
               {bookmarks.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-xs border border-slate-800 border-dashed rounded-xl">
+                <div className="p-6 text-center text-slate-500 text-xs border border-slate-800 border-dashed rounded-xl select-none">
                   No bookmarks saved yet. Configure your filters and save a preset!
                 </div>
               ) : (
@@ -2213,16 +2219,16 @@ export default function QlikViewAnalyticsPage() {
                       loadBookmark(bm);
                       setIsBookmarkModalOpen(false);
                     }}
-                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-3 rounded-xl flex items-center justify-between cursor-pointer transition group"
+                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 p-3 rounded-xl flex items-center justify-between cursor-pointer transition group select-none"
                   >
-                    <div>
-                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition">{bm.name}</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                    <div className="select-none">
+                      <p className="font-bold text-white text-xs group-hover:text-amber-400 transition select-none">{bm.name}</p>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5 select-none">
                         {bm.startDate && bm.endDate ? `${bm.startDate} to ${bm.endDate}` : "All Time"}
                       </p>
                     </div>
-                    <button onClick={(e) => deleteBookmark(bm.id, e)} className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer">
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <button onClick={(e) => deleteBookmark(bm.id, e)} className="text-slate-600 hover:text-rose-400 p-1.5 transition rounded-lg hover:bg-slate-900 cursor-pointer select-none">
+                      <Trash2 className="w-3.5 h-3.5 select-none" />
                     </button>
                   </div>
                 ))
