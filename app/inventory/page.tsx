@@ -517,7 +517,7 @@ export default function InventoryMonitoringPage() {
       setIsBulkOpen(false);
       setBulkPreview([]);
       fetchInventory();
-      alert("Bulk delivery successfully processed!");
+      alert(`Bulk delivery successfully committed to ${bulkDefaultStore}!`);
     } catch (err) {
       console.error("Bulk upload failed:", err);
       alert("An error occurred while committing bulk delivery.");
@@ -1621,12 +1621,16 @@ export default function InventoryMonitoringPage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <span className="text-xs font-semibold text-slate-400">Default Store if missing:</span>
+            {/* ENHANCED TARGET STORE ALLOCATION BANNER */}
+            <div className="bg-indigo-600/10 border border-indigo-500/30 p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block">Target Store Allocation</span>
+                <p className="text-xs text-slate-300">Since your uploaded file has no store column, select the receiving branch below:</p>
+              </div>
               <select
                 value={bulkDefaultStore}
                 onChange={(e) => setBulkDefaultStore(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none cursor-pointer"
+                className="bg-slate-950 border border-indigo-500/50 rounded-xl text-xs font-bold text-white px-3 py-2 focus:outline-none focus:border-indigo-400 cursor-pointer w-full sm:w-auto"
               >
                 {STORES.filter((s) => s !== "All Stores").map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -1638,7 +1642,7 @@ export default function InventoryMonitoringPage() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
                   <tr>
-                    <th className="px-3 py-2">Store</th>
+                    <th className="px-3 py-2">Target Store</th>
                     <th className="px-3 py-2">Style Code</th>
                     <th className="px-3 py-2">SKU</th>
                     <th className="px-3 py-2 text-right">Qty</th>
@@ -1647,7 +1651,7 @@ export default function InventoryMonitoringPage() {
                 <tbody className="divide-y divide-slate-800">
                   {bulkPreview.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-2 text-slate-300">{item.store || bulkDefaultStore}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-300">{bulkDefaultStore}</td>
                       <td className="px-3 py-2 font-mono text-emerald-400 font-bold">{item.style_code}</td>
                       <td className="px-3 py-2 font-mono text-blue-400">{item.sku || "-"}</td>
                       <td className="px-3 py-2 font-mono text-right text-white font-bold">{item.quantity}</td>
@@ -1671,7 +1675,7 @@ export default function InventoryMonitoringPage() {
                 onClick={handleBulkSubmit}
                 className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
               >
-                {bulkSubmitting ? "Processing..." : `Commit ${bulkPreview.length} Deliveries`}
+                {bulkSubmitting ? "Processing..." : `Commit ${bulkPreview.length} Deliveries to ${bulkDefaultStore}`}
               </button>
             </div>
           </div>
