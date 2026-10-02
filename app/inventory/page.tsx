@@ -32,6 +32,7 @@ import {
   X,
   Check,
   Bell,
+  Loader2,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -175,6 +176,9 @@ export default function InventoryMonitoringPage() {
   const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
   const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
+  
+  // Transaction Guard State
+  const [lastSubmittedTime, setLastSubmittedTime] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const customizerRef = useRef<HTMLDivElement>(null);
@@ -526,6 +530,12 @@ export default function InventoryMonitoringPage() {
     e.preventDefault();
     if (!selectedManualItem || manualQty <= 0) return;
 
+    // Transaction & Idempotency Guard (Blocks double clicks within 3 seconds)
+    const nowTs = Date.now();
+    if (manualSubmitting || nowTs - lastSubmittedTime < 3000) {
+      return;
+    }
+
     setManualSubmitting(true);
     setManualErrorMsg("");
     setManualSuccessMsg("");
@@ -561,11 +571,13 @@ export default function InventoryMonitoringPage() {
           department: selectedManualItem.department || "General",
           price: unitPrice,
           quantity: manualQty,
+          revenue: totalRev,
           scanned_at: now,
         });
 
       if (logErr) throw logErr;
 
+      setLastSubmittedTime(Date.now());
       setManualSuccessMsg(`Successfully encoded sale for ${manualQty} pcs of [${selectedManualItem.style_code}]!`);
       setSelectedManualItem(null);
       setManualQty(1);
@@ -1814,9 +1826,16 @@ export default function InventoryMonitoringPage() {
                     <button
                       type="submit"
                       disabled={manualSubmitting || selectedManualItem.current_stock <= 0}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2"
                     >
-                      {manualSubmitting ? "Encoding..." : "Confirm & Deduct Stock"}
+                      {manualSubmitting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                          <span>Encoding...</span>
+                        </>
+                      ) : (
+                        <span>Confirm & Deduct Stock</span>
+                      )}
                     </button>
                   </div>
                 </form>
