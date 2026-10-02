@@ -487,8 +487,9 @@ export default function InventoryMonitoringPage() {
         if (checkErr) throw checkErr;
 
         if (existing) {
-          const newInitial = (Number(existing.initial_stock) || 0) + item.quantity;
-          const newCurrent = (Number(existing.current_stock) || 0) + item.quantity;
+          const newInitial = Number(item.quantity);
+          const currentOut = Math.max(0, (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0));
+          const newCurrent = Math.max(0, newInitial - currentOut);
 
           await supabase
             .from("store_inventory")
