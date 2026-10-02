@@ -1610,8 +1610,8 @@ export default function InventoryMonitoringPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="text-base font-bold text-white">Bulk Delivery Preview</h3>
-                <p className="text-xs text-slate-400">{bulkPreview.length} items parsed from spreadsheet</p>
+                <h3 className="text-base font-bold text-white">Bulk Delivery Preview & Store Allocation</h3>
+                <p className="text-xs text-slate-400">{bulkPreview.length} items parsed from file ({bulkDefaultStore})</p>
               </div>
               <button
                 onClick={() => setIsBulkOpen(false)}
@@ -1621,16 +1621,20 @@ export default function InventoryMonitoringPage() {
               </button>
             </div>
 
-            {/* ENHANCED TARGET STORE ALLOCATION BANNER */}
-            <div className="bg-indigo-600/10 border border-indigo-500/30 p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+            {/* PROMINENT STORE LOCATION SELECTOR BANNER */}
+            <div className="bg-indigo-600/15 border border-indigo-500/40 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block">Target Store Allocation</span>
-                <p className="text-xs text-slate-300">Since your uploaded file has no store column, select the receiving branch below:</p>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block">Select Target Store Location</span>
+                <p className="text-xs text-slate-300">Choose where these items will be delivered and stocked:</p>
               </div>
               <select
                 value={bulkDefaultStore}
-                onChange={(e) => setBulkDefaultStore(e.target.value)}
-                className="bg-slate-950 border border-indigo-500/50 rounded-xl text-xs font-bold text-white px-3 py-2 focus:outline-none focus:border-indigo-400 cursor-pointer w-full sm:w-auto"
+                onChange={(e) => {
+                  const newStore = e.target.value;
+                  setBulkDefaultStore(newStore);
+                  setBulkPreview((prev) => prev.map((item) => ({ ...item, store: newStore })));
+                }}
+                className="bg-slate-950 border border-indigo-500/60 rounded-xl text-xs font-bold text-white px-3.5 py-2.5 focus:outline-none focus:border-indigo-400 cursor-pointer w-full sm:w-auto shadow-inner"
               >
                 {STORES.filter((s) => s !== "All Stores").map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -1642,7 +1646,7 @@ export default function InventoryMonitoringPage() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
                   <tr>
-                    <th className="px-3 py-2">Target Store</th>
+                    <th className="px-3 py-2">Store Location</th>
                     <th className="px-3 py-2">Style Code</th>
                     <th className="px-3 py-2">SKU</th>
                     <th className="px-3 py-2 text-right">Qty</th>
@@ -1651,7 +1655,7 @@ export default function InventoryMonitoringPage() {
                 <tbody className="divide-y divide-slate-800">
                   {bulkPreview.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-2 font-bold text-indigo-300">{bulkDefaultStore}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-300">{item.store || bulkDefaultStore}</td>
                       <td className="px-3 py-2 font-mono text-emerald-400 font-bold">{item.style_code}</td>
                       <td className="px-3 py-2 font-mono text-blue-400">{item.sku || "-"}</td>
                       <td className="px-3 py-2 font-mono text-right text-white font-bold">{item.quantity}</td>
@@ -1673,7 +1677,7 @@ export default function InventoryMonitoringPage() {
                 type="button"
                 disabled={bulkSubmitting || bulkPreview.length === 0}
                 onClick={handleBulkSubmit}
-                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition cursor-pointer disabled:opacity-50 shadow-lg"
               >
                 {bulkSubmitting ? "Processing..." : `Commit ${bulkPreview.length} Deliveries to ${bulkDefaultStore}`}
               </button>
