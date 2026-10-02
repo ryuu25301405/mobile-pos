@@ -553,11 +553,18 @@ export default function InventoryMonitoringPage() {
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
-      const { error: invErr } = await supabase
+      // STRICT TARGETED UPDATE: Match by Store and Style Code (and ID if present)
+      let updateQuery = supabase
         .from("store_inventory")
         .update({ current_stock: newCurrentStock })
-        .eq("id", selectedManualItem.id);
+        .eq("store", manualStore)
+        .eq("style_code", selectedManualItem.style_code);
 
+      if (selectedManualItem.id) {
+        updateQuery = updateQuery.eq("id", selectedManualItem.id);
+      }
+
+      const { error: invErr } = await updateQuery;
       if (invErr) throw invErr;
 
       const { error: logErr } = await supabase
