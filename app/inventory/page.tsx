@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 
 interface StoreInventoryItem {
-  id?: string;
+  id: string; // Guaranteed unique row primary key
   store: string;
   style_code: string;
   sku: string | null;
@@ -265,7 +265,7 @@ export default function InventoryMonitoringPage() {
           const matchedLog = logMap[row.style_code] || {};
 
           return {
-            id: row.id,
+            id: row.id, // Must be the unique UUID primary key from store_inventory
             store: row.store,
             style_code: row.style_code || "-",
             sku: row.sku || matchedLog.sku || null,
@@ -548,23 +548,21 @@ export default function InventoryMonitoringPage() {
         return;
       }
 
+      if (!selectedManualItem.id) {
+        throw new Error("Selected item is missing a unique database row ID. Please refresh inventory.");
+      }
+
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
       const unitPrice = manualPrice ? Number(manualPrice) : (selectedManualItem.price || 299.00);
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
-      // STRICT TARGETED UPDATE: Match by Store and Style Code (and ID if present)
-      let updateQuery = supabase
+      // ABSOLUTE ISOLATION: Update strictly by the exact row UUID primary key (`id`)
+      const { error: invErr } = await supabase
         .from("store_inventory")
         .update({ current_stock: newCurrentStock })
-        .eq("store", manualStore)
-        .eq("style_code", selectedManualItem.style_code);
+        .eq("id", selectedManualItem.id);
 
-      if (selectedManualItem.id) {
-        updateQuery = updateQuery.eq("id", selectedManualItem.id);
-      }
-
-      const { error: invErr } = await updateQuery;
       if (invErr) throw invErr;
 
       const { error: logErr } = await supabase
@@ -1783,7 +1781,7 @@ export default function InventoryMonitoringPage() {
                     >
                       <div>
                         <span className="font-mono font-bold text-emerald-400 block">{item.style_name || item.style_code}</span>
-                        <span className="text-[10px] text-slate-400">Code: {item.style_code} • SKU: {item.sku || "-"}</span>
+                        <span className="text-[10px] text-slate-400">Code: {item.style_code} • SKU: {item.sku || "-"} • ID: {item.id}</span>
                       </div>
                       <div className="text-right font-mono">
                         <span className={`block font-bold ${item.current_stock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
@@ -1799,7 +1797,7 @@ export default function InventoryMonitoringPage() {
                 <form onSubmit={handleManualSaleSubmit} className="space-y-3 pt-2 border-t border-slate-800">
                   <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
                     <div>
-                      <span className="text-slate-400 text-[10px] uppercase block">Selected Item</span>
+                      <span className="text-slate-400 text-[10px] uppercase block">Selected Item (ID: {selectedManualItem.id})</span>
                       <span className="font-bold text-white font-mono">{selectedManualItem.style_name} ({selectedManualItem.style_code})</span>
                     </div>
                     <span className="text-emerald-400 font-mono font-bold">{selectedManualItem.current_stock} available</span>
