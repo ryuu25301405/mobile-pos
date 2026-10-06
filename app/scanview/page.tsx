@@ -81,7 +81,8 @@ export default function ScanViewPage() {
     let query = supabase
       .from("scanned_logs")
       .select("*")
-      .order("scanned_at", { ascending: false });
+      .order("scanned_at", { ascending: false })
+      .range(0, 4999); // Bypasses the default 1000-row limit
 
     if (selectedStoreFilter !== "All Stores") {
       query = query.eq("store", selectedStoreFilter);
@@ -358,7 +359,6 @@ export default function ScanViewPage() {
         </div>
 
         <div className="flex items-center space-x-2.5">
-          {/* Direct Navigation Button to Daily Sales Report */}
           <Link
             href="/reports/daily-sales"
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-indigo-500/30 shadow-lg shadow-indigo-600/10"
@@ -476,7 +476,6 @@ export default function ScanViewPage() {
 
       {/* Desktop Horizontal Control Bar */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        {/* Search */}
         <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -490,7 +489,6 @@ export default function ScanViewPage() {
           />
         </div>
 
-        {/* Store Filter */}
         <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={selectedStoreFilter}
@@ -498,39 +496,37 @@ export default function ScanViewPage() {
             className="w-full bg-transparent text-xs font-bold text-emerald-400 focus:outline-none cursor-pointer"
           >
             {STORES.map((store) => (
-              <option key={store} value={store} className="bg-slate-950 text-white font-normal">
+              <option key={store} value={store} className="bg-slate-900 text-white font-normal">
                 {store}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Grouping */}
         <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={groupBy}
             onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
             className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="store_style" className="bg-slate-950 text-white">Group: Store + QR Code</option>
-            <option value="category" className="bg-slate-950 text-white">Group: Category</option>
-            <option value="department" className="bg-slate-950 text-white">Group: Department</option>
-            <option value="none" className="bg-slate-950 text-white">Group: None (Raw Entries)</option>
+            <option value="store_style">Group: Store + QR Code</option>
+            <option value="category">Group: Category</option>
+            <option value="department">Group: Department</option>
+            <option value="none">Group: None (Raw Entries)</option>
           </select>
         </div>
 
-        {/* Sorting */}
         <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
             className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="newest" className="bg-slate-950 text-white">Sort: Newest</option>
-            <option value="oldest" className="bg-slate-950 text-white">Sort: Oldest</option>
-            <option value="qty_desc" className="bg-slate-950 text-white">Sort: Highest Qty</option>
-            <option value="qty_asc" className="bg-slate-950 text-white">Sort: Lowest Qty</option>
-            <option value="name_asc" className="bg-slate-950 text-white">Sort: Product A-Z</option>
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+            <option value="qty_desc">Sort: Highest Qty</option>
+            <option value="qty_asc">Sort: Lowest Qty</option>
+            <option value="name_asc">Sort: Product A-Z</option>
           </select>
         </div>
       </section>
@@ -668,10 +664,10 @@ export default function ScanViewPage() {
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
                   className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
                 >
-                  <option value={10} className="bg-slate-950 text-white">10</option>
-                  <option value={25} className="bg-slate-950 text-white">25</option>
-                  <option value={50} className="bg-slate-950 text-white">50</option>
-                  <option value={100} className="bg-slate-950 text-white">100</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
                 </select>
               </div>
             </div>
