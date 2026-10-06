@@ -78,38 +78,54 @@ export default function ScanViewPage() {
 
   const fetchScannedLogs = useCallback(async () => {
     setLoading(true);
-    let query = supabase
-      .from("scanned_logs")
-      .select("*")
-      .order("scanned_at", { ascending: false })
-      .range(0, 4999); // Bypasses the default 1000-row limit
+    let allData: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let fetchMore = true;
 
-    if (selectedStoreFilter !== "All Stores") {
-      query = query.eq("store", selectedStoreFilter);
+    while (fetchMore) {
+      let query = supabase
+        .from("scanned_logs")
+        .select("*")
+        .order("scanned_at", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (selectedStoreFilter !== "All Stores") {
+        query = query.eq("store", selectedStoreFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error || !data || data.length === 0) {
+        fetchMore = false;
+      } else {
+        allData = [...allData, ...data];
+        if (data.length < pageSize) {
+          fetchMore = false;
+        } else {
+          page++;
+        }
+      }
     }
 
-    const { data, error } = await query;
+    const logs: RawLogItem[] = allData.map((item: any) => ({
+      id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
+      store: item.store || "Unassigned Store",
+      styleCode: item.style_code || "N/A",
+      sku: item.sku || "-",
+      styleName: item.style_name || "Unassigned Item",
+      description: item.description || "",
+      color: item.color || "-",
+      category: item.category || "-",
+      department: item.department || "-",
+      size: item.size || "-",
+      price: Number(item.price) || 0,
+      quantity: item.quantity || 1,
+      rawTimestamp: item.scanned_at || "",
+      timestamp: formatTimestamp(item.scanned_at),
+    }));
 
-    if (!error && data) {
-      const logs: RawLogItem[] = data.map((item: any) => ({
-        id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-        store: item.store || "Unassigned Store",
-        styleCode: item.style_code || "N/A",
-        sku: item.sku || "-",
-        styleName: item.style_name || "Unassigned Item",
-        description: item.description || "",
-        color: item.color || "-",
-        category: item.category || "-",
-        department: item.department || "-",
-        size: item.size || "-",
-        price: Number(item.price) || 0,
-        quantity: item.quantity || 1,
-        rawTimestamp: item.scanned_at || "",
-        timestamp: formatTimestamp(item.scanned_at),
-      }));
-
-      setRawLogs(logs);
-    }
+    setRawLogs(logs);
     setLoading(false);
   }, [selectedStoreFilter]);
 
