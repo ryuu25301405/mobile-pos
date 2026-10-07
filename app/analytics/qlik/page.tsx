@@ -291,23 +291,69 @@ export default function QlikViewAnalyticsPage() {
 
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
+  // CHUNKED FETCHING TO BYPASS SUPABASE 1000-ROW LIMIT WITH STORE NAME NORMALIZATION
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [logsRes, invRes, prodRes, auditRes] = await Promise.all([
-      supabase.from("scanned_logs").select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at").order("scanned_at", { ascending: false }),
-      supabase.from("store_inventory").select("*"),
+
+    let allLogs: any[] = [];
+    let logPage = 0;
+    const pageSize = 1000;
+    let fetchMoreLogs = true;
+
+    while (fetchMoreLogs) {
+      const { data: chunk, error } = await supabase
+        .from("scanned_logs")
+        .select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at")
+        .order("scanned_at", { ascending: false })
+        .range(logPage * pageSize, (logPage + 1) * pageSize - 1);
+
+      if (error || !chunk || chunk.length === 0) {
+        fetchMoreLogs = false;
+      } else {
+        allLogs = [...allLogs, ...chunk];
+        if (chunk.length < pageSize) {
+          fetchMoreLogs = false;
+        } else {
+          logPage++;
+        }
+      }
+    }
+
+    let allInv: any[] = [];
+    let invPage = 0;
+    let fetchMoreInv = true;
+
+    while (fetchMoreInv) {
+      const { data: chunk, error } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .range(invPage * pageSize, (invPage + 1) * pageSize - 1);
+
+      if (error || !chunk || chunk.length === 0) {
+        fetchMoreInv = false;
+      } else {
+        allInv = [...allInv, ...chunk];
+        if (chunk.length < pageSize) {
+          fetchMoreInv = false;
+        } else {
+          invPage++;
+        }
+      }
+    }
+
+    const [prodRes, auditRes] = await Promise.all([
       supabase.from("products").select("*"),
       supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100)
     ]);
 
-    if (!logsRes.error && logsRes.data) {
-      const parsed: SalesRecord[] = logsRes.data.map((row: any) => {
+    if (allLogs.length > 0) {
+      const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
         const pr = Number(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
-          store: row.store || "Unassigned Store",
+          store: row.store ? row.store.trim() : "Unassigned Store",
           style_code: row.style_code || "Unknown Style",
           sku: row.sku || "-",
           style_name: row.style_name || "Unassigned Item",
@@ -326,7 +372,13 @@ export default function QlikViewAnalyticsPage() {
       setData(parsed);
     }
 
-    if (!invRes.error && invRes.data) setInventoryData(invRes.data as InventoryRecord[]);
+    if (allInv.length > 0) {
+      const normalizedInv = allInv.map((inv: any) => ({
+        ...inv,
+        store: inv.store ? inv.store.trim() : "Unassigned Store",
+      }));
+      setInventoryData(normalizedInv as InventoryRecord[]);
+    }
     if (!prodRes.error && prodRes.data) setProductsMaster(prodRes.data as ProductMasterRecord[]);
     if (!auditRes.error && auditRes.data) setAuditLogs(auditRes.data as AuditLogRecord[]);
 
