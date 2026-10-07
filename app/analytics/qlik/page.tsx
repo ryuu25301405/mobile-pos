@@ -291,7 +291,7 @@ export default function QlikViewAnalyticsPage() {
 
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
-  // CHUNKED FETCHING TO BYPASS SUPABASE 1000-ROW LIMIT
+  // CHUNKED FETCHING TO BYPASS SUPABASE 1000-ROW LIMIT COMPLETELY
   const fetchData = useCallback(async () => {
     setLoading(true);
 
