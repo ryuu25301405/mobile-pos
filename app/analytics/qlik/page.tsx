@@ -114,7 +114,7 @@ interface AuditLogRecord {
   created_at: string;
 }
 
-type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code";
+type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code" | "style_name";
 type MeasureKey = "revenue" | "units" | "aur" | "transactions";
 
 interface DimensionConfig {
@@ -142,6 +142,7 @@ const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "color", label: "Color" },
   { key: "size", label: "Size" },
   { key: "style_code", label: "Style Code" },
+  { key: "style_name", label: "Style Name" },
 ];
 
 interface StateSelection {
@@ -151,6 +152,7 @@ interface StateSelection {
   colors: string[];
   sizes: string[];
   styles: string[];
+  styleNames: string[];
 }
 
 interface BookmarkPreset {
@@ -168,6 +170,7 @@ const EMPTY_SELECTIONS: StateSelection = {
   colors: [],
   sizes: [],
   styles: [],
+  styleNames: [],
 };
 
 const CHART_COLORS = [
@@ -356,12 +359,12 @@ export default function QlikViewAnalyticsPage() {
           store: row.store ? row.store.trim() : "Unassigned Store",
           style_code: row.style_code || "Unknown Style",
           sku: row.sku || "-",
-          style_name: row.style_name || "Unassigned Item",
+          style_name: row.style_name && row.style_name !== "-" ? row.style_name.trim() : "Unassigned Item",
           description: row.description || "-",
-          color: row.color && row.color !== "-" ? row.color : "Unassigned Color",
-          size: row.size && row.size !== "-" ? row.size : "Unassigned Size",
-          category: row.category && row.category !== "-" ? row.category : "Unassigned Category",
-          department: row.department && row.department !== "-" ? row.department : "Unassigned Dept",
+          color: row.color && row.color !== "-" ? row.color.trim() : "Unassigned Color",
+          size: row.size && row.size !== "-" ? row.size.trim() : "Unassigned Size",
+          category: row.category && row.category !== "-" ? row.category.trim() : "Unassigned Category",
+          department: row.department && row.department !== "-" ? row.department.trim() : "Unassigned Dept",
           price: pr,
           quantity: qty,
           revenue: pr * qty,
@@ -471,6 +474,7 @@ export default function QlikViewAnalyticsPage() {
       colors: Array.from(new Set(dateFilteredData.map((d) => d.color))).sort(),
       sizes: Array.from(new Set(dateFilteredData.map((d) => d.size))).sort(),
       styles: Array.from(new Set(dateFilteredData.map((d) => d.style_code))).sort(),
+      styleNames: Array.from(new Set(dateFilteredData.map((d) => d.style_name))).sort(),
       totalRevenue: dateFilteredData.reduce((acc, d) => acc + d.revenue, 0),
       totalUnits: dateFilteredData.reduce((acc, d) => acc + d.quantity, 0),
     };
@@ -484,7 +488,8 @@ export default function QlikViewAnalyticsPage() {
                (selection.categories.length === 0 || selection.categories.includes(row.category)) &&
                (selection.colors.length === 0 || selection.colors.includes(row.color)) &&
                (selection.sizes.length === 0 || selection.sizes.includes(row.size)) &&
-               (selection.styles.length === 0 || selection.styles.includes(row.style_code));
+               (selection.styles.length === 0 || selection.styles.includes(row.style_code)) &&
+               (selection.styleNames.length === 0 || selection.styleNames.includes(row.style_name));
       });
     },
     [dateFilteredData]
@@ -493,7 +498,7 @@ export default function QlikViewAnalyticsPage() {
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
 
   const { possibleValues, fieldFrequencies } = useMemo(() => {
-    const calcPossibleAndFreq = (targetField: "store" | "department" | "category" | "color" | "size") => {
+    const calcPossibleAndFreq = (targetField: "store" | "department" | "category" | "color" | "size" | "style_name") => {
       const subset = dateFilteredData.filter((row) => {
         const mStore = targetField === "store" || stateA.stores.length === 0 || stateA.stores.includes(row.store);
         const mDept = targetField === "department" || stateA.departments.length === 0 || stateA.departments.includes(row.department);
@@ -501,7 +506,8 @@ export default function QlikViewAnalyticsPage() {
         const mColor = targetField === "color" || stateA.colors.length === 0 || stateA.colors.includes(row.color);
         const mSize = targetField === "size" || stateA.sizes.length === 0 || stateA.sizes.includes(row.size);
         const mStyle = stateA.styles.length === 0 || stateA.styles.includes(row.style_code);
-        return mStore && mDept && mCat && mColor && mSize && mStyle;
+        const mStyleName = targetField === "style_name" || stateA.styleNames.length === 0 || stateA.styleNames.includes(row.style_name);
+        return mStore && mDept && mCat && mColor && mSize && mStyle && mStyleName;
       });
 
       const possibleSet = new Set<string>();
@@ -521,6 +527,7 @@ export default function QlikViewAnalyticsPage() {
         categories: calcPossibleAndFreq("category").possibleSet,
         colors: calcPossibleAndFreq("color").possibleSet,
         sizes: calcPossibleAndFreq("size").possibleSet,
+        styleNames: calcPossibleAndFreq("style_name").possibleSet,
       },
       fieldFrequencies: {
         stores: calcPossibleAndFreq("store").freqMap,
@@ -528,13 +535,22 @@ export default function QlikViewAnalyticsPage() {
         categories: calcPossibleAndFreq("category").freqMap,
         colors: calcPossibleAndFreq("color").freqMap,
         sizes: calcPossibleAndFreq("size").freqMap,
+        styleNames: calcPossibleAndFreq("style_name").freqMap,
       },
     };
   }, [dateFilteredData, stateA]);
 
-  const toggleSelection = (field: "store" | "department" | "category" | "color" | "size" | "style_code", value: string) => {
+  const toggleSelection = (field: "store" | "department" | "category" | "color" | "size" | "style_code" | "style_name", value: string) => {
     setStateA((prev) => {
-      const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
+      const fieldKeyMap: Record<string, keyof StateSelection> = { 
+        store: "stores", 
+        department: "departments", 
+        category: "categories", 
+        color: "colors", 
+        size: "sizes", 
+        style_code: "styles",
+        style_name: "styleNames" 
+      };
       const key = fieldKeyMap[field];
       const exists = prev[key].includes(value);
       return { ...prev, [key]: exists ? prev[key].filter((v) => v !== value) : [...prev[key], value] };
@@ -558,7 +574,7 @@ export default function QlikViewAnalyticsPage() {
   const graphRows = useMemo(() => {
     const map: Record<string, { label: string; revenue: number; units: number; count: number; aur: number }> = {};
     currentSubset.forEach((item) => {
-      const keyVal = item[graphDimensionKey] || "Unknown";
+      const keyVal = String(item[graphDimensionKey as keyof SalesRecord] ?? "Unknown");
       if (!map[keyVal]) map[keyVal] = { label: keyVal, revenue: 0, units: 0, count: 0, aur: 0 };
       map[keyVal].revenue += item.revenue;
       map[keyVal].units += item.quantity;
@@ -1140,7 +1156,7 @@ export default function QlikViewAnalyticsPage() {
           <button onClick={() => setIsBookmarkModalOpen(true)} className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
             <Bookmark className="w-3.5 h-3.5" /><span>Presets</span>
           </button>
-          {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0) && (
+          {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
             <button onClick={clearCurrentStateSelections} className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs">
               <RotateCcw className="w-3.5 h-3.5" /><span>Reset</span>
             </button>
@@ -1149,7 +1165,7 @@ export default function QlikViewAnalyticsPage() {
       </div>
 
       {/* ACTIVE FACETS PILL TRAY */}
-      {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0) && (
+      {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
         <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden select-none">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold mr-1">
             <Tag className="w-3.5 h-3.5 text-emerald-400" />
@@ -1193,8 +1209,15 @@ export default function QlikViewAnalyticsPage() {
 
           {stateA.styles.map((val) => (
             <span key={`style-${val}`} className="inline-flex items-center gap-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Style: {val}</span>
+              <span>Style Code: {val}</span>
               <button onClick={() => toggleSelection("style_code", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.styleNames.map((val) => (
+            <span key={`styleName-${val}`} className="inline-flex items-center gap-1.5 bg-teal-500/10 text-teal-300 border border-teal-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Style Name: {val}</span>
+              <button onClick={() => toggleSelection("style_name", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
             </span>
           ))}
 
@@ -1223,7 +1246,15 @@ export default function QlikViewAnalyticsPage() {
             {/* Dimension Tabs */}
             <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
               {CYCLIC_DIMENSIONS.map((dim) => {
-                const fieldKeyMap: Record<string, keyof StateSelection> = { store: "stores", department: "departments", category: "categories", color: "colors", size: "sizes", style_code: "styles" };
+                const fieldKeyMap: Record<string, keyof StateSelection> = { 
+                  store: "stores", 
+                  department: "departments", 
+                  category: "categories", 
+                  color: "colors", 
+                  size: "sizes", 
+                  style_code: "styles",
+                  style_name: "styleNames"
+                };
                 const count = stateA[fieldKeyMap[dim.key]]?.length || 0;
                 return (
                   <button
@@ -1268,6 +1299,7 @@ export default function QlikViewAnalyticsPage() {
                   color: { items: universe.colors, sel: stateA.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
                   size: { items: universe.sizes, sel: stateA.sizes, poss: possibleValues.sizes, freq: fieldFrequencies.sizes },
                   style_code: { items: universe.styles, sel: stateA.styles, poss: new Set(universe.styles), freq: {} },
+                  style_name: { items: universe.styleNames, sel: stateA.styleNames, poss: possibleValues.styleNames, freq: fieldFrequencies.styleNames },
                 };
                 const current = fieldMap[activeSidebarTab];
                 const filteredList = current.items.filter((i) => i.toLowerCase().includes(drawerSearch.toLowerCase()));
@@ -1275,7 +1307,7 @@ export default function QlikViewAnalyticsPage() {
 
                 return filteredList.map((val) => {
                   const isSelected = current.sel.includes(val);
-                  const isPossible = activeSidebarTab === "style_code" || current.poss.has(val);
+                  const isPossible = activeSidebarTab === "style_code" || activeSidebarTab === "style_name" || current.poss.has(val);
                   const freq = current.freq[val] || 0;
                   return (
                     <div
