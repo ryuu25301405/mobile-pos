@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { logUserActivity } from "@/lib/logger";
@@ -9,15 +9,11 @@ import {
   Boxes,
   CheckCircle2,
   AlertTriangle,
-  RotateCcw,
   Search,
   Building2,
   ClipboardList,
   Save,
   Check,
-  X,
-  History,
-  ShieldCheck,
   ArrowLeft,
   Package
 } from "lucide-react";
@@ -128,29 +124,33 @@ export default function PhysicalCountPage() {
     );
   };
 
+  // Commit session logs to physical_count_logs table instead of mutating store_inventory directly
   const handleCommitCount = async () => {
-    if (!confirm(`Are you sure you want to commit the physical stocktake for ${selectedStore}? This will update system inventory levels.`)) {
+    if (!confirm(`Are you sure you want to submit the physical stocktake logs for ${selectedStore}?`)) {
       return;
     }
 
     setSaving(true);
     try {
-      const updates = storeItems.map((item: InventoryItem) =>
-        supabase
-          .from("store_inventory")
-          .update({ current_stock: item.counted_stock ?? item.current_stock })
-          .eq("id", item.id)
-      );
+      const logEntries = storeItems.map((item) => ({
+        store: selectedStore,
+        style_code: item.style_code,
+        sku: item.sku || "-",
+        system_stock: item.current_stock,
+        counted_stock: item.counted_stock ?? item.current_stock,
+        status: "PENDING"
+      }));
 
-      await Promise.all(updates);
+      const { error } = await supabase.from("physical_count_logs").insert(logEntries);
 
-      await logUserActivity("PHYSICAL_COUNT_COMMIT", `Completed stocktake for ${selectedStore}. Total items counted: ${storeItems.length}`);
-      setSuccessMessage(`Successfully committed physical count for ${selectedStore}!`);
+      if (error) throw error;
+
+      await logUserActivity("PHYSICAL_COUNT_SUBMIT", `Submitted stocktake audit session for ${selectedStore}. Total items: ${storeItems.length}`);
+      setSuccessMessage(`Successfully submitted physical count session for ${selectedStore} into audit logs!`);
       setTimeout(() => setSuccessMessage(""), 4000);
-      fetchInventory();
     } catch (err) {
-      console.error("Failed to commit inventory count", err);
-      alert("Error committing count to database.");
+      console.error("Failed to commit physical count logs", err);
+      alert("Error submitting stocktake logs to database.");
     } finally {
       setSaving(false);
     }
@@ -176,10 +176,10 @@ export default function PhysicalCountPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-black tracking-tight text-white uppercase">Store Physical Stocktake & Inventory Count</span>
               <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                Count Mode
+                Audit Logging Mode
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono">Scan items or adjust counts to reconcile physical store inventory against system stock</p>
+            <p className="text-xs text-slate-400 font-mono">Scan items to log physical counts and submit audit session securely</p>
           </div>
         </div>
 
@@ -203,7 +203,7 @@ export default function PhysicalCountPage() {
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition cursor-pointer shadow-lg disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            <span>{saving ? "Committing..." : "Commit Stock Count"}</span>
+            <span>{saving ? "Submitting..." : "Submit Audit Session"}</span>
           </button>
         </div>
       </nav>
