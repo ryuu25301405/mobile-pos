@@ -132,7 +132,7 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Find the item in store_inventory for this store
+      // 1. Get system stock from store_inventory
       const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
       const inv = storeInv?.find(
         (i: any) =>
@@ -141,21 +141,20 @@ export default function PhysicalCountPage() {
           String(i.barcode || "").trim().toLowerCase() === code.toLowerCase()
       ) || {};
 
-      const lookupKey = String(inv.style_code || inv.sku || code).trim().toLowerCase();
-
-      // 2. Query the products table matching SKU
+      // 2. Query products table directly and pull exact columns: description, color, size, price, sku
       const { data: prodData } = await supabase.from("products").select("*");
       const p = prodData?.find(
         (item: any) =>
-          String(item.sku || "").trim().toLowerCase() === lookupKey ||
-          String(item.sku || "").trim().toLowerCase() === code.toLowerCase()
+          String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(item.sku || "").trim().toLowerCase() === String(inv.sku || "").trim().toLowerCase() ||
+          String(item.sku || "").trim().toLowerCase() === String(inv.style_code || "").trim().toLowerCase()
       ) || {};
 
       const newLogEntry = {
         store: targetStore,
-        style_code: inv.style_code || inv.sku || code,
+        style_code: code,
         sku: p.sku || inv.sku || code,
-        style_name: p.description || inv.style_name || inv.description || "Product " + code,
+        style_name: p.description || inv.style_name || "Product " + code,
         color: p.color || inv.color || "-",
         size: p.size || inv.size || "-",
         description: p.description || inv.description || "-",
