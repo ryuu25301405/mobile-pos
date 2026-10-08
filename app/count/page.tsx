@@ -49,13 +49,25 @@ export default function PhysicalCountPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch count logs from physical_count_logs
-  const fetchCountLogs = useCallback(async () => {
+  // Initialize store dropdown from store_inventory and load existing count logs
+  const initData = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("physical_count_logs").select("*").order("created_at", { ascending: false });
-    
-    if (!error && data) {
-      const parsed: PhysicalCountRecord[] = data.map((item: any) => ({
+
+    // 1. Fetch available stores from store_inventory table
+    const { data: invData } = await supabase.from("store_inventory").select("store");
+    if (invData && invData.length > 0) {
+      const uniqueStores = Array.from(new Set(invData.map((i: any) => i.store ? i.store.trim() : "Unassigned Store"))).sort();
+      setStores(uniqueStores);
+      setSelectedStore((prev) => prev || uniqueStores[0]);
+    } else {
+      setStores(["Main Store"]);
+      setSelectedStore("Main Store");
+    }
+
+    // 2. Fetch existing physical count logs
+    const { data: logData, error } = await supabase.from("physical_count_logs").select("*").order("created_at", { ascending: false });
+    if (!error && logData) {
+      const parsed: PhysicalCountRecord[] = logData.map((item: any) => ({
         id: String(item.id),
         store: item.store ? item.store.trim() : "Unassigned Store",
         style_code: item.style_code || "Unknown",
@@ -70,25 +82,19 @@ export default function PhysicalCountPage() {
         status: item.status || "PENDING",
         created_at: item.created_at
       }));
-
       setCountRecords(parsed);
-      const uniqueStores = Array.from(new Set(parsed.map((i) => i.store))).sort();
-      setStores(uniqueStores);
-      if (uniqueStores.length > 0 && !selectedStore) {
-        setSelectedStore(uniqueStores[0]);
-      }
     }
     setLoading(false);
-  }, [selectedStore]);
+  }, []);
 
   useEffect(() => {
-    fetchCountLogs();
-  }, [fetchCountLogs]);
+    initData();
+  }, [initData]);
 
   // Filtered rows for the selected store
   const storeRecords = useMemo(() => {
     return countRecords.filter((item) => {
-      const matchStore = !selectedStore || item.store === selectedStore;
+      const matchStore = !selectedStore || item.store.toLowerCase() === selectedStore.toLowerCase();
       const matchSearch =
         !searchQuery.trim() ||
         [item.style_code, item.style_name, item.sku, item.color, item.size, item.description]
@@ -100,16 +106,18 @@ export default function PhysicalCountPage() {
     });
   }, [countRecords, selectedStore, searchQuery]);
 
-  // Handle Barcode Scan / Enter
+  // Handle Barcode Scan / Enter with robust fallback matching
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scanInput.trim()) return;
+    const targetStore = selectedStore || stores[0] || "Main Store";
 
     const code = scanInput.trim().toLowerCase();
 
+    // 1. Check if already logged in physical_count_logs
     const existingRecord = countRecords.find(
       (item) =>
-        item.store === selectedStore &&
+        item.store.toLowerCase() === targetStore.toLowerCase() &&
         (item.style_code.toLowerCase() === code || 
          (item.sku && item.sku.toLowerCase() === code) ||
          (item.style_name && item.style_name.toLowerCase() === code))
@@ -127,14 +135,11 @@ export default function PhysicalCountPage() {
           prev.map((r) => (r.id === existingRecord.id ? { ...r, counted_stock: newCount } : r))
         );
         setLastScannedItem({ ...existingRecord, counted_stock: newCount });
-        logUserActivity("PHYSICAL_COUNT_SCAN", `Incremented count for ${existingRecord.style_code} at ${selectedStore}`);
+        logUserActivity("PHYSICAL_COUNT_SCAN", `Incremented count for ${existingRecord.style_code} at ${targetStore}`);
       }
     } else {
-      const { data: invData } = await supabase
-        .from("store_inventory")
-        .select("*")
-        .eq("store", selectedStore);
-
+      // 2. Fetch from store_inventory table
+      const { data: invData } = await supabase.from("store_inventory").select("*");
       const matchedInv = invData?.find(
         (inv: any) =>
           inv.style_code?.toLowerCase() === code || 
@@ -142,50 +147,62 @@ export default function PhysicalCountPage() {
           inv.style_name?.toLowerCase() === code
       );
 
-      if (matchedInv) {
-        const newLogEntry = {
-          store: selectedStore,
-          style_code: matchedInv.style_code || code,
-          sku: matchedInv.sku || "-",
-          style_name: matchedInv.style_name || matchedInv.style_code || "Scanned Item",
-          color: matchedInv.color || "Default",
-          size: matchedInv.size || "Free Size",
-          description: matchedInv.description || "-",
-          price: Number(matchedInv.price) || 299.0,
-          system_stock: Number(matchedInv.current_stock) || 0,
-          counted_stock: 1,
-          status: "PENDING"
+      let productDetails = matchedInv;
+
+      // 3. Fallback to products master table if not found in inventory
+      if (!productDetails) {
+        const { data: prodData } = await supabase.from("products").select("*");
+        const matchedProd = prodData?.find(
+          (p: any) =>
+            p.style_code?.toLowerCase() === code ||
+            p.sku?.toLowerCase() === code ||
+            p.style_name?.toLowerCase() === code
+        );
+        productDetails = matchedProd;
+      }
+
+      const newLogEntry = {
+        store: targetStore,
+        style_code: productDetails?.style_code || scanInput.trim(),
+        sku: productDetails?.sku || "-",
+        style_name: productDetails?.style_name || productDetails?.style_code || scanInput.trim(),
+        color: productDetails?.color || "Default",
+        size: productDetails?.size || "Free Size",
+        description: productDetails?.description || "-",
+        price: Number(productDetails?.price) || 299.0,
+        system_stock: Number(productDetails?.current_stock) || 0,
+        counted_stock: 1,
+        status: "PENDING"
+      };
+
+      const { data: inserted, error } = await supabase
+        .from("physical_count_logs")
+        .insert([newLogEntry])
+        .select()
+        .single();
+
+      if (!error && inserted) {
+        const formatted: PhysicalCountRecord = {
+          id: String(inserted.id),
+          store: inserted.store,
+          style_code: inserted.style_code,
+          sku: inserted.sku,
+          style_name: inserted.style_name,
+          color: inserted.color,
+          size: inserted.size,
+          description: inserted.description,
+          price: Number(inserted.price),
+          system_stock: Number(inserted.system_stock),
+          counted_stock: Number(inserted.counted_stock),
+          status: inserted.status,
+          created_at: inserted.created_at
         };
-
-        const { data: inserted, error } = await supabase
-          .from("physical_count_logs")
-          .insert([newLogEntry])
-          .select()
-          .single();
-
-        if (!error && inserted) {
-          const formatted: PhysicalCountRecord = {
-            id: String(inserted.id),
-            store: inserted.store,
-            style_code: inserted.style_code,
-            sku: inserted.sku,
-            style_name: inserted.style_name,
-            color: inserted.color,
-            size: inserted.size,
-            description: inserted.description,
-            price: Number(inserted.price),
-            system_stock: Number(inserted.system_stock),
-            counted_stock: Number(inserted.counted_stock),
-            status: inserted.status,
-            created_at: inserted.created_at
-          };
-          setCountRecords((prev) => [formatted, ...prev]);
-          setLastScannedItem(formatted);
-          if (stores.length === 0) setStores([selectedStore]);
-          logUserActivity("PHYSICAL_COUNT_NEW_SCAN", `Added new scan log for ${formatted.style_code} at ${selectedStore}`);
-        }
+        setCountRecords((prev) => [formatted, ...prev]);
+        setLastScannedItem(formatted);
+        logUserActivity("PHYSICAL_COUNT_NEW_SCAN", `Added scan log for ${formatted.style_code} at ${targetStore}`);
       } else {
-        alert(`Item "${scanInput}" could not be matched in store inventory for ${selectedStore}.`);
+        console.error("Insert error:", error);
+        alert("Failed to insert scanned item into physical_count_logs.");
       }
     }
 
@@ -208,7 +225,7 @@ export default function PhysicalCountPage() {
   };
 
   const handleCommitSession = async () => {
-    if (!confirm(`Are you sure you want to finalize and lock the physical count session for ${selectedStore}?`)) {
+    if (!confirm(`Are you sure you want to finalize and approve the physical count session for ${selectedStore}?`)) {
       return;
     }
 
@@ -225,7 +242,7 @@ export default function PhysicalCountPage() {
       await logUserActivity("PHYSICAL_COUNT_APPROVE", `Approved stocktake session for ${selectedStore}`);
       setSuccessMessage(`Successfully approved count session for ${selectedStore}!`);
       setTimeout(() => setSuccessMessage(""), 4000);
-      fetchCountLogs();
+      initData();
     } catch (err) {
       console.error("Failed to approve count logs", err);
       alert("Error finalizing audit session.");
@@ -254,10 +271,10 @@ export default function PhysicalCountPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs (`physical_count_logs`)</span>
               <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                Detailed Grid View
+                Auto-Lookup Mode
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono">Viewing scanned items with dedicated columns for Style Code, Name, SKU, Size, Color, Description, and Price</p>
+            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to instantly fetch product attributes and log physical counts</p>
           </div>
         </div>
 
@@ -269,7 +286,7 @@ export default function PhysicalCountPage() {
               onChange={(e) => setSelectedStore(e.target.value)}
               className="bg-transparent text-white focus:outline-none cursor-pointer font-bold"
             >
-              {stores.length === 0 && <option value="">No Store Available</option>}
+              {stores.length === 0 && <option value="Main Store">Main Store</option>}
               {stores.map((st) => (
                 <option key={st} value={st} className="bg-slate-900">{st}</option>
               ))}
@@ -332,7 +349,7 @@ export default function PhysicalCountPage() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Scan style code, name, or SKU to log physical count..."
+            placeholder="Scan style code or SKU to log physical count..."
             value={scanInput}
             onChange={(e) => setScanInput(e.target.value)}
             className="flex-1 bg-slate-950 border border-slate-700 text-sm px-4 py-3 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner font-mono"
@@ -360,7 +377,7 @@ export default function PhysicalCountPage() {
         )}
       </div>
 
-      {/* TABLE WORKSPACE WITH SEPARATE COLUMNS FOR EACH DETAIL */}
+      {/* TABLE WORKSPACE */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[520px]">
         <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
