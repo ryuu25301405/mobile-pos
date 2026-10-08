@@ -20,46 +20,48 @@ import {
 
 export const dynamic = "force-dynamic";
 
-interface InventoryItem {
+interface PhysicalCountRecord {
   id: string;
   store: string;
   style_code: string;
   sku: string | null;
-  style_name?: string;
-  color?: string;
-  size?: string;
-  department?: string;
-  category?: string;
-  current_stock: number;
-  counted_stock?: number;
-  price?: number;
+  system_stock: number;
+  counted_stock: number;
+  status: string;
+  created_at?: string;
 }
 
 export default function PhysicalCountPage() {
   const [stores, setStores] = useState<string[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>("");
-  const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
+  const [countRecords, setCountRecords] = useState<PhysicalCountRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanInput, setScanInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [lastScannedItem, setLastScannedItem] = useState<InventoryItem | null>(null);
+  const [lastScannedItem, setLastScannedItem] = useState<PhysicalCountRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const fetchInventory = useCallback(async () => {
+  // Fetch count logs exclusively from physical_count_logs table
+  const fetchCountLogs = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("store_inventory").select("*");
+    const { data, error } = await supabase.from("physical_count_logs").select("*").order("created_at", { ascending: false });
+    
     if (!error && data) {
-      const parsed: InventoryItem[] = data.map((item: any) => ({
-        ...item,
+      const parsed: PhysicalCountRecord[] = data.map((item: any) => ({
+        id: String(item.id),
         store: item.store ? item.store.trim() : "Unassigned Store",
-        current_stock: Number(item.current_stock) || 0,
-        counted_stock: item.counted_stock !== undefined ? item.counted_stock : (Number(item.current_stock) || 0),
+        style_code: item.style_code || "Unknown",
+        sku: item.sku || "-",
+        system_stock: Number(item.system_stock) || 0,
+        counted_stock: Number(item.counted_stock) || 0,
+        status: item.status || "PENDING",
+        created_at: item.created_at
       }));
 
-      setInventoryList(parsed);
+      setCountRecords(parsed);
       const uniqueStores = Array.from(new Set(parsed.map((i) => i.store))).sort();
       setStores(uniqueStores);
       if (uniqueStores.length > 0 && !selectedStore) {
@@ -70,94 +72,103 @@ export default function PhysicalCountPage() {
   }, [selectedStore]);
 
   useEffect(() => {
-    fetchInventory();
-  }, [fetchInventory]);
+    fetchCountLogs();
+  }, [fetchCountLogs]);
 
-  const storeItems = useMemo(() => {
-    return inventoryList.filter((item) => {
+  // Filtered rows for the selected store
+  const storeRecords = useMemo(() => {
+    return countRecords.filter((item) => {
       const matchStore = !selectedStore || item.store === selectedStore;
       const matchSearch =
         !searchQuery.trim() ||
-        [item.style_code, item.style_name, item.sku, item.color, item.size]
+        [item.style_code, item.sku]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
           .includes(searchQuery.toLowerCase().trim());
       return matchStore && matchSearch;
     });
-  }, [inventoryList, selectedStore, searchQuery]);
+  }, [countRecords, selectedStore, searchQuery]);
 
-  const handleScanSubmit = (e: React.FormEvent) => {
+  // Handle Barcode Scan / Enter to increment counted_stock in the table
+  const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scanInput.trim()) return;
 
     const code = scanInput.trim().toLowerCase();
-    const foundIndex = inventoryList.findIndex(
+    const foundRecord = countRecords.find(
       (item) =>
         item.store === selectedStore &&
-        (item.style_code.toLowerCase() === code ||
-          (item.sku && item.sku.toLowerCase() === code) ||
-          (item.style_name && item.style_name.toLowerCase() === code))
+        (item.style_code.toLowerCase() === code || (item.sku && item.sku.toLowerCase() === code))
     );
 
-    if (foundIndex !== -1) {
-      const updated = [...inventoryList];
-      const currentCount = updated[foundIndex].counted_stock ?? updated[foundIndex].current_stock;
-      updated[foundIndex] = {
-        ...updated[foundIndex],
-        counted_stock: currentCount + 1,
-      };
-      setInventoryList(updated);
-      setLastScannedItem(updated[foundIndex]);
-      logUserActivity("PHYSICAL_COUNT_SCAN", `Scanned item ${updated[foundIndex].style_code} at ${selectedStore}`);
+    if (foundRecord) {
+      const newCount = foundRecord.counted_stock + 1;
+      
+      // Update directly in Supabase physical_count_logs table
+      const { error } = await supabase
+        .from("physical_count_logs")
+        .update({ counted_stock: newCount })
+        .eq("id", foundRecord.id);
+
+      if (!error) {
+        setCountRecords((prev) =>
+          prev.map((r) => (r.id === foundRecord.id ? { ...r, counted_stock: newCount } : r))
+        );
+        setLastScannedItem({ ...foundRecord, counted_stock: newCount });
+        logUserActivity("PHYSICAL_COUNT_SCAN", `Incremented count for ${foundRecord.style_code} at ${selectedStore}`);
+      }
     } else {
-      alert(`Item "${scanInput}" not found in inventory for store: ${selectedStore}`);
+      alert(`Style code or SKU "${scanInput}" not found in physical_count_logs for store: ${selectedStore}. Make sure records are initialized in this table first.`);
     }
 
     setScanInput("");
     if (inputRef.current) inputRef.current.focus();
   };
 
-  const updateCount = (id: string, newCount: number) => {
-    setInventoryList((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, counted_stock: Math.max(0, newCount) } : item))
-    );
+  const updateCount = async (id: string, newCount: number) => {
+    const validCount = Math.max(0, newCount);
+    const { error } = await supabase
+      .from("physical_count_logs")
+      .update({ counted_stock: validCount })
+      .eq("id", id);
+
+    if (!error) {
+      setCountRecords((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, counted_stock: validCount } : item))
+      );
+    }
   };
 
-  // Commit session logs to physical_count_logs table instead of mutating store_inventory directly
-  const handleCommitCount = async () => {
-    if (!confirm(`Are you sure you want to submit the physical stocktake logs for ${selectedStore}?`)) {
+  const handleCommitSession = async () => {
+    if (!confirm(`Are you sure you want to finalize and lock the physical count session for ${selectedStore}?`)) {
       return;
     }
 
     setSaving(true);
     try {
-      const logEntries = storeItems.map((item) => ({
-        store: selectedStore,
-        style_code: item.style_code,
-        sku: item.sku || "-",
-        system_stock: item.current_stock,
-        counted_stock: item.counted_stock ?? item.current_stock,
-        status: "PENDING"
-      }));
+      const updates = storeRecords.map((item) =>
+        supabase
+          .from("physical_count_logs")
+          .update({ status: "APPROVED" })
+          .eq("id", item.id)
+      );
 
-      const { error } = await supabase.from("physical_count_logs").insert(logEntries);
-
-      if (error) throw error;
-
-      await logUserActivity("PHYSICAL_COUNT_SUBMIT", `Submitted stocktake audit session for ${selectedStore}. Total items: ${storeItems.length}`);
-      setSuccessMessage(`Successfully submitted physical count session for ${selectedStore} into audit logs!`);
+      await Promise.all(updates);
+      await logUserActivity("PHYSICAL_COUNT_APPROVE", `Approved stocktake session for ${selectedStore}`);
+      setSuccessMessage(`Successfully approved count session for ${selectedStore}!`);
       setTimeout(() => setSuccessMessage(""), 4000);
+      fetchCountLogs();
     } catch (err) {
-      console.error("Failed to commit physical count logs", err);
-      alert("Error submitting stocktake logs to database.");
+      console.error("Failed to approve count logs", err);
+      alert("Error finalizing audit session.");
     } finally {
       setSaving(false);
     }
   };
 
-  const totalSystemStock = storeItems.reduce((acc, curr) => acc + curr.current_stock, 0);
-  const totalCountedStock = storeItems.reduce((acc, curr) => acc + (curr.counted_stock ?? curr.current_stock), 0);
+  const totalSystemStock = storeRecords.reduce((acc, curr) => acc + curr.system_stock, 0);
+  const totalCountedStock = storeRecords.reduce((acc, curr) => acc + curr.counted_stock, 0);
   const varianceCount = totalCountedStock - totalSystemStock;
 
   return (
@@ -174,12 +185,12 @@ export default function PhysicalCountPage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-black tracking-tight text-white uppercase">Store Physical Stocktake & Inventory Count</span>
+              <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs (`physical_count_logs`)</span>
               <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                Audit Logging Mode
+                Dedicated Table Mode
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono">Scan items to log physical counts and submit audit session securely</p>
+            <p className="text-xs text-slate-400 font-mono">Managing inventory counts strictly via dedicated audit log table</p>
           </div>
         </div>
 
@@ -198,12 +209,12 @@ export default function PhysicalCountPage() {
           </div>
 
           <button
-            onClick={handleCommitCount}
-            disabled={saving || storeItems.length === 0}
+            onClick={handleCommitSession}
+            disabled={saving || storeRecords.length === 0}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition cursor-pointer shadow-lg disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            <span>{saving ? "Submitting..." : "Submit Audit Session"}</span>
+            <span>{saving ? "Finalizing..." : "Approve Session"}</span>
           </button>
         </div>
       </nav>
@@ -253,7 +264,7 @@ export default function PhysicalCountPage() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Click here and scan barcode, SKU, or style code to increment count..."
+            placeholder="Scan style code or SKU to increment count in physical_count_logs..."
             value={scanInput}
             onChange={(e) => setScanInput(e.target.value)}
             className="flex-1 bg-slate-950 border border-slate-700 text-sm px-4 py-3 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner font-mono"
@@ -271,8 +282,8 @@ export default function PhysicalCountPage() {
           <div className="bg-slate-950 border border-emerald-500/30 px-4 py-2.5 rounded-xl flex items-center justify-between text-xs font-mono animate-in fade-in">
             <div className="flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-400" />
-              <span className="text-white font-bold">Last Scanned:</span>
-              <span className="text-emerald-300">{lastScannedItem.style_name || lastScannedItem.style_code} ({lastScannedItem.color} / {lastScannedItem.size})</span>
+              <span className="text-white font-bold">Last Logged Scan:</span>
+              <span className="text-emerald-300">{lastScannedItem.style_code} (SKU: {lastScannedItem.sku})</span>
             </div>
             <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-black">
               Counted: {lastScannedItem.counted_stock} pcs
@@ -281,19 +292,19 @@ export default function PhysicalCountPage() {
         )}
       </div>
 
-      {/* INVENTORY COUNT TABLE WORKSPACE */}
+      {/* TABLE WORKSPACE */}
       <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[520px]">
         <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-emerald-400" />
-            <span className="text-sm font-bold text-white uppercase tracking-wider">Store Inventory Count Sheet ({storeItems.length} items)</span>
+            <span className="text-sm font-bold text-white uppercase tracking-wider">Physical Count Log Entries ({storeRecords.length} items)</span>
           </div>
 
           <div className="relative w-72">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search items in count list..."
+              placeholder="Search count logs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
@@ -305,8 +316,8 @@ export default function PhysicalCountPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
               <tr>
-                <th className="px-5 py-3.5 border-r border-slate-800">Style Code & Name</th>
-                <th className="px-4 py-3.5 border-r border-slate-800">Variant (Color / Size)</th>
+                <th className="px-5 py-3.5 border-r border-slate-800">Style Code & SKU</th>
+                <th className="px-4 py-3.5 border-r border-slate-800">Session Status</th>
                 <th className="px-4 py-3.5 text-right border-r border-slate-800">System Stock</th>
                 <th className="px-4 py-3.5 text-right border-r border-slate-800">Physical Count</th>
                 <th className="px-4 py-3.5 text-right border-r border-slate-800">Variance</th>
@@ -325,42 +336,43 @@ export default function PhysicalCountPage() {
                     <td className="px-4 py-4 text-right"><div className="h-6 bg-slate-800 rounded w-20 ml-auto"></div></td>
                   </tr>
                 ))
-              ) : storeItems.length === 0 ? (
+              ) : storeRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-16 text-center text-slate-500 italic">No inventory records found for {selectedStore}.</td>
+                  <td colSpan={6} className="p-16 text-center text-slate-500 italic">No physical count logs found in `physical_count_logs` for {selectedStore}.</td>
                 </tr>
               ) : (
-                storeItems.map((item) => {
-                  const counted = item.counted_stock ?? item.current_stock;
-                  const variance = counted - item.current_stock;
+                storeRecords.map((item) => {
+                  const variance = item.counted_stock - item.system_stock;
                   return (
                     <tr key={item.id} className="hover:bg-slate-900/60 transition-colors">
                       <td className="px-5 py-3.5 border-r border-slate-900/50">
-                        <span className="font-bold text-white block text-sm font-sans">{item.style_name || item.style_code}</span>
-                        <span className="text-[11px] text-slate-400 font-mono">Code: {item.style_code} {item.sku && `• SKU: ${item.sku}`}</span>
+                        <span className="font-bold text-white block text-sm font-sans">{item.style_code}</span>
+                        <span className="text-[11px] text-slate-400 font-mono">SKU: {item.sku}</span>
                       </td>
-                      <td className="px-4 py-3.5 border-r border-slate-900/50 text-slate-300 font-sans">
-                        {item.color} / <strong className="text-white">{item.size}</strong>
+                      <td className="px-4 py-3.5 border-r border-slate-900/50">
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${item.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+                          {item.status}
+                        </span>
                       </td>
                       <td className="px-4 py-3.5 text-right font-bold text-indigo-300 border-r border-slate-900/50 text-sm">
-                        {item.current_stock} pcs
+                        {item.system_stock} pcs
                       </td>
                       <td className="px-4 py-3.5 text-right font-black text-emerald-400 border-r border-slate-900/50 text-sm">
-                        {counted} pcs
+                        {item.counted_stock} pcs
                       </td>
                       <td className={`px-4 py-3.5 text-right font-bold border-r border-slate-900/50 text-sm ${variance === 0 ? 'text-slate-400' : variance > 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
                         {variance > 0 ? `+${variance}` : variance}
                       </td>
                       <td className="px-4 py-3.5 text-right flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => updateCount(item.id, counted - 1)}
+                          onClick={() => updateCount(item.id, item.counted_stock - 1)}
                           className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold flex items-center justify-center cursor-pointer transition"
                           title="Decrease Count"
                         >
                           -
                         </button>
                         <button
-                          onClick={() => updateCount(item.id, counted + 1)}
+                          onClick={() => updateCount(item.id, item.counted_stock + 1)}
                           className="w-7 h-7 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-lg font-bold flex items-center justify-center cursor-pointer transition"
                           title="Increase Count"
                         >
