@@ -133,36 +133,40 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Search store_inventory for matching store & barcode
+      // 1. Search store_inventory with broad fallback matching
       const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
       const matchedInv = storeInv?.find(
         (inv: any) =>
-          inv.style_code?.toLowerCase() === code || 
-          inv.sku?.toLowerCase() === code ||
-          inv.style_name?.toLowerCase() === code
+          String(inv.style_code || "").toLowerCase() === code || 
+          String(inv.sku || "").toLowerCase() === code ||
+          String(inv.barcode || "").toLowerCase() === code ||
+          String(inv.item_code || "").toLowerCase() === code ||
+          String(inv.style_name || "").toLowerCase() === code
       );
 
       // 2. Search global products master catalog as fallback
       const { data: prodData } = await supabase.from("products").select("*");
       const matchedProd = prodData?.find(
         (p: any) =>
-          p.style_code?.toLowerCase() === code ||
-          p.sku?.toLowerCase() === code ||
-          p.style_name?.toLowerCase() === code
+          String(p.style_code || "").toLowerCase() === code ||
+          String(p.sku || "").toLowerCase() === code ||
+          String(p.barcode || "").toLowerCase() === code ||
+          String(p.item_code || "").toLowerCase() === code ||
+          String(p.style_name || "").toLowerCase() === code
       );
 
-      const source = matchedInv || matchedProd;
+      const source = matchedInv || matchedProd || {};
 
       const newLogEntry = {
         store: targetStore,
-        style_code: source?.style_code || scanInput.trim(),
-        sku: source?.sku || "-",
-        style_name: source?.style_name || source?.style_code || scanInput.trim(),
-        color: source?.color || "-",
-        size: source?.size || "-",
-        description: source?.description || "-",
-        price: Number(source?.price) || 0,
-        system_stock: Number(source?.current_stock || source?.stock || 0),
+        style_code: source.style_code || source.item_code || scanInput.trim(),
+        sku: source.sku || source.barcode || "-",
+        style_name: source.style_name || source.name || source.style_code || scanInput.trim(),
+        color: source.color || source.colour || "-",
+        size: source.size || source.dimension || "-",
+        description: source.description || source.desc || "-",
+        price: Number(source.price || source.retail_price || source.cost || 0),
+        system_stock: Number(source.current_stock || source.stock || source.qty || 0),
         counted_stock: 1,
         status: "PENDING"
       };
