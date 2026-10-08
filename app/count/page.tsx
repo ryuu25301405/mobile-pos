@@ -108,12 +108,12 @@ export default function PhysicalCountPage() {
     const targetStore = selectedStore || stores[0] || "Main Store";
     const code = scanInput.trim().toLowerCase();
 
-    // 1. Check if already logged in physical_count_logs for this store
     const existingRecord = countRecords.find(
       (item) =>
         item.store.toLowerCase() === targetStore.toLowerCase() &&
         (item.style_code.toLowerCase() === code || 
-         (item.sku && item.sku.toLowerCase() === code))
+         (item.sku && item.sku.toLowerCase() === code) ||
+         (item.style_name && item.style_name.toLowerCase() === code))
     );
 
     if (existingRecord) {
@@ -133,35 +133,36 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 2. Fetch product master information from the `products` table
+      // 1. Fetch from products table directly
       const { data: prodData } = await supabase.from("products").select("*");
-      const matchedProd = prodData?.find(
-        (p: any) =>
-          String(p.style_code || "").toLowerCase() === code ||
-          String(p.sku || "").toLowerCase() === code ||
-          String(p.barcode || "").toLowerCase() === code ||
-          String(p.item_code || "").toLowerCase() === code ||
-          String(p.style_name || "").toLowerCase() === code
-      );
+      const p = prodData?.find(
+        (item: any) =>
+          String(item.style_code || "").trim().toLowerCase() === code ||
+          String(item.sku || "").trim().toLowerCase() === code ||
+          String(item.barcode || "").trim().toLowerCase() === code ||
+          String(item.item_code || "").trim().toLowerCase() === code ||
+          String(item.style_name || "").trim().toLowerCase() === code
+      ) || {};
 
-      // 3. Also check store_inventory to find the system stock for this store
+      // 2. Fetch inventory stock from store_inventory
       const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
-      const matchedInv = storeInv?.find(
-        (inv: any) =>
-          String(inv.style_code || "").toLowerCase() === code || 
-          String(inv.sku || "").toLowerCase() === code
-      );
+      const inv = storeInv?.find(
+        (i: any) =>
+          String(i.style_code || "").trim().toLowerCase() === code || 
+          String(i.sku || "").trim().toLowerCase() === code ||
+          String(i.barcode || "").trim().toLowerCase() === code
+      ) || {};
 
       const newLogEntry = {
         store: targetStore,
-        style_code: matchedProd?.style_code || matchedInv?.style_code || scanInput.trim(),
-        sku: matchedProd?.sku || matchedInv?.sku || "-",
-        style_name: matchedProd?.style_name || matchedProd?.name || matchedInv?.style_name || scanInput.trim(),
-        color: matchedProd?.color || matchedProd?.colour || matchedInv?.color || "-",
-        size: matchedProd?.size || matchedProd?.dimension || matchedInv?.size || "-",
-        description: matchedProd?.description || matchedProd?.desc || matchedInv?.description || "-",
-        price: Number(matchedProd?.price || matchedProd?.retail_price || matchedInv?.price || 0),
-        system_stock: Number(matchedInv?.current_stock || matchedInv?.stock || matchedProd?.current_stock || 0),
+        style_code: p.style_code || p.item_code || inv.style_code || scanInput.trim(),
+        sku: p.sku || p.barcode || inv.sku || "-",
+        style_name: p.style_name || p.name || inv.style_name || scanInput.trim(),
+        color: p.color || p.colour || inv.color || "-",
+        size: p.size || p.dimension || inv.size || "-",
+        description: p.description || p.desc || inv.description || "-",
+        price: Number(p.price || p.retail_price || p.cost || inv.price || 0),
+        system_stock: Number(inv.current_stock || inv.stock || inv.qty || p.current_stock || 0),
         counted_stock: 1,
         status: "PENDING"
       };
@@ -249,7 +250,7 @@ export default function PhysicalCountPage() {
           </div>
           <div>
             <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs</span>
-            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to pull details directly from the products master table</p>
+            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to pull product details directly from master products table</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
