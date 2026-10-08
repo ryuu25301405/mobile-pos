@@ -108,12 +108,12 @@ export default function PhysicalCountPage() {
     const targetStore = selectedStore || stores[0] || "Main Store";
     const code = scanInput.trim().toLowerCase();
 
+    // 1. Check if already logged in physical_count_logs for this store
     const existingRecord = countRecords.find(
       (item) =>
         item.store.toLowerCase() === targetStore.toLowerCase() &&
         (item.style_code.toLowerCase() === code || 
-         (item.sku && item.sku.toLowerCase() === code) ||
-         (item.style_name && item.style_name.toLowerCase() === code))
+         (item.sku && item.sku.toLowerCase() === code))
     );
 
     if (existingRecord) {
@@ -133,18 +133,7 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Search store_inventory with broad fallback matching
-      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
-      const matchedInv = storeInv?.find(
-        (inv: any) =>
-          String(inv.style_code || "").toLowerCase() === code || 
-          String(inv.sku || "").toLowerCase() === code ||
-          String(inv.barcode || "").toLowerCase() === code ||
-          String(inv.item_code || "").toLowerCase() === code ||
-          String(inv.style_name || "").toLowerCase() === code
-      );
-
-      // 2. Search global products master catalog as fallback
+      // 2. Fetch product master information from the `products` table
       const { data: prodData } = await supabase.from("products").select("*");
       const matchedProd = prodData?.find(
         (p: any) =>
@@ -155,18 +144,24 @@ export default function PhysicalCountPage() {
           String(p.style_name || "").toLowerCase() === code
       );
 
-      const source = matchedInv || matchedProd || {};
+      // 3. Also check store_inventory to find the system stock for this store
+      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
+      const matchedInv = storeInv?.find(
+        (inv: any) =>
+          String(inv.style_code || "").toLowerCase() === code || 
+          String(inv.sku || "").toLowerCase() === code
+      );
 
       const newLogEntry = {
         store: targetStore,
-        style_code: source.style_code || source.item_code || scanInput.trim(),
-        sku: source.sku || source.barcode || "-",
-        style_name: source.style_name || source.name || source.style_code || scanInput.trim(),
-        color: source.color || source.colour || "-",
-        size: source.size || source.dimension || "-",
-        description: source.description || source.desc || "-",
-        price: Number(source.price || source.retail_price || source.cost || 0),
-        system_stock: Number(source.current_stock || source.stock || source.qty || 0),
+        style_code: matchedProd?.style_code || matchedInv?.style_code || scanInput.trim(),
+        sku: matchedProd?.sku || matchedInv?.sku || "-",
+        style_name: matchedProd?.style_name || matchedProd?.name || matchedInv?.style_name || scanInput.trim(),
+        color: matchedProd?.color || matchedProd?.colour || matchedInv?.color || "-",
+        size: matchedProd?.size || matchedProd?.dimension || matchedInv?.size || "-",
+        description: matchedProd?.description || matchedProd?.desc || matchedInv?.description || "-",
+        price: Number(matchedProd?.price || matchedProd?.retail_price || matchedInv?.price || 0),
+        system_stock: Number(matchedInv?.current_stock || matchedInv?.stock || matchedProd?.current_stock || 0),
         counted_stock: 1,
         status: "PENDING"
       };
@@ -254,7 +249,7 @@ export default function PhysicalCountPage() {
           </div>
           <div>
             <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs</span>
-            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to log counts and view complete product details</p>
+            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to pull details directly from the products master table</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
