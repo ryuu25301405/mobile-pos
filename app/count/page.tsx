@@ -132,44 +132,35 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Query products table directly from Supabase server using .or() matching
-      const { data: matchedProds } = await supabase
-        .from("products")
-        .select("*")
-        .or(`sku.eq.${code},barcode.eq.${code},style_code.eq.${code},item_code.eq.${code}`);
-
-      let p = matchedProds && matchedProds.length > 0 ? matchedProds[0] : null;
-
-      // Fallback: fetch all and match loosely if exact query misses
-      if (!p) {
-        const { data: allProds } = await supabase.from("products").select("*");
-        p = allProds?.find(
-          (item: any) =>
-            String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.style_code || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.barcode || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.id || "").trim().toLowerCase() === code.toLowerCase()
-        ) || {};
-      }
-
-      // 2. Fetch inventory stock from store_inventory
+      // 1. Find the item in store_inventory for this store
       const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
       const inv = storeInv?.find(
         (i: any) =>
           String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
-          String(i.sku || "").trim().toLowerCase() === code.toLowerCase()
+          String(i.sku || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(i.barcode || "").trim().toLowerCase() === code.toLowerCase()
+      ) || {};
+
+      const lookupKey = String(inv.style_code || inv.sku || code).trim().toLowerCase();
+
+      // 2. Query the products table matching SKU
+      const { data: prodData } = await supabase.from("products").select("*");
+      const p = prodData?.find(
+        (item: any) =>
+          String(item.sku || "").trim().toLowerCase() === lookupKey ||
+          String(item.sku || "").trim().toLowerCase() === code.toLowerCase()
       ) || {};
 
       const newLogEntry = {
         store: targetStore,
-        style_code: p.style_code || p.sku || inv.style_code || code,
-        sku: p.sku || inv.sku || "-",
-        style_name: p.description || p.style_name || inv.style_name || "Unknown Product",
+        style_code: inv.style_code || inv.sku || code,
+        sku: p.sku || inv.sku || code,
+        style_name: p.description || inv.style_name || inv.description || "Product " + code,
         color: p.color || inv.color || "-",
         size: p.size || inv.size || "-",
         description: p.description || inv.description || "-",
         price: Number(p.price || inv.price || 0),
-        system_stock: Number(inv.current_stock || inv.stock || 0),
+        system_stock: Number(inv.current_stock || inv.stock || inv.qty || 0),
         counted_stock: 1,
         status: "PENDING"
       };
