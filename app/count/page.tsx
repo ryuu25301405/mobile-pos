@@ -132,32 +132,17 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Direct Server-Side Query to `products` table matching barcode/sku/style_code
-      const { data: prodMatches, error: prodError } = await supabase
-        .from("products")
-        .select("*")
-        .or(`sku.eq.${code},style_code.eq.${code},barcode.eq.${code},item_code.eq.${code}`);
+      // 1. Fetch directly from products table matching the scanned barcode against SKU or style columns
+      const { data: prodData } = await supabase.from("products").select("*");
+      const p = prodData?.find(
+        (item: any) =>
+          String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(item.style_code || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(item.barcode || "").trim().toLowerCase() === code.toLowerCase()
+      ) || {};
 
-      let p = prodMatches && prodMatches.length > 0 ? prodMatches[0] : null;
-
-      // Fallback: if exact match didn't return anything, fetch products and do a case-insensitive search
-      if (!p) {
-        const { data: allProds } = await supabase.from("products").select("*");
-        p = allProds?.find(
-          (item: any) =>
-            String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.style_code || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.barcode || "").trim().toLowerCase() === code.toLowerCase() ||
-            String(item.id || "").trim().toLowerCase() === code.toLowerCase()
-        ) || {};
-      }
-
-      // 2. Fetch inventory stock from store_inventory for this store
-      const { data: storeInv } = await supabase
-        .from("store_inventory")
-        .select("*")
-        .eq("store", targetStore);
-
+      // 2. Fetch inventory stock from store_inventory
+      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
       const inv = storeInv?.find(
         (i: any) =>
           String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
@@ -166,14 +151,14 @@ export default function PhysicalCountPage() {
 
       const newLogEntry = {
         store: targetStore,
-        style_code: p.style_code || p.sku || inv.style_code || code,
-        sku: p.sku || inv.sku || "-",
-        style_name: p.description || p.style_name || p.name || inv.style_name || code,
-        color: p.color || p.colour || inv.color || "-",
+        style_code: code,
+        sku: p.sku || inv.sku || code,
+        style_name: p.description || p.style_name || inv.style_name || code,
+        color: p.color || inv.color || "-",
         size: p.size || inv.size || "-",
-        description: p.description || p.desc || inv.description || "-",
-        price: Number(p.price || p.retail_price || p.cost || inv.price || 0),
-        system_stock: Number(inv.current_stock || inv.stock || inv.qty || p.current_stock || 0),
+        description: p.description || inv.description || "-",
+        price: Number(p.price || inv.price || 0),
+        system_stock: Number(inv.current_stock || inv.stock || p.current_stock || 0),
         counted_stock: 1,
         status: "PENDING"
       };
