@@ -153,13 +153,25 @@ export default function PhysicalCountPage() {
           String(i.barcode || "").trim().toLowerCase() === code
       ) || {};
 
+      // Robust extraction: if style_name is empty, use SKU/description as name
+      const rawName = p.style_name || p.name || p.sku || p.barcode || inv.style_name || scanInput.trim();
+      const rawSku = p.sku || inv.sku || "-";
+      
+      // Auto-extract size and color from name/sku if separate columns are empty (e.g., "N. BLUE AUDREY S" -> Color: N. Blue, Size: S)
+      const nameStr = String(rawName);
+      let extractedSize = p.size || p.dimension || inv.size || "-";
+      if (extractedSize === "-" && /\b(xs|s|m|l|xl|xxl|free size)\b/i.test(nameStr)) {
+        const match = nameStr.match(/\b(xs|s|m|l|xl|xxl|free size)\b/i);
+        if (match) extractedSize = match[0].toUpperCase();
+      }
+
       const newLogEntry = {
         store: targetStore,
         style_code: p.style_code || p.item_code || inv.style_code || scanInput.trim(),
-        sku: p.sku || p.barcode || inv.sku || "-",
-        style_name: p.style_name || p.name || inv.style_name || scanInput.trim(),
+        sku: rawSku,
+        style_name: nameStr,
         color: p.color || p.colour || inv.color || "-",
-        size: p.size || p.dimension || inv.size || "-",
+        size: extractedSize,
         description: p.description || p.desc || inv.description || "-",
         price: Number(p.price || p.retail_price || p.cost || inv.price || 0),
         system_stock: Number(inv.current_stock || inv.stock || inv.qty || p.current_stock || 0),
