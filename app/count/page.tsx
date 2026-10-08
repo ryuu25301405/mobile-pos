@@ -132,33 +132,37 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Fetch directly from products table matching the scanned barcode against SKU or style columns
+      // 1. Fetch from store_inventory for this store to find the item
+      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
+      const inv = storeInv?.find(
+        (i: any) =>
+          String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
+          String(i.sku || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(i.barcode || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(i.id || "").trim().toLowerCase() === code.toLowerCase()
+      ) || {};
+
+      // 2. Also fetch from products table in case details are stored there by SKU/style_code
       const { data: prodData } = await supabase.from("products").select("*");
       const p = prodData?.find(
         (item: any) =>
           String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
           String(item.style_code || "").trim().toLowerCase() === code.toLowerCase() ||
-          String(item.barcode || "").trim().toLowerCase() === code.toLowerCase()
-      ) || {};
-
-      // 2. Fetch inventory stock from store_inventory
-      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
-      const inv = storeInv?.find(
-        (i: any) =>
-          String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
-          String(i.sku || "").trim().toLowerCase() === code.toLowerCase()
+          String(item.barcode || "").trim().toLowerCase() === code.toLowerCase() ||
+          String(item.sku || "").trim().toLowerCase() === String(inv.sku || "").trim().toLowerCase() ||
+          String(item.style_code || "").trim().toLowerCase() === String(inv.style_code || "").trim().toLowerCase()
       ) || {};
 
       const newLogEntry = {
         store: targetStore,
-        style_code: code,
-        sku: p.sku || inv.sku || code,
-        style_name: p.description || p.style_name || inv.style_name || code,
+        style_code: inv.style_code || inv.sku || p.sku || code,
+        sku: inv.sku || p.sku || code,
+        style_name: p.description || p.style_name || inv.style_name || inv.description || code,
         color: p.color || inv.color || "-",
         size: p.size || inv.size || "-",
         description: p.description || inv.description || "-",
         price: Number(p.price || inv.price || 0),
-        system_stock: Number(inv.current_stock || inv.stock || p.current_stock || 0),
+        system_stock: Number(inv.current_stock || inv.stock || inv.qty || 0),
         counted_stock: 1,
         status: "PENDING"
       };
@@ -246,7 +250,7 @@ export default function PhysicalCountPage() {
           </div>
           <div>
             <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs</span>
-            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to pull product details directly from master products table</p>
+            <p className="text-xs text-slate-400 font-mono">Scan barcodes to fetch inventory and product catalog details</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
