@@ -112,7 +112,8 @@ export default function PhysicalCountPage() {
       (item) =>
         item.store.toLowerCase() === targetStore.toLowerCase() &&
         (item.style_code.toLowerCase() === code || 
-         (item.sku && item.sku.toLowerCase() === code))
+         (item.sku && item.sku.toLowerCase() === code) ||
+         (item.style_name && item.style_name.toLowerCase() === code))
     );
 
     if (existingRecord) {
@@ -132,23 +133,36 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      const { data: invData } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
-      const matchedInv = invData?.find(
+      // 1. Search store_inventory for matching store & barcode
+      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
+      const matchedInv = storeInv?.find(
         (inv: any) =>
           inv.style_code?.toLowerCase() === code || 
-          inv.sku?.toLowerCase() === code
+          inv.sku?.toLowerCase() === code ||
+          inv.style_name?.toLowerCase() === code
       );
+
+      // 2. Search global products master catalog as fallback
+      const { data: prodData } = await supabase.from("products").select("*");
+      const matchedProd = prodData?.find(
+        (p: any) =>
+          p.style_code?.toLowerCase() === code ||
+          p.sku?.toLowerCase() === code ||
+          p.style_name?.toLowerCase() === code
+      );
+
+      const source = matchedInv || matchedProd;
 
       const newLogEntry = {
         store: targetStore,
-        style_code: matchedInv?.style_code || scanInput.trim(),
-        sku: matchedInv?.sku || "-",
-        style_name: matchedInv?.style_name || matchedInv?.style_code || scanInput.trim(),
-        color: matchedInv?.color || "-",
-        size: matchedInv?.size || "-",
-        description: matchedInv?.description || "-",
-        price: Number(matchedInv?.price) || 0,
-        system_stock: Number(matchedInv?.current_stock) || 0,
+        style_code: source?.style_code || scanInput.trim(),
+        sku: source?.sku || "-",
+        style_name: source?.style_name || source?.style_code || scanInput.trim(),
+        color: source?.color || "-",
+        size: source?.size || "-",
+        description: source?.description || "-",
+        price: Number(source?.price) || 0,
+        system_stock: Number(source?.current_stock || source?.stock || 0),
         counted_stock: 1,
         status: "PENDING"
       };
@@ -226,7 +240,7 @@ export default function PhysicalCountPage() {
 
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-6 font-sans select-none">
-      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
+      <nav className="bg-[#0E1526]/95 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
         <div className="flex items-center gap-3">
           <Link href="/analytics/qlik" className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700 transition">
             <ArrowLeft className="w-5 h-5" />
@@ -236,7 +250,7 @@ export default function PhysicalCountPage() {
           </div>
           <div>
             <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs</span>
-            <p className="text-xs text-slate-400 font-mono">Scan items to log counts and view full product details</p>
+            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to log counts and view complete product details</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -301,7 +315,7 @@ export default function PhysicalCountPage() {
 
         {lastScannedItem && (
           <div className="bg-slate-950 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-mono text-emerald-300">
-            Scanned: {lastScannedItem.style_name} ({lastScannedItem.color} / {lastScannedItem.size}) - Qty: {lastScannedItem.counted_stock}
+            Scanned: {lastScannedItem.style_name} ({lastScannedItem.color} / {lastScannedItem.size}) • ₱{lastScannedItem.price.toFixed(2)} - Qty: {lastScannedItem.counted_stock}
           </div>
         )}
       </div>
