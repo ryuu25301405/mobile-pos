@@ -106,14 +106,13 @@ export default function PhysicalCountPage() {
     e.preventDefault();
     if (!scanInput.trim()) return;
     const targetStore = selectedStore || stores[0] || "Main Store";
-    const code = scanInput.trim().toLowerCase();
+    const code = scanInput.trim();
 
     const existingRecord = countRecords.find(
       (item) =>
         item.store.toLowerCase() === targetStore.toLowerCase() &&
-        (item.style_code.toLowerCase() === code || 
-         (item.sku && item.sku.toLowerCase() === code) ||
-         (item.style_name && item.style_name.toLowerCase() === code))
+        (item.style_code.toLowerCase() === code.toLowerCase() || 
+         (item.sku && item.sku.toLowerCase() === code.toLowerCase()))
     );
 
     if (existingRecord) {
@@ -133,45 +132,45 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Fetch from products table directly
-      const { data: prodData } = await supabase.from("products").select("*");
-      const p = prodData?.find(
-        (item: any) =>
-          String(item.style_code || "").trim().toLowerCase() === code ||
-          String(item.sku || "").trim().toLowerCase() === code ||
-          String(item.barcode || "").trim().toLowerCase() === code ||
-          String(item.item_code || "").trim().toLowerCase() === code ||
-          String(item.style_name || "").trim().toLowerCase() === code
-      ) || {};
+      // 1. Direct Server-Side Query to `products` table matching barcode/sku/style_code
+      const { data: prodMatches, error: prodError } = await supabase
+        .from("products")
+        .select("*")
+        .or(`sku.eq.${code},style_code.eq.${code},barcode.eq.${code},item_code.eq.${code}`);
 
-      // 2. Fetch inventory stock from store_inventory
-      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
+      let p = prodMatches && prodMatches.length > 0 ? prodMatches[0] : null;
+
+      // Fallback: if exact match didn't return anything, fetch products and do a case-insensitive search
+      if (!p) {
+        const { data: allProds } = await supabase.from("products").select("*");
+        p = allProds?.find(
+          (item: any) =>
+            String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
+            String(item.style_code || "").trim().toLowerCase() === code.toLowerCase() ||
+            String(item.barcode || "").trim().toLowerCase() === code.toLowerCase() ||
+            String(item.id || "").trim().toLowerCase() === code.toLowerCase()
+        ) || {};
+      }
+
+      // 2. Fetch inventory stock from store_inventory for this store
+      const { data: storeInv } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", targetStore);
+
       const inv = storeInv?.find(
         (i: any) =>
-          String(i.style_code || "").trim().toLowerCase() === code || 
-          String(i.sku || "").trim().toLowerCase() === code ||
-          String(i.barcode || "").trim().toLowerCase() === code
+          String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
+          String(i.sku || "").trim().toLowerCase() === code.toLowerCase()
       ) || {};
-
-      // Robust extraction: if style_name is empty, use SKU/description as name
-      const rawName = p.style_name || p.name || p.sku || p.barcode || inv.style_name || scanInput.trim();
-      const rawSku = p.sku || inv.sku || "-";
-      
-      // Auto-extract size and color from name/sku if separate columns are empty (e.g., "N. BLUE AUDREY S" -> Color: N. Blue, Size: S)
-      const nameStr = String(rawName);
-      let extractedSize = p.size || p.dimension || inv.size || "-";
-      if (extractedSize === "-" && /\b(xs|s|m|l|xl|xxl|free size)\b/i.test(nameStr)) {
-        const match = nameStr.match(/\b(xs|s|m|l|xl|xxl|free size)\b/i);
-        if (match) extractedSize = match[0].toUpperCase();
-      }
 
       const newLogEntry = {
         store: targetStore,
-        style_code: p.style_code || p.item_code || inv.style_code || scanInput.trim(),
-        sku: rawSku,
-        style_name: nameStr,
+        style_code: p.style_code || p.sku || inv.style_code || code,
+        sku: p.sku || inv.sku || "-",
+        style_name: p.description || p.style_name || p.name || inv.style_name || code,
         color: p.color || p.colour || inv.color || "-",
-        size: extractedSize,
+        size: p.size || inv.size || "-",
         description: p.description || p.desc || inv.description || "-",
         price: Number(p.price || p.retail_price || p.cost || inv.price || 0),
         system_stock: Number(inv.current_stock || inv.stock || inv.qty || p.current_stock || 0),
