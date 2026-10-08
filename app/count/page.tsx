@@ -49,14 +49,12 @@ export default function PhysicalCountPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize store dropdown from store_inventory and load existing count logs
   const initData = useCallback(async () => {
     setLoading(true);
 
-    // 1. Fetch available stores from store_inventory table
     const { data: invData } = await supabase.from("store_inventory").select("store");
     if (invData && invData.length > 0) {
-      const uniqueStores = Array.from(new Set(invData.map((i: any) => i.store ? i.store.trim() : "Unassigned Store"))).sort();
+      const uniqueStores = Array.from(new Set(invData.map((i: any) => i.store ? i.store.trim() : "Main Store"))).sort();
       setStores(uniqueStores);
       setSelectedStore((prev) => prev || uniqueStores[0]);
     } else {
@@ -64,21 +62,20 @@ export default function PhysicalCountPage() {
       setSelectedStore("Main Store");
     }
 
-    // 2. Fetch existing physical count logs
     const { data: logData, error } = await supabase.from("physical_count_logs").select("*").order("created_at", { ascending: false });
     if (!error && logData) {
       const parsed: PhysicalCountRecord[] = logData.map((item: any) => ({
         id: String(item.id),
-        store: item.store ? item.store.trim() : "Unassigned Store",
+        store: item.store ? item.store.trim() : "Main Store",
         style_code: item.style_code || "Unknown",
         sku: item.sku || "-",
-        style_name: item.style_name || item.style_code || "Unassigned Name",
-        color: item.color || "Default",
-        size: item.size || "Free Size",
+        style_name: item.style_name || item.style_code || "-",
+        color: item.color || "-",
+        size: item.size || "-",
         description: item.description || "-",
         price: Number(item.price) || 0,
         system_stock: Number(item.system_stock) || 0,
-        counted_stock: Number(item.counted_stock) || 0,
+        counted_stock: Number(item.counted_stock) || 1,
         status: item.status || "PENDING",
         created_at: item.created_at
       }));
@@ -91,7 +88,6 @@ export default function PhysicalCountPage() {
     initData();
   }, [initData]);
 
-  // Filtered rows for the selected store
   const storeRecords = useMemo(() => {
     return countRecords.filter((item) => {
       const matchStore = !selectedStore || item.store.toLowerCase() === selectedStore.toLowerCase();
@@ -106,21 +102,17 @@ export default function PhysicalCountPage() {
     });
   }, [countRecords, selectedStore, searchQuery]);
 
-  // Handle Barcode Scan / Enter with robust fallback matching
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scanInput.trim()) return;
     const targetStore = selectedStore || stores[0] || "Main Store";
-
     const code = scanInput.trim().toLowerCase();
 
-    // 1. Check if already logged in physical_count_logs
     const existingRecord = countRecords.find(
       (item) =>
         item.store.toLowerCase() === targetStore.toLowerCase() &&
         (item.style_code.toLowerCase() === code || 
-         (item.sku && item.sku.toLowerCase() === code) ||
-         (item.style_name && item.style_name.toLowerCase() === code))
+         (item.sku && item.sku.toLowerCase() === code))
     );
 
     if (existingRecord) {
@@ -135,42 +127,28 @@ export default function PhysicalCountPage() {
           prev.map((r) => (r.id === existingRecord.id ? { ...r, counted_stock: newCount } : r))
         );
         setLastScannedItem({ ...existingRecord, counted_stock: newCount });
-        logUserActivity("PHYSICAL_COUNT_SCAN", `Incremented count for ${existingRecord.style_code} at ${targetStore}`);
+        logUserActivity("PHYSICAL_COUNT_SCAN", `Incremented count for ${existingRecord.style_code}`);
+      } else {
+        alert(`Update error: ${error.message}`);
       }
     } else {
-      // 2. Fetch from store_inventory table
-      const { data: invData } = await supabase.from("store_inventory").select("*");
+      const { data: invData } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
       const matchedInv = invData?.find(
         (inv: any) =>
           inv.style_code?.toLowerCase() === code || 
-          inv.sku?.toLowerCase() === code ||
-          inv.style_name?.toLowerCase() === code
+          inv.sku?.toLowerCase() === code
       );
-
-      let productDetails = matchedInv;
-
-      // 3. Fallback to products master table if not found in inventory
-      if (!productDetails) {
-        const { data: prodData } = await supabase.from("products").select("*");
-        const matchedProd = prodData?.find(
-          (p: any) =>
-            p.style_code?.toLowerCase() === code ||
-            p.sku?.toLowerCase() === code ||
-            p.style_name?.toLowerCase() === code
-        );
-        productDetails = matchedProd;
-      }
 
       const newLogEntry = {
         store: targetStore,
-        style_code: productDetails?.style_code || scanInput.trim(),
-        sku: productDetails?.sku || "-",
-        style_name: productDetails?.style_name || productDetails?.style_code || scanInput.trim(),
-        color: productDetails?.color || "Default",
-        size: productDetails?.size || "Free Size",
-        description: productDetails?.description || "-",
-        price: Number(productDetails?.price) || 299.0,
-        system_stock: Number(productDetails?.current_stock) || 0,
+        style_code: matchedInv?.style_code || scanInput.trim(),
+        sku: matchedInv?.sku || "-",
+        style_name: matchedInv?.style_name || matchedInv?.style_code || scanInput.trim(),
+        color: matchedInv?.color || "-",
+        size: matchedInv?.size || "-",
+        description: matchedInv?.description || "-",
+        price: Number(matchedInv?.price) || 0,
+        system_stock: Number(matchedInv?.current_stock) || 0,
         counted_stock: 1,
         status: "PENDING"
       };
@@ -199,10 +177,10 @@ export default function PhysicalCountPage() {
         };
         setCountRecords((prev) => [formatted, ...prev]);
         setLastScannedItem(formatted);
-        logUserActivity("PHYSICAL_COUNT_NEW_SCAN", `Added scan log for ${formatted.style_code} at ${targetStore}`);
+        logUserActivity("PHYSICAL_COUNT_NEW_SCAN", `Added scan log for ${formatted.style_code}`);
       } else {
-        console.error("Insert error:", error);
-        alert("Failed to insert scanned item into physical_count_logs.");
+        console.error("Insert error details:", error);
+        alert(`Failed to insert: ${error?.message || "Unknown database error"}`);
       }
     }
 
@@ -225,27 +203,18 @@ export default function PhysicalCountPage() {
   };
 
   const handleCommitSession = async () => {
-    if (!confirm(`Are you sure you want to finalize and approve the physical count session for ${selectedStore}?`)) {
-      return;
-    }
-
+    if (!confirm(`Finalize session for ${selectedStore}?`)) return;
     setSaving(true);
     try {
       const updates = storeRecords.map((item) =>
-        supabase
-          .from("physical_count_logs")
-          .update({ status: "APPROVED" })
-          .eq("id", item.id)
+        supabase.from("physical_count_logs").update({ status: "APPROVED" }).eq("id", item.id)
       );
-
       await Promise.all(updates);
-      await logUserActivity("PHYSICAL_COUNT_APPROVE", `Approved stocktake session for ${selectedStore}`);
-      setSuccessMessage(`Successfully approved count session for ${selectedStore}!`);
+      setSuccessMessage("Session approved successfully!");
       setTimeout(() => setSuccessMessage(""), 4000);
       initData();
     } catch (err) {
-      console.error("Failed to approve count logs", err);
-      alert("Error finalizing audit session.");
+      alert("Error approving session.");
     } finally {
       setSaving(false);
     }
@@ -257,8 +226,6 @@ export default function PhysicalCountPage() {
 
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-6 font-sans select-none">
-      
-      {/* HEADER NAV */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xl">
         <div className="flex items-center gap-3">
           <Link href="/analytics/qlik" className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700 transition">
@@ -268,138 +235,92 @@ export default function PhysicalCountPage() {
             <ClipboardList className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs (`physical_count_logs`)</span>
-              <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                Auto-Lookup Mode
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 font-mono">Scan item barcodes to instantly fetch product attributes and log physical counts</p>
+            <span className="text-sm font-black tracking-tight text-white uppercase">Physical Count Logs</span>
+            <p className="text-xs text-slate-400 font-mono">Scan items to log counts and view full product details</p>
           </div>
         </div>
-
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs">
-            <Building2 className="w-4 h-4 text-emerald-400" />
-            <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="bg-transparent text-white focus:outline-none cursor-pointer font-bold"
-            >
-              {stores.length === 0 && <option value="Main Store">Main Store</option>}
-              {stores.map((st) => (
-                <option key={st} value={st} className="bg-slate-900">{st}</option>
-              ))}
-            </select>
-          </div>
-
+          <select
+            value={selectedStore}
+            onChange={(e) => setSelectedStore(e.target.value)}
+            className="bg-slate-950 text-white border border-slate-700 px-3 py-2 rounded-xl text-xs font-bold focus:outline-none cursor-pointer"
+          >
+            {stores.map((st) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
           <button
             onClick={handleCommitSession}
             disabled={saving || storeRecords.length === 0}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition cursor-pointer shadow-lg disabled:opacity-50"
+            className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
           >
-            <Save className="w-4 h-4" />
-            <span>{saving ? "Finalizing..." : "Approve Session"}</span>
+            {saving ? "Approving..." : "Approve Session"}
           </button>
         </div>
       </nav>
 
       {successMessage && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 text-xs font-bold animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span>{successMessage}</span>
+        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-4 rounded-2xl text-xs font-bold">
+          {successMessage}
         </div>
       )}
 
-      {/* KPI STRIP */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">System Expected Stock</p>
-            <h3 className="text-2xl font-black text-white mt-1">{totalSystemStock.toLocaleString()} pcs</h3>
-          </div>
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl"><Boxes className="w-5 h-5" /></div>
+        <div className="bg-[#0E1526]/70 border border-slate-800/80 rounded-2xl p-4">
+          <p className="text-[10px] uppercase font-bold text-slate-400">System Stock</p>
+          <h3 className="text-2xl font-black text-white mt-1">{totalSystemStock} pcs</h3>
         </div>
-
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Physical Counted Stock</p>
-            <h3 className="text-2xl font-black text-emerald-400 mt-1">{totalCountedStock.toLocaleString()} pcs</h3>
-          </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl"><CheckCircle2 className="w-5 h-5" /></div>
+        <div className="bg-[#0E1526]/70 border border-slate-800/80 rounded-2xl p-4">
+          <p className="text-[10px] uppercase font-bold text-slate-400">Counted Stock</p>
+          <h3 className="text-2xl font-black text-emerald-400 mt-1">{totalCountedStock} pcs</h3>
         </div>
-
-        <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Variance</p>
-            <h3 className={`text-2xl font-black mt-1 ${varianceCount === 0 ? 'text-emerald-400' : varianceCount > 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
-              {varianceCount > 0 ? `+${varianceCount}` : varianceCount} pcs
-            </h3>
-          </div>
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl"><AlertTriangle className="w-5 h-5" /></div>
+        <div className="bg-[#0E1526]/70 border border-slate-800/80 rounded-2xl p-4">
+          <p className="text-[10px] uppercase font-bold text-slate-400">Variance</p>
+          <h3 className={`text-2xl font-black mt-1 ${varianceCount === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {varianceCount > 0 ? `+${varianceCount}` : varianceCount} pcs
+          </h3>
         </div>
       </div>
 
-      {/* BARCODE SCANNER INPUT BAR */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-xl space-y-3">
+      <div className="bg-[#0E1526]/90 border border-slate-800/80 rounded-2xl p-4 shadow-xl space-y-3">
         <form onSubmit={handleScanSubmit} className="flex items-center gap-3">
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
-            <ScanBarcode className="w-6 h-6 animate-pulse" />
-          </div>
+          <ScanBarcode className="w-6 h-6 text-emerald-400 animate-pulse ml-2" />
           <input
             ref={inputRef}
             type="text"
-            placeholder="Scan style code or SKU to log physical count..."
+            placeholder="Scan style code or SKU to record count..."
             value={scanInput}
             onChange={(e) => setScanInput(e.target.value)}
-            className="flex-1 bg-slate-950 border border-slate-700 text-sm px-4 py-3 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner font-mono"
+            className="flex-1 bg-slate-950 border border-slate-700 text-sm px-4 py-3 rounded-xl text-white focus:outline-none focus:border-emerald-500 font-mono"
             autoFocus
           />
-          <button
-            type="submit"
-            className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-6 py-3 rounded-xl text-xs transition cursor-pointer"
-          >
+          <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-6 py-3 rounded-xl text-xs cursor-pointer">
             Scan / Add
           </button>
         </form>
 
         {lastScannedItem && (
-          <div className="bg-slate-950 border border-emerald-500/30 px-4 py-2.5 rounded-xl flex items-center justify-between text-xs font-mono animate-in fade-in">
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-400" />
-              <span className="text-white font-bold">Successfully Scanned:</span>
-              <span className="text-emerald-300">{lastScannedItem.style_name} ({lastScannedItem.color} / {lastScannedItem.size}) • ₱{lastScannedItem.price}</span>
-            </div>
-            <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-black">
-              Counted: {lastScannedItem.counted_stock} pcs
-            </span>
+          <div className="bg-slate-950 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-mono text-emerald-300">
+            Scanned: {lastScannedItem.style_name} ({lastScannedItem.color} / {lastScannedItem.size}) - Qty: {lastScannedItem.counted_stock}
           </div>
         )}
       </div>
 
-      {/* TABLE WORKSPACE */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[520px]">
-        <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-emerald-400" />
-            <span className="text-sm font-bold text-white uppercase tracking-wider">Physical Count Log Entries ({storeRecords.length} items)</span>
-          </div>
-
-          <div className="relative w-72">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search scanned logs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-            />
-          </div>
+      <div className="bg-[#0E1526]/90 border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[500px]">
+        <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between">
+          <span className="text-sm font-bold text-white uppercase">Count Entries ({storeRecords.length})</span>
+          <input
+            type="text"
+            placeholder="Search records..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white w-64 focus:outline-none"
+          />
         </div>
 
         <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+          <table className="w-full text-left text-xs border-collapse font-mono">
+            <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30">
               <tr>
                 <th className="px-4 py-3.5 border-r border-slate-800">Style Code</th>
                 <th className="px-4 py-3.5 border-r border-slate-800">Style Name</th>
@@ -408,32 +329,16 @@ export default function PhysicalCountPage() {
                 <th className="px-4 py-3.5 border-r border-slate-800">Color</th>
                 <th className="px-4 py-3.5 border-r border-slate-800">Description</th>
                 <th className="px-4 py-3.5 text-right border-r border-slate-800">Price</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-800">System Stock</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-800">Physical Count</th>
+                <th className="px-4 py-3.5 text-right border-r border-slate-800">System</th>
+                <th className="px-4 py-3.5 text-right border-r border-slate-800">Count</th>
                 <th className="px-4 py-3.5 text-right border-r border-slate-800">Variance</th>
-                <th className="px-4 py-3.5 text-right">Quick Adjust</th>
+                <th className="px-4 py-3.5 text-right">Adjust</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80 font-mono">
-              {loading ? (
-                Array.from({ length: 6 }).map((_, idx) => (
-                  <tr key={idx} className="animate-pulse">
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-16"></div></td>
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-24"></div></td>
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-16"></div></td>
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-10"></div></td>
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-12"></div></td>
-                    <td className="px-4 py-4"><div className="h-3 bg-slate-800 rounded w-28"></div></td>
-                    <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-12 ml-auto"></div></td>
-                    <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-10 ml-auto"></div></td>
-                    <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-10 ml-auto"></div></td>
-                    <td className="px-4 py-4 text-right"><div className="h-3 bg-slate-800 rounded w-10 ml-auto"></div></td>
-                    <td className="px-4 py-4 text-right"><div className="h-6 bg-slate-800 rounded w-20 ml-auto"></div></td>
-                  </tr>
-                ))
-              ) : storeRecords.length === 0 ? (
+            <tbody className="divide-y divide-slate-800/80">
+              {storeRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-16 text-center text-slate-500 italic">No scanned items found in `physical_count_logs` for {selectedStore || "this store"}. Start scanning items above!</td>
+                  <td colSpan={11} className="p-16 text-center text-slate-500 italic">No scanned items found. Enter a barcode or style code above to start counting.</td>
                 </tr>
               ) : (
                 storeRecords.map((item) => {
@@ -447,26 +352,14 @@ export default function PhysicalCountPage() {
                       <td className="px-4 py-3.5 border-r border-slate-900/50 text-slate-300">{item.color}</td>
                       <td className="px-4 py-3.5 border-r border-slate-900/50 text-slate-400 font-sans">{item.description}</td>
                       <td className="px-4 py-3.5 text-right border-r border-slate-900/50 text-emerald-400 font-bold">₱{item.price.toFixed(2)}</td>
-                      <td className="px-4 py-3.5 text-right font-bold text-indigo-300 border-r border-slate-900/50">{item.system_stock} pcs</td>
-                      <td className="px-4 py-3.5 text-right font-black text-emerald-400 border-r border-slate-900/50 text-sm">{item.counted_stock} pcs</td>
-                      <td className={`px-4 py-3.5 text-right font-bold border-r border-slate-900/50 text-sm ${variance === 0 ? 'text-slate-400' : variance > 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
+                      <td className="px-4 py-3.5 text-right font-bold text-indigo-300 border-r border-slate-900/50">{item.system_stock}</td>
+                      <td className="px-4 py-3.5 text-right font-black text-emerald-400 border-r border-slate-900/50">{item.counted_stock}</td>
+                      <td className={`px-4 py-3.5 text-right font-bold border-r border-slate-900/50 ${variance === 0 ? 'text-slate-400' : variance > 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
                         {variance > 0 ? `+${variance}` : variance}
                       </td>
                       <td className="px-4 py-3.5 text-right flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => updateCount(item.id, item.counted_stock - 1)}
-                          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold flex items-center justify-center cursor-pointer transition"
-                          title="Decrease Count"
-                        >
-                          -
-                        </button>
-                        <button
-                          onClick={() => updateCount(item.id, item.counted_stock + 1)}
-                          className="w-7 h-7 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-lg font-bold flex items-center justify-center cursor-pointer transition"
-                          title="Increase Count"
-                        >
-                          +
-                        </button>
+                        <button onClick={() => updateCount(item.id, item.counted_stock - 1)} className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold flex items-center justify-center cursor-pointer">-</button>
+                        <button onClick={() => updateCount(item.id, item.counted_stock + 1)} className="w-7 h-7 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-lg font-bold flex items-center justify-center cursor-pointer">+</button>
                       </td>
                     </tr>
                   );
