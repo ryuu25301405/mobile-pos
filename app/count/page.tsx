@@ -132,29 +132,42 @@ export default function PhysicalCountPage() {
         alert(`Update error: ${error.message}`);
       }
     } else {
-      // 1. Get system stock from store_inventory
-      const { data: storeInv } = await supabase.from("store_inventory").select("*").eq("store", targetStore);
-      const inv = storeInv?.find(
-        (i: any) =>
-          String(i.style_code || "").trim().toLowerCase() === code.toLowerCase() || 
-          String(i.sku || "").trim().toLowerCase() === code.toLowerCase() ||
-          String(i.barcode || "").trim().toLowerCase() === code.toLowerCase()
-      ) || {};
+      // 1. Direct Server Query to store_inventory (bypasses the 1000 row limit)
+      const { data: invMatches } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", targetStore)
+        .or(`style_code.eq.${code},sku.eq.${code},barcode.eq.${code}`)
+        .limit(1);
 
-      // 2. Query products table directly and pull exact columns: description, color, size, price, sku
-      const { data: prodData } = await supabase.from("products").select("*");
-      const p = prodData?.find(
-        (item: any) =>
-          String(item.sku || "").trim().toLowerCase() === code.toLowerCase() ||
-          String(item.sku || "").trim().toLowerCase() === String(inv.sku || "").trim().toLowerCase() ||
-          String(item.sku || "").trim().toLowerCase() === String(inv.style_code || "").trim().toLowerCase()
-      ) || {};
+      const inv = invMatches && invMatches.length > 0 ? invMatches[0] : {};
+
+      const lookupSku = String(inv.sku || inv.style_code || code).trim();
+
+      // 2. Direct Server Query to products table using case-insensitive match (bypasses 1000 row limit)
+      let { data: prodMatches } = await supabase
+        .from("products")
+        .select("*")
+        .ilike("sku", lookupSku)
+        .limit(1);
+
+      let p = prodMatches && prodMatches.length > 0 ? prodMatches[0] : null;
+
+      // Fallback just in case the product is logged under a different column instead of sku
+      if (!p) {
+        const { data: fallbackMatches } = await supabase
+          .from("products")
+          .select("*")
+          .or(`style_code.eq.${code},barcode.eq.${code},sku.eq.${code}`)
+          .limit(1);
+        p = fallbackMatches && fallbackMatches.length > 0 ? fallbackMatches[0] : {};
+      }
 
       const newLogEntry = {
         store: targetStore,
         style_code: code,
         sku: p.sku || inv.sku || code,
-        style_name: p.description || inv.style_name || "Product " + code,
+        style_name: p.description || p.style_name || inv.style_name || "Unknown Product",
         color: p.color || inv.color || "-",
         size: p.size || inv.size || "-",
         description: p.description || inv.description || "-",
