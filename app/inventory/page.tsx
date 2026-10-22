@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 
 interface StoreInventoryItem {
-  id: string; // Guaranteed unique row primary key
+  id: string;
   store: string;
   style_code: string;
   sku: string | null;
@@ -252,7 +252,7 @@ export default function InventoryMonitoringPage() {
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
           if (l.style_code) {
-            logMap[l.style_code] = l;
+            logMap[String(l.style_code).trim()] = l;
           }
         });
       }
@@ -262,20 +262,21 @@ export default function InventoryMonitoringPage() {
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
           const calculatedOut = Math.max(0, initial - current);
-          const matchedLog = logMap[row.style_code] || {};
+          const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
+          const matchedLog = logMap[styleCodeStr] || {};
 
           return {
-            id: row.id, // Must be the unique UUID primary key from store_inventory
+            id: row.id,
             store: row.store,
-            style_code: row.style_code || "-",
-            sku: row.sku || matchedLog.sku || null,
+            style_code: styleCodeStr,
+            sku: row.sku ? String(row.sku).trim() : (matchedLog.sku ? String(matchedLog.sku).trim() : null),
             initial_stock: initial,
             current_stock: current,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
             price: Number(row.price) || 299.00,
-            style_name: row.style_name || matchedLog.style_name || matchedLog.description || row.style_code,
+            style_name: row.style_name || matchedLog.style_name || matchedLog.description || styleCodeStr,
             color: row.color || matchedLog.color || "Default",
             size: row.size || matchedLog.size || "Free Size",
             department: row.department || matchedLog.department || "General",
@@ -353,11 +354,14 @@ export default function InventoryMonitoringPage() {
 
     setRestockSubmitting(true);
     try {
+      const codeStr = String(restockStyleCode).trim();
+      const skuStr = restockSku ? String(restockSku).trim() : null;
+
       const { data: existing, error: checkErr } = await supabase
         .from("store_inventory")
         .select("*")
         .eq("store", restockStore)
-        .eq("style_code", restockStyleCode.trim())
+        .eq("style_code", codeStr)
         .maybeSingle();
 
       if (checkErr) throw checkErr;
@@ -373,7 +377,7 @@ export default function InventoryMonitoringPage() {
           .update({
             initial_stock: newInitial,
             current_stock: newCurrent,
-            sku: restockSku.trim() || existing.sku,
+            sku: skuStr || existing.sku,
             last_replenished_at: now,
           })
           .eq("id", existing.id);
@@ -384,8 +388,8 @@ export default function InventoryMonitoringPage() {
           .from("store_inventory")
           .insert({
             store: restockStore,
-            style_code: restockStyleCode.trim(),
-            sku: restockSku.trim() || null,
+            style_code: codeStr,
+            sku: skuStr,
             initial_stock: Number(restockQty),
             current_stock: Number(restockQty),
             safety_stock: 5,
@@ -443,11 +447,12 @@ export default function InventoryMonitoringPage() {
           if (!row || row.length === 0) continue;
 
           const storeVal = storeIdx !== -1 && row[storeIdx] ? String(row[storeIdx]).trim() : bulkDefaultStore;
-          const styleVal = row[styleIdx] ? String(row[styleIdx]).trim() : "";
-          const skuVal = skuIdx !== -1 && row[skuIdx] ? String(row[skuIdx]).trim() : "";
+          const styleVal = row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
+          const skuVal = skuIdx !== -1 && row[skuIdx] !== undefined && row[skuIdx] !== null ? String(row[skuIdx]).trim() : "";
           const qtyVal = Number(row[qtyIdx]) || 0;
 
-          if (styleVal && qtyVal > 0) {
+          // FIXED: Use !isNaN(qtyVal) instead of strict qtyVal > 0 so zero-stock items are included
+          if (styleVal && !isNaN(qtyVal)) {
             parsedItems.push({
               store: storeVal || bulkDefaultStore,
               style_code: styleVal,
@@ -475,16 +480,37 @@ export default function InventoryMonitoringPage() {
     try {
       const now = new Date().toISOString();
 
+      // Fetch products master to attach attributes during bulk insert
+      const { data: prodMasterData } = await supabase.from("products").select("*");
+      const prodMap = new Map<string, any>();
+      if (prodMasterData) {
+        prodMasterData.forEach((p: any) => {
+          if (p.style_code) prodMap.set(String(p.style_code).trim(), p);
+          if (p.sku) prodMap.set(String(p.sku).trim(), p);
+        });
+      }
+
       for (const item of bulkPreview) {
         const targetStore = item.store || bulkDefaultStore;
+        const styleCodeStr = String(item.style_code).trim();
+        const skuStr = item.sku ? String(item.sku).trim() : null;
+
+        const masterProd = prodMap.get(styleCodeStr) || (skuStr ? prodMap.get(skuStr) : {}) || {};
+
         const { data: existing, error: checkErr } = await supabase
           .from("store_inventory")
           .select("*")
           .eq("store", targetStore)
-          .eq("style_code", item.style_code)
+          .eq("style_code", styleCodeStr)
           .maybeSingle();
 
         if (checkErr) throw checkErr;
+
+        const itemPrice = Number(masterProd.price) || 299.00;
+        const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
+        const itemColor = masterProd.color || "Default";
+        const itemSize = masterProd.size || "Free Size";
+        const itemDept = masterProd.department || "General";
 
         if (existing) {
           const newInitial = Number(item.quantity);
@@ -496,7 +522,12 @@ export default function InventoryMonitoringPage() {
             .update({
               initial_stock: newInitial,
               current_stock: newCurrent,
-              sku: item.sku || existing.sku,
+              sku: skuStr || existing.sku,
+              price: existing.price || itemPrice,
+              style_name: existing.style_name || itemName,
+              color: existing.color || itemColor,
+              size: existing.size || itemSize,
+              department: existing.department || itemDept,
               last_replenished_at: now,
             })
             .eq("id", existing.id);
@@ -505,11 +536,16 @@ export default function InventoryMonitoringPage() {
             .from("store_inventory")
             .insert({
               store: targetStore,
-              style_code: item.style_code,
-              sku: item.sku || null,
+              style_code: styleCodeStr,
+              sku: skuStr,
               initial_stock: item.quantity,
               current_stock: item.quantity,
               safety_stock: 5,
+              price: itemPrice,
+              style_name: itemName,
+              color: itemColor,
+              size: itemSize,
+              department: itemDept,
               last_replenished_at: now,
             });
         }
@@ -531,7 +567,6 @@ export default function InventoryMonitoringPage() {
     e.preventDefault();
     if (!selectedManualItem || manualQty <= 0) return;
 
-    // Transaction & Idempotency Guard (Blocks double clicks within 3 seconds)
     const nowTs = Date.now();
     if (manualSubmitting || nowTs - lastSubmittedTime < 3000) {
       return;
@@ -557,7 +592,6 @@ export default function InventoryMonitoringPage() {
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
-      // ABSOLUTE ISOLATION: Update strictly by the exact row UUID primary key (`id`)
       const { error: invErr } = await supabase
         .from("store_inventory")
         .update({ current_stock: newCurrentStock })
@@ -616,52 +650,12 @@ export default function InventoryMonitoringPage() {
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedColIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dragOverColIndex !== index) {
-      setDragOverColIndex(index);
-    }
-  };
-
-  const handleDrop = (index: number) => {
-    if (draggedColIndex === null || draggedColIndex === index) {
-      setDraggedColIndex(null);
-      setDragOverColIndex(null);
-      return;
-    }
-
-    const updated = [...columns];
-    const [movedCol] = updated.splice(draggedColIndex, 1);
-    updated.splice(index, 0, movedCol);
-
-    persistColumns(updated);
-    setDraggedColIndex(null);
-    setDragOverColIndex(null);
-  };
-
-  const moveColumn = (currentIndex: number, targetIndex: number) => {
-    if (targetIndex < 0 || targetIndex >= columns.length) return;
-    const updated = [...columns];
-    const [col] = updated.splice(currentIndex, 1);
-    updated.splice(targetIndex, 0, col);
-    persistColumns(updated);
-  };
-
-  // Processed Items with Store Dropdown Filtering Fixed
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
-      // 1. Store Filter Check
       if (selectedStore !== "All Stores" && item.store !== selectedStore) {
         return false;
       }
 
-      // 2. Search Keyword Check
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         item.style_code?.toLowerCase().includes(q) ||
@@ -671,7 +665,6 @@ export default function InventoryMonitoringPage() {
 
       if (!matchesSearch) return false;
 
-      // 3. Stock Status Filter Check
       if (filterStockStatus === "LOW") {
         return item.current_stock > 0 && item.current_stock <= item.safety_stock;
       }
@@ -836,7 +829,7 @@ export default function InventoryMonitoringPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Store Inventory Monitoring</h1>
             <p className="text-xs text-slate-400">
-              Drag-to-reorder headers, sortable columns, and real-time intake
+              Real-time multi-store inventory tracking and stock management
             </p>
           </div>
         </div>
@@ -845,7 +838,7 @@ export default function InventoryMonitoringPage() {
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setIsAlertModalOpen(true)}
-            className="relative flex items-center gap-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer"
+            className="relative flex items-center gap-1.5 bg-rose-600/25 hover:bg-rose-600/35 text-rose-300 border border-rose-500/40 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer"
           >
             <Bell className="w-4 h-4 text-rose-400" />
             <span>Stock Alerts</span>
@@ -872,301 +865,139 @@ export default function InventoryMonitoringPage() {
             <span>Single Delivery</span>
           </button>
 
-          <button
-            onClick={() => {
-              setBatchSearchQuery("");
-              setBatchPage(1);
-              loadBatchItemsForStore(batchStore);
-              setIsBatchModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-amber-900/20"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            <span>Batch Adjustment</span>
-          </button>
-
-          <label className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer">
-            <Upload className="w-4 h-4 text-emerald-400" />
-            <span>Bulk Delivery (Excel)</span>
+          <label className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-sky-900/20">
+            <Upload className="w-4 h-4" />
+            <span>Bulk Upload</span>
             <input
-              type="file"
               ref={fileInputRef}
+              type="file"
+              accept=".csv, .xlsx, .xls"
               onChange={handleFileUpload}
-              accept=".xlsx, .xls, .csv"
               className="hidden"
             />
           </label>
-
-          <Link
-            href="/scanview"
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-2 rounded-lg text-xs font-semibold transition"
-          >
-            <ScanBarcode className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Scanner</span>
-          </Link>
-
-          <Link
-            href="/reports/daily-sales"
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-2 rounded-lg text-xs font-semibold transition"
-          >
-            <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Sales Report</span>
-          </Link>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-rose-400">Total Scanned Out</p>
-            <h3 className="text-2xl font-bold text-white mt-1">
-              {stats.totalOut.toLocaleString()} <span className="text-xs text-rose-400 font-semibold">sold</span>
-            </h3>
-          </div>
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl">
-            <ArrowUpRight className="w-5 h-5" />
-          </div>
+      {/* Stats Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Delivered</p>
+          <p className="text-2xl font-black text-white mt-1 font-mono">{stats.totalIn}</p>
         </div>
-
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Available Balance</p>
-            <h3 className="text-2xl font-bold text-white mt-1">
-              {stats.totalAvailable.toLocaleString()} <span className="text-xs text-emerald-400 font-semibold">units</span>
-            </h3>
-          </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
-            <Boxes className="w-5 h-5" />
-          </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sold (Out)</p>
+          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">-{stats.totalOut}</p>
         </div>
-
-        <div
-          onClick={() => setFilterStockStatus(filterStockStatus === "LOW" ? "ALL" : "LOW")}
-          className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
-            filterStockStatus === "LOW" ? "border-amber-500 bg-amber-500/10" : "border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-400">Low Stock Alerts</p>
-            <h3 className="text-2xl font-bold text-white mt-1">{stats.lowStockCount} items</h3>
-          </div>
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Available Stock</p>
+          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">{stats.totalAvailable}</p>
         </div>
-
-        <div
-          onClick={() => setFilterStockStatus(filterStockStatus === "OUT" ? "ALL" : "OUT")}
-          className={`bg-slate-900/60 border rounded-xl p-4 flex items-center justify-between cursor-pointer transition ${
-            filterStockStatus === "OUT" ? "border-rose-500 bg-rose-500/10" : "border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Depleted Items</p>
-            <h3 className="text-2xl font-bold text-white mt-1">{stats.outOfStockCount} items</h3>
-          </div>
-          <div className="p-3 bg-slate-800 border border-slate-700 text-slate-400 rounded-xl">
-            <XCircle className="w-5 h-5" />
-          </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Low Stock Items</p>
+          <p className="text-2xl font-black text-amber-400 mt-1 font-mono">{stats.lowStockCount}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md col-span-2 sm:col-span-1">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Out of Stock</p>
+          <p className="text-2xl font-black text-rose-500 mt-1 font-mono">{stats.outOfStockCount}</p>
         </div>
       </div>
 
-      {/* Filter Toolbar & Column Settings */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search Style Code, SKU, Store..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs">
-            <Store className="w-3.5 h-3.5 text-indigo-400" />
+      {/* Filters & Controls */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 flex-1">
+          <div className="relative min-w-[220px]">
             <select
               value={selectedStore}
               onChange={(e) => setSelectedStore(e.target.value)}
-              className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+              className="w-full bg-slate-950 text-white border border-slate-700 px-3 py-2.5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
-              {STORES.map((s) => (
-                <option key={s} value={s} className="bg-slate-900">{s}</option>
+              {STORES.map((st) => (
+                <option key={st} value={st}>{st}</option>
               ))}
             </select>
           </div>
 
-          <div className="relative" ref={customizerRef}>
-            <button
-              onClick={() => setIsColumnCustomizerOpen(!isColumnCustomizerOpen)}
-              className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 transition cursor-pointer"
-              title="Customize Columns"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Columns</span>
-            </button>
-
-            {isColumnCustomizerOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-2 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span className="font-bold text-white">Reorder Columns</span>
-                  <button
-                    onClick={handleResetColumns}
-                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-400 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Reset</span>
-                  </button>
-                </div>
-
-                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                  {columns.map((col, idx) => (
-                    <div
-                      key={col.id}
-                      className="flex items-center justify-between p-1.5 bg-slate-950 border border-slate-800 rounded-lg"
-                    >
-                      <div className="flex items-center gap-2">
-                        <GripVertical className="w-3 h-3 text-slate-600" />
-                        <span className="text-slate-200">{col.label}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          disabled={idx === 0}
-                          onClick={() => moveColumn(idx, idx - 1)}
-                          className="p-1 text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          disabled={idx === columns.length - 1}
-                          onClick={() => moveColumn(idx, idx + 1)}
-                          className="p-1 text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
-                        >
-                          ▼
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search style code, name, SKU..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-4 py-2.5 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+            />
           </div>
+        </div>
 
+        <div className="flex items-center gap-2">
           <button
-            onClick={fetchInventory}
-            className="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 cursor-pointer"
-            title="Refresh Stock"
+            onClick={() => setFilterStockStatus("ALL")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "ALL" ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} />
+            All
+          </button>
+          <button
+            onClick={() => setFilterStockStatus("LOW")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "LOW" ? 'bg-amber-600 text-slate-950' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+          >
+            Low Stock
+          </button>
+          <button
+            onClick={() => setFilterStockStatus("OUT")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "OUT" ? 'bg-rose-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+          >
+            Out of Stock
           </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl">
+      {/* Main Inventory Table */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-900 border-y-2 border-slate-700 text-slate-200 uppercase tracking-wider text-[11px] font-bold select-none">
+            <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-800">
               <tr>
-                {columns.map((col, index) => {
-                  const isSorted = sortKey === col.id;
-                  const isDraggingThis = draggedColIndex === index;
-                  const isOverThis = dragOverColIndex === index && draggedColIndex !== index;
-
-                  return (
-                    <th
-                      key={col.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={() => handleDrop(index)}
-                      onDragEnd={() => {
-                        setDraggedColIndex(null);
-                        setDragOverColIndex(null);
-                      }}
-                      className={`px-4 py-3.5 border-r border-slate-700/80 transition-colors relative cursor-grab active:cursor-grabbing ${
-                        col.headerBg || ""
-                      } ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"} ${
-                        isDraggingThis ? "opacity-30 bg-indigo-950/40" : ""
-                      } ${isOverThis ? "border-l-2 border-l-indigo-400 bg-indigo-900/20" : ""}`}
-                    >
-                      <div
-                        className={`inline-flex items-center gap-1.5 group ${
-                          col.align === "right"
-                            ? "justify-end w-full"
-                            : col.align === "center"
-                            ? "justify-center w-full"
-                            : "justify-start"
-                        }`}
-                      >
-                        <GripVertical className="w-3 h-3 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (col.sortable) handleHeaderSort(col.id);
-                          }}
-                          className="cursor-pointer hover:text-white transition-colors"
-                        >
-                          {col.label}
-                        </span>
-
-                        {col.sortable && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleHeaderSort(col.id);
-                            }}
-                            className="p-0.5 rounded text-slate-500 hover:text-white transition-colors cursor-pointer"
-                          >
-                            {isSorted ? (
-                              sortDirection === "asc" ? (
-                                <ArrowUp className="w-3.5 h-3.5 text-indigo-400" />
-                              ) : (
-                                <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
-                              )
-                            ) : (
-                              <ArrowUpDown className="w-3 h-3 text-slate-600 group-hover:text-slate-400 opacity-60" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </th>
-                  );
-                })}
+                {columns.map((col) => (
+                  <th
+                    key={col.id}
+                    onClick={() => col.sortable && handleHeaderSort(col.id)}
+                    className={`px-4 py-3.5 cursor-pointer hover:text-white transition select-none ${col.headerBg || ''} ${
+                      col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
+                    }`}
+                  >
+                    <div className={`flex items-center gap-1.5 ${col.align === "right" ? "justify-end" : col.align === "center" ? "justify-center" : "justify-start"}`}>
+                      <span>{col.label}</span>
+                      {col.sortable && (
+                        <ArrowUpDown className={`w-3 h-3 ${sortKey === col.id ? "text-indigo-400" : "text-slate-600"}`} />
+                      )}
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70">
+            <tbody className="divide-y divide-slate-800/60 font-mono">
               {loading ? (
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">
-                    Loading inventory data...
+                  <td colSpan={columns.length} className="p-16 text-center text-slate-500">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500 mb-2" />
+                    Loading store inventory data...
                   </td>
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">
-                    No items found matching the selected filters.
+                  <td colSpan={columns.length} className="p-16 text-center text-slate-500 italic font-sans">
+                    No inventory records found for the selected store or search filter.
                   </td>
                 </tr>
               ) : (
                 paginatedItems.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-slate-800/40 transition-colors divide-x divide-slate-800/50"
-                  >
+                  <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
                     {columns.map((col) => (
                       <td
                         key={col.id}
-                        className={`px-4 py-3 whitespace-nowrap ${
-                          col.align === "right"
-                            ? "text-right"
-                            : col.align === "center"
-                            ? "text-center"
-                            : "text-left"
+                        className={`px-4 py-3.5 ${
+                          col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                         }`}
                       >
                         {renderCellContent(col.id, item)}
@@ -1179,131 +1010,172 @@ export default function InventoryMonitoringPage() {
           </table>
         </div>
 
-        {/* Pagination Controls */}
-        <div className="p-4 border-t-2 border-slate-700/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/80">
-          <div className="flex items-center gap-3">
-            <span>
-              Showing <strong className="text-slate-200">{totalItems === 0 ? 0 : startIndex + 1}</strong> to{" "}
-              <strong className="text-slate-200">{Math.min(startIndex + pageSize, totalItems)}</strong> of{" "}
-              <strong className="text-slate-200">{totalItems}</strong> entries
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              <span>| Show</span>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-700 rounded-lg text-slate-200 px-2 py-1 focus:outline-none cursor-pointer font-medium"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
+        {/* Pagination Footer */}
+        <div className="px-5 py-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4">
+          <div className="text-xs text-slate-400 font-mono">
+            Showing <span className="font-bold text-white">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
+            <span className="font-bold text-white">{Math.min(startIndex + pageSize, totalItems)}</span> of{" "}
+            <span className="font-bold text-white">{totalItems}</span> entries
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={currentPage === 1 || loading}
-              className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
+          <div className="flex items-center gap-3">
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none"
             >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
+              <option value={10}>10 rows</option>
+              <option value={25}>25 rows</option>
+              <option value={50}>50 rows</option>
+              <option value={100}>100 rows</option>
+            </select>
 
-            <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
-              {currentPage} / {totalPages}
-            </span>
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages || loading}
-              className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 transition-colors cursor-pointer text-slate-200"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-bold text-slate-300 px-3 font-mono">
+                {currentPage} / {totalPages || 1}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* SINGLE RESTOCK MODAL */}
-      {isRestockOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white">Single Item Delivery / Restock</h3>
-              <button
-                onClick={() => setIsRestockOpen(false)}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
+      {/* Manual Sale Modal */}
+      {isManualModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5 text-emerald-400">
+                <ShoppingBag className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white uppercase">Encode Manual Sale</h3>
+              </div>
+              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleRestockSubmit} className="space-y-4">
+            {manualSuccessMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-3.5 rounded-xl text-xs font-bold">
+                {manualSuccessMsg}
+              </div>
+            )}
+
+            {manualErrorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3.5 rounded-xl text-xs font-bold">
+                {manualErrorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleManualSaleSubmit} className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Store Location</label>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Select Store Location</label>
                 <select
-                  value={restockStore}
-                  onChange={(e) => setRestockStore(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  value={manualStore}
+                  onChange={(e) => {
+                    setManualStore(e.target.value);
+                    setSelectedManualItem(null);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
                 >
-                  {STORES.filter((s) => s !== "All Stores").map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {STORES.filter(s => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>{st}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Style Code</label>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Search Product by Style Code or SKU</label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. BB01 P3"
-                  value={restockStyleCode}
-                  onChange={(e) => setRestockStyleCode(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white uppercase placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  placeholder="Type to filter inventory..."
+                  value={manualSearchQuery}
+                  onChange={(e) => setManualSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white font-mono mb-2"
                 />
+                <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
+                  {items
+                    .filter((i) => i.store === manualStore && (
+                      i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
+                      (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                      (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase()))
+                    ))
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => setSelectedManualItem(item)}
+                        className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${selectedManualItem?.id === item.id ? 'bg-indigo-600/30 border-l-4 border-indigo-500 text-white' : 'hover:bg-slate-900 text-slate-300'}`}
+                      >
+                        <div>
+                          <span className="font-bold text-emerald-400">{item.style_name || item.style_code}</span>
+                          <span className="text-slate-400 block text-[10px]">Code: {item.style_code} • SKU: {item.sku || '-'}</span>
+                        </div>
+                        <span className="font-bold text-indigo-300">Stock: {item.current_stock}</span>
+                      </div>
+                    ))}
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">SKU (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 3076566299"
-                  value={restockSku}
-                  onChange={(e) => setRestockSku(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
-                />
+              {selectedManualItem && (
+                <div className="bg-slate-950 border border-indigo-500/30 p-3.5 rounded-xl space-y-2 text-xs font-mono">
+                  <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_name || selectedManualItem.style_code}</p>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300">
+                    <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
+                    <div>Default Price: <span className="text-emerald-400 font-bold">₱{selectedManualItem.price?.toFixed(2)}</span></div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity Sold</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={manualQty}
+                    onChange={(e) => setManualQty(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Custom Price (₱)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={String(selectedManualItem?.price || 299)}
+                    value={manualPrice}
+                    onChange={(e) => setManualPrice(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Quantity to Deliver</label>
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={restockQty}
-                  onChange={(e) => setRestockQty(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsRestockOpen(false)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={restockSubmitting}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                  disabled={manualSubmitting || !selectedManualItem}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-xl text-xs cursor-pointer disabled:opacity-50"
                 >
-                  {restockSubmitting ? "Processing..." : "Confirm Intake"}
+                  {manualSubmitting ? "Processing..." : "Commit Sale"}
                 </button>
               </div>
             </form>
@@ -1311,371 +1183,140 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
-      {/* STOCK ALERTS POPUP NOTIFICATION MODAL */}
-      {isAlertModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20">
-                  <Bell className="w-5 h-5 animate-bounce" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Stock Alerts & Replenishment Notices</h3>
-                  <p className="text-xs text-slate-400">{alertItems.length} items require immediate attention (Low or Depleted)</p>
-                </div>
-              </div>
-              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+      {/* Single Restock Modal */}
+      {isRestockOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
+              <button onClick={() => setIsRestockOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-[55vh] [scrollbar-width:thin]">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
-                  <tr>
-                    <th className="px-4 py-3">Store Location</th>
-                    <th className="px-4 py-3">Style / Details</th>
-                    <th className="px-4 py-3 text-center">Condition</th>
-                    <th className="px-4 py-3 text-right">Stock / Safety</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {alertItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-12 text-center text-emerald-400 font-semibold">
-                        All stores are fully stocked! No alerts at this time.
-                      </td>
-                    </tr>
-                  ) : (
-                    alertItems.map((item) => {
-                      const isOut = item.current_stock <= 0;
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-800/40">
-                          <td className="px-4 py-3 font-medium text-slate-300">{item.store}</td>
-                          <td className="px-4 py-3 font-mono">
-                            <span className="font-bold text-white block">{item.style_name || item.style_code}</span>
-                            <span className="text-[10px] text-slate-400">Code: {item.style_code} • SKU: {item.sku || "-"}</span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {isOut ? (
-                              <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-                                Out of Stock
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-                                Low Stock
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono font-bold">
-                            <span className={isOut ? "text-rose-400" : "text-amber-400"}>{item.current_stock} pcs</span>
-                            <span className="text-slate-500 text-[10px] block">Safety threshold: {item.safety_stock}</span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setIsAlertModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
-              >
-                Close Alerts
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BATCH STOCK ADJUSTMENT MODAL */}
-      {isBatchModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-4xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <form onSubmit={handleRestockSubmit} className="space-y-4">
               <div>
-                <h3 className="text-base font-bold text-white">Batch Stock & Safety Level Adjustment</h3>
-                <p className="text-xs text-slate-400">Quickly adjust incoming/outgoing quantities or safety thresholds for multiple items</p>
-              </div>
-              <button onClick={() => setIsBatchModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-xs font-semibold text-slate-400 shrink-0">Target Branch:</span>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Store Location</label>
                 <select
-                  value={batchStore}
-                  onChange={(e) => {
-                    const newStore = e.target.value;
-                    setBatchStore(newStore);
-                    setBatchPage(1);
-                    loadBatchItemsForStore(newStore);
-                  }}
-                  className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-3 py-1.5 focus:outline-none font-bold cursor-pointer"
+                  value={restockStore}
+                  onChange={(e) => setRestockStore(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
                 >
-                  {STORES.filter((s) => s !== "All Stores").map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {STORES.filter(s => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>{st}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="relative flex-1 w-full">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Style Code</label>
                 <input
                   type="text"
-                  placeholder="Filter items by style code or name..."
-                  value={batchSearchQuery}
-                  onChange={(e) => {
-                    setBatchSearchQuery(e.target.value);
-                    setBatchPage(1);
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  required
+                  placeholder="e.g. 30765663011"
+                  value={restockStyleCode}
+                  onChange={(e) => setRestockStyleCode(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
                 />
               </div>
-            </div>
 
-            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-[50vh] [scrollbar-width:thin]">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
-                  <tr>
-                    <th className="px-4 py-3">Style / Variant</th>
-                    <th className="px-4 py-3">SKU</th>
-                    <th className="px-4 py-3 text-right">Current Stock</th>
-                    <th className="px-4 py-3 text-right">Adjustment (+/- Qty)</th>
-                    <th className="px-4 py-3 text-right">New Safety Level</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {paginatedBatchItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
-                        No products found matching your search.
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedBatchItems.map((row) => (
-                      <tr key={row.style_code} className="hover:bg-slate-800/40">
-                        <td className="px-4 py-2.5 font-mono">
-                          <span className="font-bold text-white block">{row.style_name}</span>
-                          <span className="text-[10px] text-slate-400">Code: {row.style_code}</span>
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-blue-400">{row.sku || "-"}</td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-400">
-                          {row.current_stock} pcs
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono">
-                          <input
-                            type="number"
-                            value={row.qty_delta}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
-                              setBatchAdjustments((prev) =>
-                                prev.map((item) => (item.style_code === row.style_code ? { ...item, qty_delta: val } : item))
-                              );
-                            }}
-                            placeholder="0"
-                            className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
-                          />
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono">
-                          <input
-                            type="number"
-                            min={0}
-                            value={row.new_safety}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
-                              setBatchAdjustments((prev) =>
-                                prev.map((item) => (item.style_code === row.style_code ? { ...item, new_safety: val } : item))
-                              );
-                            }}
-                            className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
-                          />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">SKU (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 566301"
+                  value={restockSku}
+                  onChange={(e) => setRestockSku(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
+                />
+              </div>
 
-            {/* Batch Modal Pagination Footer */}
-            <div className="p-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 rounded-xl">
-              <span>
-                Showing <strong className="text-slate-200">{batchTotalItems === 0 ? 0 : batchStartIndex + 1}</strong> to{" "}
-                <strong className="text-slate-200">{Math.min(batchStartIndex + batchPageSize, batchTotalItems)}</strong> of{" "}
-                <strong className="text-slate-200">{batchTotalItems}</strong> entries
-              </span>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity to Add</label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                />
+              </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setBatchPage((p) => Math.max(p - 1, 1))}
-                  disabled={batchPage === 1}
-                  className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 cursor-pointer text-slate-200"
+                  onClick={() => setIsRestockOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  Cancel
                 </button>
-                <span className="px-2.5 py-1 bg-slate-800 text-slate-200 rounded-lg border border-slate-700 font-medium">
-                  {batchPage} / {batchTotalPages}
-                </span>
                 <button
-                  type="button"
-                  onClick={() => setBatchPage((p) => Math.min(p + 1, batchTotalPages))}
-                  disabled={batchPage === batchTotalPages}
-                  className="p-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 cursor-pointer text-slate-200"
+                  type="submit"
+                  disabled={restockSubmitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs cursor-pointer disabled:opacity-50"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  {restockSubmitting ? "Saving..." : "Commit Delivery"}
                 </button>
               </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setIsBatchModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={batchSubmitting || batchAdjustments.length === 0}
-                onClick={async () => {
-                  setBatchSubmitting(true);
-                  try {
-                    const now = new Date().toISOString();
-                    for (const adj of batchAdjustments) {
-                      if (adj.qty_delta === 0 && adj.new_safety === undefined) continue;
-
-                      const { data: existing } = await supabase
-                        .from("store_inventory")
-                        .select("*")
-                        .eq("store", batchStore)
-                        .eq("style_code", adj.style_code)
-                        .maybeSingle();
-
-                      if (existing) {
-                        const newInitial = (Number(existing.initial_stock) || 0) + (adj.qty_delta > 0 ? adj.qty_delta : 0);
-                        const newCurrent = Math.max(0, (Number(existing.current_stock) || 0) + adj.qty_delta);
-
-                        await supabase
-                          .from("store_inventory")
-                          .update({
-                            initial_stock: newInitial,
-                            current_stock: newCurrent,
-                            safety_stock: adj.new_safety,
-                            last_replenished_at: adj.qty_delta > 0 ? now : existing.last_replenished_at,
-                          })
-                          .eq("id", existing.id);
-                      } else {
-                        if (adj.qty_delta > 0 || adj.new_safety > 0) {
-                          await supabase
-                            .from("store_inventory")
-                            .insert({
-                              store: batchStore,
-                              style_code: adj.style_code,
-                              sku: adj.sku || null,
-                              initial_stock: Math.max(0, adj.qty_delta),
-                              current_stock: Math.max(0, adj.qty_delta),
-                              safety_stock: adj.new_safety || 5,
-                              last_replenished_at: now,
-                            });
-                        }
-                      }
-                    }
-
-                    setIsBatchModalOpen(false);
-                    fetchInventory();
-                    alert("Batch adjustments successfully saved!");
-                  } catch (err) {
-                    console.error("Batch update error:", err);
-                    alert("Failed to commit batch adjustments.");
-                  } finally {
-                    setBatchSubmitting(false);
-                  }
-                }}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
-              >
-                {batchSubmitting ? "Saving Changes..." : "Save All Adjustments"}
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* BULK IMPORT PREVIEW MODAL */}
+      {/* Bulk Upload Preview Modal */}
       {isBulkOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
-                <h3 className="text-base font-bold text-white">Bulk Delivery Preview & Store Allocation</h3>
-                <p className="text-xs text-slate-400">{bulkPreview.length} items parsed from file ({bulkDefaultStore})</p>
+                <h3 className="text-base font-bold text-white uppercase">Bulk Delivery Preview</h3>
+                <p className="text-xs text-slate-400">Reviewing {bulkPreview.length} items parsed from spreadsheet</p>
               </div>
-              <button
-                onClick={() => setIsBulkOpen(false)}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
+              <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* PROMINENT STORE LOCATION SELECTOR BANNER */}
-            <div className="bg-indigo-600/15 border border-indigo-500/40 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block">Select Target Store Location</span>
-                <p className="text-xs text-slate-300">Choose where these items will be delivered and stocked:</p>
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Target Store Location for Bulk Upload</label>
               <select
                 value={bulkDefaultStore}
-                onChange={(e) => {
-                  const newStore = e.target.value;
-                  setBulkDefaultStore(newStore);
-                  setBulkPreview((prev) => prev.map((item) => ({ ...item, store: newStore })));
-                }}
-                className="bg-slate-950 border border-indigo-500/60 rounded-xl text-xs font-bold text-white px-3.5 py-2.5 focus:outline-none focus:border-indigo-400 cursor-pointer w-full sm:w-auto shadow-inner"
+                onChange={(e) => setBulkDefaultStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
               >
-                {STORES.filter((s) => s !== "All Stores").map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {STORES.filter(s => s !== "All Stores").map((st) => (
+                  <option key={st} value={st}>{st}</option>
                 ))}
               </select>
             </div>
 
-            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-64 [scrollbar-width:thin]">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-60">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] sticky top-0 border-b border-slate-800">
                   <tr>
-                    <th className="px-3 py-2">Store Location</th>
-                    <th className="px-3 py-2">Style Code</th>
-                    <th className="px-3 py-2">SKU</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2.5">Style Code</th>
+                    <th className="px-3 py-2.5">SKU</th>
+                    <th className="px-3 py-2.5 text-right">Quantity</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-slate-800/60">
                   {bulkPreview.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-2 font-bold text-indigo-300">{item.store || bulkDefaultStore}</td>
-                      <td className="px-3 py-2 font-mono text-emerald-400 font-bold">{item.style_code}</td>
-                      <td className="px-3 py-2 font-mono text-blue-400">{item.sku || "-"}</td>
-                      <td className="px-3 py-2 font-mono text-right text-white font-bold">{item.quantity}</td>
+                      <td className="px-3 py-2 text-emerald-400 font-bold">{item.style_code}</td>
+                      <td className="px-3 py-2 text-blue-400">{item.sku || "-"}</td>
+                      <td className="px-3 py-2 text-right font-bold text-white">{item.quantity}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsBulkOpen(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
               >
                 Cancel
               </button>
@@ -1683,177 +1324,71 @@ export default function InventoryMonitoringPage() {
                 type="button"
                 disabled={bulkSubmitting || bulkPreview.length === 0}
                 onClick={handleBulkSubmit}
-                className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition cursor-pointer disabled:opacity-50 shadow-lg"
+                className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-black rounded-xl text-xs cursor-pointer disabled:opacity-50"
               >
-                {bulkSubmitting ? "Processing..." : `Commit ${bulkPreview.length} Deliveries to ${bulkDefaultStore}`}
+                {bulkSubmitting ? "Committing..." : `Commit ${bulkPreview.length} Items`}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MANUAL SALES ENCODING MODAL */}
-      {isManualModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-white">Manual Sales Encoding</h3>
-                <p className="text-xs text-slate-400">Record a sale and deduct store inventory instantly</p>
+      {/* Stock Alerts Modal */}
+      {isAlertModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Bell className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white uppercase">Low & Out of Stock Alerts ({alertItems.length})</h3>
               </div>
-              <button
-                onClick={() => {
-                  setIsManualModalOpen(false);
-                  setSelectedManualItem(null);
-                  setManualSuccessMsg("");
-                  setManualErrorMsg("");
-                }}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
+              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {manualSuccessMsg && (
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{manualSuccessMsg}</span>
-              </div>
-            )}
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-96">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="px-3 py-2.5">Store</th>
+                    <th className="px-3 py-2.5">Style / Item</th>
+                    <th className="px-3 py-2.5 text-center">Status</th>
+                    <th className="px-3 py-2.5 text-right">Available</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {alertItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-10 text-center text-slate-500 font-sans italic">All store inventories are above safety stock levels.</td>
+                    </tr>
+                  ) : (
+                    alertItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-800/40">
+                        <td className="px-3 py-2.5 text-slate-300">{item.store}</td>
+                        <td className="px-3 py-2.5 text-emerald-400 font-bold">{item.style_name || item.style_code}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          {item.current_stock <= 0 ? (
+                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Out of Stock</span>
+                          ) : (
+                            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Low Stock</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold text-rose-400">{item.current_stock}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-            {manualErrorMsg && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-semibold flex items-center gap-2">
-                <XCircle className="w-4 h-4 shrink-0" />
-                <span>{manualErrorMsg}</span>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Select Store Branch</label>
-                <select
-                  value={manualStore}
-                  onChange={(e) => setManualStore(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer font-bold"
-                >
-                  {STORES.filter((s) => s !== "All Stores").map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Search Product / Style Code</label>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Type style code or name..."
-                    value={manualSearchQuery}
-                    onChange={(e) => setManualSearchQuery(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* Search Results Dropdown / Picker */}
-              <div className="max-h-40 overflow-y-auto space-y-1 border border-slate-800 rounded-xl p-1 bg-slate-950/60 [scrollbar-width:thin]">
-                {items
-                  .filter(
-                    (i) =>
-                      i.store === manualStore &&
-                      (i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
-                        (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
-                        (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase())))
-                  )
-                  .map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        setSelectedManualItem(item);
-                        setManualPrice(String(item.price || 299));
-                      }}
-                      className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between text-xs border ${
-                        selectedManualItem?.id === item.id
-                          ? "bg-emerald-600/20 border-emerald-500 text-white font-bold"
-                          : "bg-slate-900/50 border-slate-800 text-slate-300 hover:border-slate-700"
-                      }`}
-                    >
-                      <div>
-                        <span className="font-mono font-bold text-emerald-400 block">{item.style_name || item.style_code}</span>
-                        <span className="text-[10px] text-slate-400">Code: {item.style_code} • SKU: {item.sku || "-"} • ID: {item.id}</span>
-                      </div>
-                      <div className="text-right font-mono">
-                        <span className={`block font-bold ${item.current_stock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                          {item.current_stock} pcs left
-                        </span>
-                        <span className="text-[10px] text-slate-400">₱{item.price || 299}</span>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-
-              {selectedManualItem && (
-                <form onSubmit={handleManualSaleSubmit} className="space-y-3 pt-2 border-t border-slate-800">
-                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
-                    <div>
-                      <span className="text-slate-400 text-[10px] uppercase block">Selected Item (ID: {selectedManualItem.id})</span>
-                      <span className="font-bold text-white font-mono">{selectedManualItem.style_name} ({selectedManualItem.style_code})</span>
-                    </div>
-                    <span className="text-emerald-400 font-mono font-bold">{selectedManualItem.current_stock} available</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-400 block mb-1">Quantity Sold</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={selectedManualItem.current_stock}
-                        required
-                        value={manualQty}
-                        onChange={(e) => setManualQty(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-400 block mb-1">Unit Price (₱)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={manualPrice}
-                        onChange={(e) => setManualPrice(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedManualItem(null)}
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
-                    >
-                      Clear Selection
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={manualSubmitting || selectedManualItem.current_stock <= 0}
-                      className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      {manualSubmitting ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
-                          <span>Encoding...</span>
-                        </>
-                      ) : (
-                        <span>Confirm & Deduct Stock</span>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              )}
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setIsAlertModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
