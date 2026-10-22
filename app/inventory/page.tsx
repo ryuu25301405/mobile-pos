@@ -33,6 +33,7 @@ import {
   Check,
   Bell,
   Loader2,
+  Calendar,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -65,6 +66,7 @@ interface ProductMasterRecord {
   price?: number;
   unit_price?: number;
   srp?: number;
+  amount?: number;
   description?: string;
 }
 
@@ -162,6 +164,9 @@ export default function InventoryMonitoringPage() {
   const [manualQty, setManualQty] = useState<number>(1);
   const [manualPrice, setManualPrice] = useState<string>("");
   const [manualStore, setManualStore] = useState<string>(STORES[1]);
+  const [manualDate, setManualDate] = useState<string>(
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  );
   const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
   const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
@@ -210,10 +215,13 @@ export default function InventoryMonitoringPage() {
       setProductsMaster(prodData);
 
       const prodPriceMap = new Map<string, number>();
+      const prodDescMap = new Map<string, string>();
       prodData.forEach((p) => {
         const pVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
         if (p.style_code && pVal > 0) prodPriceMap.set(String(p.style_code).trim(), pVal);
         if (p.sku && pVal > 0) prodPriceMap.set(String(p.sku).trim(), pVal);
+        if (p.style_code && p.description) prodDescMap.set(String(p.style_code).trim(), p.description);
+        if (p.sku && p.description) prodDescMap.set(String(p.sku).trim(), p.description);
       });
 
       const logMap: Record<string, any> = {};
@@ -244,6 +252,14 @@ export default function InventoryMonitoringPage() {
             cleanNumericPrice(matchedLog.price) ||
             0;
 
+          const matchedDesc =
+            row.description ||
+            prodDescMap.get(styleCodeStr) ||
+            prodDescMap.get(String(row.sku).trim()) ||
+            matchedLog.description ||
+            matchedLog.style_name ||
+            "-";
+
           return {
             id: String(row.id),
             store: row.store ? row.store.trim() : "Main Store",
@@ -255,7 +271,8 @@ export default function InventoryMonitoringPage() {
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
             price: matchedPrice,
-            style_name: row.style_name || matchedLog.style_name || matchedLog.description || styleCodeStr,
+            style_name: row.style_name || matchedLog.style_name || styleCodeStr,
+            description: matchedDesc,
             color: row.color || matchedLog.color || "Default",
             size: row.size || matchedLog.size || "Free Size",
             department: row.department || matchedLog.department || "General",
@@ -296,26 +313,59 @@ export default function InventoryMonitoringPage() {
     const styleCodeStr = String(item.style_code).trim();
     const skuStr = item.sku ? String(item.sku).trim() : "";
 
-    let foundMaster: any = productsMaster.find(
-      (p: any) =>
-        String(p.style_code).trim() === styleCodeStr ||
-        (skuStr && String(p.sku).trim() === skuStr)
-    );
+    let priceVal = cleanNumericPrice(item.price);
+    let descVal = item.description || "";
 
-    let priceVal = cleanNumericPrice(foundMaster?.price || foundMaster?.unit_price || foundMaster?.srp || item.price);
+    if (priceVal <= 0 || !descVal || descVal === "-") {
+      const foundMaster: any = productsMaster.find(
+        (p: any) =>
+          String(p.style_code).trim() === styleCodeStr ||
+          (skuStr && String(p.sku).trim() === skuStr)
+      );
+      if (foundMaster) {
+        if (priceVal <= 0) {
+          priceVal = cleanNumericPrice(foundMaster.price || foundMaster.unit_price || foundMaster.srp || foundMaster.amount);
+        }
+        if (!descVal || descVal === "-") {
+          descVal = foundMaster.description || foundMaster.style_name || "";
+        }
+      }
+    }
+
+    if (priceVal <= 0 || !descVal || descVal === "-") {
+      const { data: directProd } = await supabase
+        .from("products")
+        .select("*")
+        .or(`style_code.eq.${styleCodeStr},sku.eq.${skuStr || styleCodeStr}`)
+        .limit(1);
+
+      if (directProd && directProd.length > 0) {
+        const p = directProd[0];
+        if (priceVal <= 0) {
+          priceVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
+        }
+        if (!descVal || descVal === "-") {
+          descVal = p.description || p.style_name || "";
+        }
+      }
+    }
 
     if (priceVal <= 0) {
       const { data: logMatch } = await supabase
         .from("scanned_logs")
-        .select("price")
+        .select("price, description, style_name")
         .eq("style_code", styleCodeStr)
-        .gt("price", 0)
         .order("scanned_at", { ascending: false })
         .limit(1);
 
       if (logMatch && logMatch.length > 0) {
-        priceVal = cleanNumericPrice(logMatch[0].price);
+        if (priceVal <= 0) priceVal = cleanNumericPrice(logMatch[0].price);
+        if (!descVal || descVal === "-") descVal = logMatch[0].description || logMatch[0].style_name || "";
       }
+    }
+
+    if (descVal && descVal !== "-") {
+      setSelectedManualItem({ ...item, description: descVal });
     }
 
     setManualPrice(priceVal > 0 ? String(priceVal) : "");
@@ -597,7 +647,8 @@ export default function InventoryMonitoringPage() {
 
       const p = masterProd || {};
 
-      const finalStyleName = p.style_name || p.description || selectedManualItem.style_name || styleCodeStr;
+      const finalStyleName = p.style_name || selectedManualItem.style_name || styleCodeStr;
+      const finalDescription = p.description || selectedManualItem.description || finalStyleName;
       const finalColor = p.color || (selectedManualItem.color !== "Default" ? selectedManualItem.color : "-");
       const finalSize = p.size || (selectedManualItem.size !== "Free Size" ? selectedManualItem.size : "-");
       const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
@@ -605,7 +656,7 @@ export default function InventoryMonitoringPage() {
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
       const unitPrice = cleanNumericPrice(manualPrice) || selectedMasterPrice;
       const totalRev = unitPrice * manualQty;
-      const now = new Date().toISOString();
+      const saleTimestamp = manualDate ? new Date(manualDate).toISOString() : new Date().toISOString();
 
       const { error: invErr } = await supabase
         .from("store_inventory")
@@ -621,13 +672,14 @@ export default function InventoryMonitoringPage() {
           style_code: styleCodeStr,
           sku: skuStr || p.sku || "-",
           style_name: finalStyleName,
+          description: finalDescription,
           color: finalColor,
           size: finalSize,
           department: finalDept,
           price: unitPrice,
           quantity: manualQty,
           revenue: totalRev,
-          scanned_at: now,
+          scanned_at: saleTimestamp,
         });
 
       if (logErr) throw logErr;
@@ -1057,7 +1109,7 @@ export default function InventoryMonitoringPage() {
       {/* Manual Sale Modal */}
       {isManualModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-2.5 text-emerald-400">
                 <ShoppingBag className="w-5 h-5" />
@@ -1107,12 +1159,13 @@ export default function InventoryMonitoringPage() {
                   onChange={(e) => setManualSearchQuery(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white font-mono mb-2"
                 />
-                <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
+                <div className="max-h-36 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
                   {items
                     .filter((i) => i.store.toLowerCase().trim() === manualStore.toLowerCase().trim() && (
                       i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
                       (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
-                      (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase()))
+                      (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                      (i.description && i.description.toLowerCase().includes(manualSearchQuery.toLowerCase()))
                     ))
                     .map((item) => (
                       <div
@@ -1121,7 +1174,7 @@ export default function InventoryMonitoringPage() {
                         className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${selectedManualItem?.id === item.id ? 'bg-indigo-600/30 border-l-4 border-indigo-500 text-white' : 'hover:bg-slate-900 text-slate-300'}`}
                       >
                         <div>
-                          <span className="font-bold text-emerald-400">{item.style_name || item.style_code}</span>
+                          <span className="font-bold text-emerald-400">{item.description && item.description !== "-" ? item.description : item.style_name || item.style_code}</span>
                           <span className="text-slate-400 block text-[10px]">Code: {item.style_code} • SKU: {item.sku || '-'}</span>
                         </div>
                         <span className="font-bold text-indigo-300">Stock: {item.current_stock}</span>
@@ -1132,8 +1185,9 @@ export default function InventoryMonitoringPage() {
 
               {selectedManualItem && (
                 <div className="bg-slate-950 border border-indigo-500/30 p-3.5 rounded-xl space-y-2 text-xs font-mono">
-                  <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_name || selectedManualItem.style_code}</p>
-                  <div className="grid grid-cols-2 gap-2 text-slate-300">
+                  <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_code}</p>
+                  <p className="text-white text-xs font-sans font-semibold">Description: {selectedManualItem.description || selectedManualItem.style_name || 'N/A'}</p>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300 pt-1">
                     <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
                     <div>Catalog Price: <span className="text-emerald-400 font-bold">{selectedMasterPrice > 0 ? `₱${selectedMasterPrice.toFixed(2)}` : 'Not Set'}</span></div>
                   </div>
@@ -1160,6 +1214,19 @@ export default function InventoryMonitoringPage() {
                     value={manualPrice}
                     onChange={(e) => setManualPrice(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Sale Date & Time</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <input
+                    type="datetime-local"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
