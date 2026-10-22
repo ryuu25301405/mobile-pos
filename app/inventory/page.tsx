@@ -124,19 +124,13 @@ export default function InventoryMonitoringPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterStockStatus, setFilterStockStatus] = useState<"ALL" | "LOW" | "OUT">("ALL");
 
-  // Sorting State
-  const [sortKey, setSortKey] = useState<ColumnKey | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortKey, setSortKey] = useState<ColumnKey | null>("current_stock");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
-  // Dynamic Column Order State
   const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
-  const [isColumnCustomizerOpen, setIsColumnCustomizerOpen] = useState(false);
-
-  // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // Single Restock Modal
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
   const [restockStyleCode, setRestockStyleCode] = useState<string>("");
   const [restockSku, setRestockSku] = useState<string>("");
@@ -144,26 +138,13 @@ export default function InventoryMonitoringPage() {
   const [restockQty, setRestockQty] = useState<number>(10);
   const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
 
-  // Batch Adjustment Modal State
-  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
-  const [batchStore, setBatchStore] = useState<string>(STORES[1]);
-  const [batchSearchQuery, setBatchSearchQuery] = useState<string>("");
-  const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number; current_stock: number }>>([]);
-  
-  // Batch Pagination State
-  const [batchPage, setBatchPage] = useState<number>(1);
-  const [batchPageSize, setBatchPageSize] = useState<number>(10);
-
-  // Alert Popup Modal State
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
 
-  // Bulk Import Modal State
   const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
   const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
   const [bulkPreview, setBulkPreview] = useState<BulkImportItem[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
 
-  // Manual Sales Modal State
   const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
   const [manualSearchQuery, setManualSearchQuery] = useState<string>("");
   const [selectedManualItem, setSelectedManualItem] = useState<StoreInventoryItem | null>(null);
@@ -174,62 +155,40 @@ export default function InventoryMonitoringPage() {
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
   const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
   
-  // Transaction Guard State
   const [lastSubmittedTime, setLastSubmittedTime] = useState<number>(0);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const customizerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("store_inventory_columns");
-      if (saved) {
-        const savedIds: ColumnKey[] = JSON.parse(saved);
-        const reconstructed = savedIds
-          .map((id) => DEFAULT_COLUMNS.find((col) => col.id === id))
-          .filter(Boolean) as ColumnDef[];
-        if (reconstructed.length === DEFAULT_COLUMNS.length) {
-          setColumns(reconstructed);
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to load saved column config", e);
-    }
-  }, []);
-
-  const persistColumns = (newCols: ColumnDef[]) => {
-    setColumns(newCols);
-    try {
-      localStorage.setItem("store_inventory_columns", JSON.stringify(newCols.map((c) => c.id)));
-    } catch (e) {
-      console.warn("Failed to save column config", e);
-    }
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (customizerRef.current && !customizerRef.current.contains(event.target as Node)) {
-        setIsColumnCustomizerOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedStore, searchQuery, filterStockStatus, pageSize, sortKey, sortDirection]);
 
-  useEffect(() => {
-    setBatchPage(1);
-  }, [batchSearchQuery, batchStore]);
-
   const fetchInventory = useCallback(async () => {
     setLoading(true);
 
     try {
-      const [invRes, prodRes, logsRes] = await Promise.all([
-        supabase.from("store_inventory").select("*").order("current_stock", { ascending: true }),
+      let allInvData: any[] = [];
+      let page = 0;
+      let fetchMore = true;
+
+      while (fetchMore) {
+        const { data: chunk, error: chunkErr } = await supabase
+          .from("store_inventory")
+          .select("*")
+          .order("current_stock", { ascending: false })
+          .range(page * 1000, (page + 1) * 1000 - 1);
+
+        if (chunkErr) throw chunkErr;
+
+        if (chunk && chunk.length > 0) {
+          allInvData = [...allInvData, ...chunk];
+          if (chunk.length < 1000) fetchMore = false;
+          page++;
+        } else {
+          fetchMore = false;
+        }
+      }
+
+      const [prodRes, logsRes] = await Promise.all([
         supabase.from("products").select("*"),
         supabase.from("scanned_logs").select("style_code, style_name, description, color, size, department")
       ]);
@@ -248,8 +207,8 @@ export default function InventoryMonitoringPage() {
         });
       }
 
-      if (invRes.data) {
-        const enriched: StoreInventoryItem[] = invRes.data.map((row: any) => {
+      if (allInvData) {
+        const enriched: StoreInventoryItem[] = allInvData.map((row: any) => {
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
           const calculatedOut = Math.max(0, initial - current);
@@ -258,7 +217,7 @@ export default function InventoryMonitoringPage() {
 
           return {
             id: String(row.id),
-            store: row.store,
+            store: row.store ? row.store.trim() : "Main Store",
             style_code: styleCodeStr,
             sku: row.sku ? String(row.sku).trim() : (matchedLog.sku ? String(matchedLog.sku).trim() : null),
             initial_stock: initial,
@@ -287,7 +246,6 @@ export default function InventoryMonitoringPage() {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Realtime subscription
   useEffect(() => {
     const channel = supabase
       .channel("store_inventory_feed")
@@ -434,7 +392,6 @@ export default function InventoryMonitoringPage() {
     try {
       const now = new Date().toISOString();
 
-      // 1. Fetch products master map
       const { data: prodMasterData } = await supabase.from("products").select("*");
       const prodMap = new Map<string, any>();
       if (prodMasterData) {
@@ -446,7 +403,6 @@ export default function InventoryMonitoringPage() {
 
       const targetStore = bulkDefaultStore;
 
-      // 2. Fetch existing store inventory records into memory map (prevents .maybeSingle() crash on duplicates)
       const { data: existingStoreRows } = await supabase
         .from("store_inventory")
         .select("*")
@@ -618,12 +574,14 @@ export default function InventoryMonitoringPage() {
 
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
-      if (selectedStore !== "All Stores" && item.store !== selectedStore) {
+      // WHITESPACE-INSENSITIVE STORE MATCH
+      if (selectedStore !== "All Stores" && item.store.toLowerCase().trim() !== selectedStore.toLowerCase().trim()) {
         return false;
       }
 
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
+        !q ||
         item.style_code?.toLowerCase().includes(q) ||
         (item.style_name && item.style_name.toLowerCase().includes(q)) ||
         (item.sku && item.sku.toLowerCase().includes(q)) ||
@@ -768,7 +726,7 @@ export default function InventoryMonitoringPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6 flex flex-col">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="flex items-center gap-3">
@@ -902,10 +860,10 @@ export default function InventoryMonitoringPage() {
       </div>
 
       {/* Main Inventory Table */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
-        <div className="overflow-x-auto">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col flex-1">
+        <div className="overflow-x-auto flex-1">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-800">
+            <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-800 sticky top-0 z-20">
               <tr>
                 {columns.map((col) => (
                   <th
@@ -960,7 +918,7 @@ export default function InventoryMonitoringPage() {
         </div>
 
         {/* Pagination Footer */}
-        <div className="px-5 py-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div className="px-5 py-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 sticky bottom-0 z-30">
           <div className="text-xs text-slate-400 font-mono">
             Showing <span className="font-bold text-white">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
             <span className="font-bold text-white">{Math.min(startIndex + pageSize, totalItems)}</span> of{" "}
@@ -981,6 +939,7 @@ export default function InventoryMonitoringPage() {
 
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
@@ -991,6 +950,7 @@ export default function InventoryMonitoringPage() {
                 {currentPage} / {totalPages || 1}
               </span>
               <button
+                type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
                 className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
@@ -1056,7 +1016,7 @@ export default function InventoryMonitoringPage() {
                 />
                 <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
                   {items
-                    .filter((i) => i.store === manualStore && (
+                    .filter((i) => i.store.toLowerCase().trim() === manualStore.toLowerCase().trim() && (
                       i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
                       (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
                       (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase()))
