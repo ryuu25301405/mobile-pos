@@ -63,6 +63,7 @@ interface ProductMasterRecord {
   color: string;
   size: string;
   price: number;
+  description?: string;
 }
 
 interface BulkImportItem {
@@ -509,8 +510,37 @@ export default function InventoryMonitoringPage() {
         throw new Error("Selected item is missing a unique database row ID. Please refresh inventory.");
       }
 
+      const styleCodeStr = String(selectedManualItem.style_code).trim();
+      const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
+
+      // Fetch genuine master product details from products table
+      let masterProd: any = productsMaster.find(
+        (p) =>
+          String(p.style_code).trim() === styleCodeStr ||
+          (skuStr && String(p.sku).trim() === skuStr)
+      );
+
+      if (!masterProd) {
+        const { data: directMatch } = await supabase
+          .from("products")
+          .select("*")
+          .or(`style_code.eq.${styleCodeStr},sku.eq.${skuStr || styleCodeStr}`)
+          .limit(1);
+
+        if (directMatch && directMatch.length > 0) {
+          masterProd = directMatch[0];
+        }
+      }
+
+      const p = masterProd || {};
+
+      const finalStyleName = p.style_name || p.description || selectedManualItem.style_name || styleCodeStr;
+      const finalColor = p.color || (selectedManualItem.color !== "Default" ? selectedManualItem.color : "-");
+      const finalSize = p.size || (selectedManualItem.size !== "Free Size" ? selectedManualItem.size : "-");
+      const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
+
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
-      const unitPrice = manualPrice ? Number(manualPrice) : (selectedManualItem.price || 299.00);
+      const unitPrice = manualPrice ? Number(manualPrice) : (p.price || selectedManualItem.price || 299.00);
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
@@ -525,12 +555,12 @@ export default function InventoryMonitoringPage() {
         .from("scanned_logs")
         .insert({
           store: manualStore,
-          style_code: selectedManualItem.style_code,
-          sku: selectedManualItem.sku || "-",
-          style_name: selectedManualItem.style_name || selectedManualItem.style_code,
-          color: selectedManualItem.color || "Default",
-          size: selectedManualItem.size || "Free Size",
-          department: selectedManualItem.department || "General",
+          style_code: styleCodeStr,
+          sku: skuStr || p.sku || "-",
+          style_name: finalStyleName,
+          color: finalColor,
+          size: finalSize,
+          department: finalDept,
           price: unitPrice,
           quantity: manualQty,
           revenue: totalRev,
@@ -540,7 +570,7 @@ export default function InventoryMonitoringPage() {
       if (logErr) throw logErr;
 
       setLastSubmittedTime(Date.now());
-      setManualSuccessMsg(`Successfully encoded sale for ${manualQty} pcs of [${selectedManualItem.style_code}]!`);
+      setManualSuccessMsg(`Successfully encoded sale for ${manualQty} pcs of [${styleCodeStr}]!`);
       setSelectedManualItem(null);
       setManualQty(1);
       setManualPrice("");
@@ -574,7 +604,6 @@ export default function InventoryMonitoringPage() {
 
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
-      // WHITESPACE-INSENSITIVE STORE MATCH
       if (selectedStore !== "All Stores" && item.store.toLowerCase().trim() !== selectedStore.toLowerCase().trim()) {
         return false;
       }
