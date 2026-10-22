@@ -195,9 +195,15 @@ export default function InventoryMonitoringPage() {
       ]);
 
       if (prodRes.error) throw prodRes.error;
-      if (prodRes.data) {
-        setProductsMaster(prodRes.data as ProductMasterRecord[]);
-      }
+
+      const prodData = (prodRes.data as ProductMasterRecord[]) || [];
+      setProductsMaster(prodData);
+
+      const prodPriceMap = new Map<string, number>();
+      prodData.forEach((p) => {
+        if (p.style_code && p.price) prodPriceMap.set(String(p.style_code).trim(), Number(p.price));
+        if (p.sku && p.price) prodPriceMap.set(String(p.sku).trim(), Number(p.price));
+      });
 
       const logMap: Record<string, any> = {};
       if (logsRes.data) {
@@ -215,6 +221,7 @@ export default function InventoryMonitoringPage() {
           const calculatedOut = Math.max(0, initial - current);
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
           const matchedLog = logMap[styleCodeStr] || {};
+          const matchedPrice = prodPriceMap.get(styleCodeStr) || prodPriceMap.get(String(row.sku).trim());
 
           return {
             id: String(row.id),
@@ -226,7 +233,7 @@ export default function InventoryMonitoringPage() {
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
-            price: Number(row.price) || 299.00,
+            price: Number(row.price) || matchedPrice || 0,
             style_name: row.style_name || matchedLog.style_name || matchedLog.description || styleCodeStr,
             color: row.color || matchedLog.color || "Default",
             size: row.size || matchedLog.size || "Free Size",
@@ -261,6 +268,21 @@ export default function InventoryMonitoringPage() {
       supabase.removeChannel(channel);
     };
   }, [fetchInventory]);
+
+  // Dynamic Catalog Price Lookup for Manual Sale Selection
+  const selectedMasterPrice = useMemo(() => {
+    if (!selectedManualItem) return 0;
+    const styleCodeStr = String(selectedManualItem.style_code).trim();
+    const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
+
+    const masterProd = productsMaster.find(
+      (p) =>
+        String(p.style_code).trim() === styleCodeStr ||
+        (skuStr && String(p.sku).trim() === skuStr)
+    );
+
+    return Number(masterProd?.price) || Number(selectedManualItem.price) || 0;
+  }, [selectedManualItem, productsMaster]);
 
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -425,7 +447,7 @@ export default function InventoryMonitoringPage() {
 
         const existing = existingMap.get(styleCodeStr);
 
-        const itemPrice = Number(masterProd.price) || 299.00;
+        const itemPrice = Number(masterProd.price) || 0;
         const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
         const itemColor = masterProd.color || "Default";
         const itemSize = masterProd.size || "Free Size";
@@ -513,7 +535,6 @@ export default function InventoryMonitoringPage() {
       const styleCodeStr = String(selectedManualItem.style_code).trim();
       const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
 
-      // Fetch genuine master product details from products table
       let masterProd: any = productsMaster.find(
         (p) =>
           String(p.style_code).trim() === styleCodeStr ||
@@ -540,7 +561,7 @@ export default function InventoryMonitoringPage() {
       const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
 
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
-      const unitPrice = manualPrice ? Number(manualPrice) : (p.price || selectedManualItem.price || 299.00);
+      const unitPrice = manualPrice ? Number(manualPrice) : (selectedMasterPrice || Number(selectedManualItem.price) || 0);
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
@@ -1071,7 +1092,7 @@ export default function InventoryMonitoringPage() {
                   <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_name || selectedManualItem.style_code}</p>
                   <div className="grid grid-cols-2 gap-2 text-slate-300">
                     <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
-                    <div>Default Price: <span className="text-emerald-400 font-bold">₱{selectedManualItem.price?.toFixed(2)}</span></div>
+                    <div>Catalog Price: <span className="text-emerald-400 font-bold">₱{selectedMasterPrice.toFixed(2)}</span></div>
                   </div>
                 </div>
               )}
@@ -1092,7 +1113,7 @@ export default function InventoryMonitoringPage() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder={String(selectedManualItem?.price || 299)}
+                    placeholder={String(selectedMasterPrice || 0)}
                     value={manualPrice}
                     onChange={(e) => setManualPrice(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
