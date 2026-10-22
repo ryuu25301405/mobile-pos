@@ -131,8 +131,6 @@ export default function InventoryMonitoringPage() {
   // Dynamic Column Order State
   const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
   const [isColumnCustomizerOpen, setIsColumnCustomizerOpen] = useState(false);
-  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-  const [dragOverColIndex, setDragOverColIndex] = useState<number | null>(null);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -151,7 +149,6 @@ export default function InventoryMonitoringPage() {
   const [batchStore, setBatchStore] = useState<string>(STORES[1]);
   const [batchSearchQuery, setBatchSearchQuery] = useState<string>("");
   const [batchAdjustments, setBatchAdjustments] = useState<Array<{ style_code: string; sku: string; style_name: string; qty_delta: number; new_safety: number; current_stock: number }>>([]);
-  const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
   
   // Batch Pagination State
   const [batchPage, setBatchPage] = useState<number>(1);
@@ -183,7 +180,6 @@ export default function InventoryMonitoringPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const customizerRef = useRef<HTMLDivElement>(null);
 
-  // Load saved column layout from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem("store_inventory_columns");
@@ -208,11 +204,6 @@ export default function InventoryMonitoringPage() {
     } catch (e) {
       console.warn("Failed to save column config", e);
     }
-  };
-
-  const handleResetColumns = () => {
-    persistColumns(DEFAULT_COLUMNS);
-    localStorage.removeItem("store_inventory_columns");
   };
 
   useEffect(() => {
@@ -266,7 +257,7 @@ export default function InventoryMonitoringPage() {
           const matchedLog = logMap[styleCodeStr] || {};
 
           return {
-            id: row.id,
+            id: String(row.id),
             store: row.store,
             style_code: styleCodeStr,
             sku: row.sku ? String(row.sku).trim() : (matchedLog.sku ? String(matchedLog.sku).trim() : null),
@@ -311,42 +302,6 @@ export default function InventoryMonitoringPage() {
       supabase.removeChannel(channel);
     };
   }, [fetchInventory]);
-
-  const loadBatchItemsForStore = (targetStore: string) => {
-    const existingMap = new Map<string, StoreInventoryItem>();
-    items
-      .filter((i) => i.store === targetStore)
-      .forEach((i) => existingMap.set(i.style_code, i));
-
-    const combinedList = productsMaster.map((prod) => {
-      const existing = existingMap.get(prod.style_code);
-      return {
-        style_code: prod.style_code,
-        sku: prod.sku || existing?.sku || "",
-        style_name: prod.style_name || prod.style_code,
-        qty_delta: 0,
-        new_safety: existing ? existing.safety_stock : 5,
-        current_stock: existing ? existing.current_stock : 0,
-      };
-    });
-
-    items
-      .filter((i) => i.store === targetStore)
-      .forEach((i) => {
-        if (!combinedList.some((c) => c.style_code === i.style_code)) {
-          combinedList.push({
-            style_code: i.style_code,
-            sku: i.sku || "",
-            style_name: i.style_name || i.style_code,
-            qty_delta: 0,
-            new_safety: i.safety_stock,
-            current_stock: i.current_stock,
-          });
-        }
-      });
-
-    setBatchAdjustments(combinedList);
-  };
 
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,9 +404,8 @@ export default function InventoryMonitoringPage() {
           const storeVal = storeIdx !== -1 && row[storeIdx] ? String(row[storeIdx]).trim() : bulkDefaultStore;
           const styleVal = row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
           const skuVal = skuIdx !== -1 && row[skuIdx] !== undefined && row[skuIdx] !== null ? String(row[skuIdx]).trim() : "";
-          const qtyVal = Number(row[qtyIdx]) || 0;
+          const qtyVal = Number(row[qtyIdx]);
 
-          // FIXED: Use !isNaN(qtyVal) instead of strict qtyVal > 0 so zero-stock items are included
           if (styleVal && !isNaN(qtyVal)) {
             parsedItems.push({
               store: storeVal || bulkDefaultStore,
@@ -480,7 +434,7 @@ export default function InventoryMonitoringPage() {
     try {
       const now = new Date().toISOString();
 
-      // Fetch products master to attach attributes during bulk insert
+      // 1. Fetch products master map
       const { data: prodMasterData } = await supabase.from("products").select("*");
       const prodMap = new Map<string, any>();
       if (prodMasterData) {
@@ -490,21 +444,29 @@ export default function InventoryMonitoringPage() {
         });
       }
 
+      const targetStore = bulkDefaultStore;
+
+      // 2. Fetch existing store inventory records into memory map (prevents .maybeSingle() crash on duplicates)
+      const { data: existingStoreRows } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", targetStore);
+
+      const existingMap = new Map<string, any>();
+      if (existingStoreRows) {
+        existingStoreRows.forEach((row: any) => {
+          if (row.style_code) existingMap.set(String(row.style_code).trim(), row);
+        });
+      }
+
+      let successCount = 0;
+
       for (const item of bulkPreview) {
-        const targetStore = item.store || bulkDefaultStore;
         const styleCodeStr = String(item.style_code).trim();
         const skuStr = item.sku ? String(item.sku).trim() : null;
-
         const masterProd = prodMap.get(styleCodeStr) || (skuStr ? prodMap.get(skuStr) : {}) || {};
 
-        const { data: existing, error: checkErr } = await supabase
-          .from("store_inventory")
-          .select("*")
-          .eq("store", targetStore)
-          .eq("style_code", styleCodeStr)
-          .maybeSingle();
-
-        if (checkErr) throw checkErr;
+        const existing = existingMap.get(styleCodeStr);
 
         const itemPrice = Number(masterProd.price) || 299.00;
         const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
@@ -517,7 +479,7 @@ export default function InventoryMonitoringPage() {
           const currentOut = Math.max(0, (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0));
           const newCurrent = Math.max(0, newInitial - currentOut);
 
-          await supabase
+          const { error: updateErr } = await supabase
             .from("store_inventory")
             .update({
               initial_stock: newInitial,
@@ -531,8 +493,10 @@ export default function InventoryMonitoringPage() {
               last_replenished_at: now,
             })
             .eq("id", existing.id);
+
+          if (!updateErr) successCount++;
         } else {
-          await supabase
+          const { error: insertErr } = await supabase
             .from("store_inventory")
             .insert({
               store: targetStore,
@@ -548,16 +512,18 @@ export default function InventoryMonitoringPage() {
               department: itemDept,
               last_replenished_at: now,
             });
+
+          if (!insertErr) successCount++;
         }
       }
 
       setIsBulkOpen(false);
       setBulkPreview([]);
       fetchInventory();
-      alert(`Bulk delivery successfully committed to ${bulkDefaultStore}!`);
-    } catch (err) {
+      alert(`Bulk delivery committed! Successfully processed ${successCount} out of ${bulkPreview.length} items to ${targetStore}.`);
+    } catch (err: any) {
       console.error("Bulk upload failed:", err);
-      alert("An error occurred while committing bulk delivery.");
+      alert(`Bulk upload error: ${err?.message || "An error occurred"}`);
     } finally {
       setBulkSubmitting(false);
     }
@@ -708,23 +674,6 @@ export default function InventoryMonitoringPage() {
   const alertItems = useMemo(() => {
     return items.filter((i) => i.current_stock <= i.safety_stock);
   }, [items]);
-
-  const filteredBatchAdjustments = useMemo(() => {
-    const q = batchSearchQuery.toLowerCase();
-    return batchAdjustments.filter(
-      (row) =>
-        row.style_code.toLowerCase().includes(q) ||
-        row.style_name.toLowerCase().includes(q) ||
-        row.sku.toLowerCase().includes(q)
-    );
-  }, [batchAdjustments, batchSearchQuery]);
-
-  const batchTotalItems = filteredBatchAdjustments.length;
-  const batchTotalPages = Math.ceil(batchTotalItems / batchPageSize) || 1;
-  const batchStartIndex = (batchPage - 1) * batchPageSize;
-  const paginatedBatchItems = useMemo(() => {
-    return filteredBatchAdjustments.slice(batchStartIndex, batchStartIndex + batchPageSize);
-  }, [filteredBatchAdjustments, batchStartIndex, batchPageSize]);
 
   const totalItems = processedItems.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
