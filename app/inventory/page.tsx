@@ -62,7 +62,9 @@ interface ProductMasterRecord {
   category: string;
   color: string;
   size: string;
-  price: number;
+  price?: number;
+  unit_price?: number;
+  srp?: number;
   description?: string;
 }
 
@@ -116,6 +118,15 @@ const STORES = [
   "Landmark Nuvali",
   "Landmark Trinoma",
 ];
+
+// Helper to sanitize and extract numeric price from strings or numbers
+const cleanNumericPrice = (val: any): number => {
+  if (val === null || val === undefined || val === "") return 0;
+  if (typeof val === "number") return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/[^\d.]/g, "");
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+};
 
 export default function InventoryMonitoringPage() {
   const [items, setItems] = useState<StoreInventoryItem[]>([]);
@@ -191,25 +202,31 @@ export default function InventoryMonitoringPage() {
 
       const [prodRes, logsRes] = await Promise.all([
         supabase.from("products").select("*"),
-        supabase.from("scanned_logs").select("style_code, style_name, description, color, size, department")
+        supabase.from("scanned_logs").select("style_code, style_name, description, color, size, department, price")
       ]);
 
       if (prodRes.error) throw prodRes.error;
 
-      const prodData = (prodRes.data as ProductMasterRecord[]) || [];
+      const prodData = (prodRes.data as any[]) || [];
       setProductsMaster(prodData);
 
       const prodPriceMap = new Map<string, number>();
       prodData.forEach((p) => {
-        if (p.style_code && p.price) prodPriceMap.set(String(p.style_code).trim(), Number(p.price));
-        if (p.sku && p.price) prodPriceMap.set(String(p.sku).trim(), Number(p.price));
+        const pVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
+        if (p.style_code && pVal > 0) prodPriceMap.set(String(p.style_code).trim(), pVal);
+        if (p.sku && pVal > 0) prodPriceMap.set(String(p.sku).trim(), pVal);
       });
 
       const logMap: Record<string, any> = {};
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
           if (l.style_code) {
-            logMap[String(l.style_code).trim()] = l;
+            const styleKey = String(l.style_code).trim();
+            logMap[styleKey] = l;
+            const logP = cleanNumericPrice(l.price);
+            if (logP > 0 && !prodPriceMap.has(styleKey)) {
+              prodPriceMap.set(styleKey, logP);
+            }
           }
         });
       }
@@ -221,7 +238,12 @@ export default function InventoryMonitoringPage() {
           const calculatedOut = Math.max(0, initial - current);
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
           const matchedLog = logMap[styleCodeStr] || {};
-          const matchedPrice = prodPriceMap.get(styleCodeStr) || prodPriceMap.get(String(row.sku).trim());
+          const matchedPrice =
+            cleanNumericPrice(row.price) ||
+            prodPriceMap.get(styleCodeStr) ||
+            prodPriceMap.get(String(row.sku).trim()) ||
+            cleanNumericPrice(matchedLog.price) ||
+            299.00;
 
           return {
             id: String(row.id),
@@ -233,7 +255,7 @@ export default function InventoryMonitoringPage() {
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
-            price: Number(row.price) || matchedPrice || 0,
+            price: matchedPrice,
             style_name: row.style_name || matchedLog.style_name || matchedLog.description || styleCodeStr,
             color: row.color || matchedLog.color || "Default",
             size: row.size || matchedLog.size || "Free Size",
@@ -269,20 +291,46 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
-  // Dynamic Catalog Price Lookup for Manual Sale Selection
-  const selectedMasterPrice = useMemo(() => {
-    if (!selectedManualItem) return 0;
-    const styleCodeStr = String(selectedManualItem.style_code).trim();
-    const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
+  // Handle Product Selection & Real-Time Price Auto-Fill
+  const handleSelectManualProduct = async (item: StoreInventoryItem) => {
+    setSelectedManualItem(item);
 
-    const masterProd = productsMaster.find(
-      (p) =>
+    const styleCodeStr = String(item.style_code).trim();
+    const skuStr = item.sku ? String(item.sku).trim() : "";
+
+    // 1. Check local catalog
+    let foundMaster: any = productsMaster.find(
+      (p: any) =>
         String(p.style_code).trim() === styleCodeStr ||
         (skuStr && String(p.sku).trim() === skuStr)
     );
 
-    return Number(masterProd?.price) || Number(selectedManualItem.price) || 0;
-  }, [selectedManualItem, productsMaster]);
+    let priceVal = cleanNumericPrice(foundMaster?.price || foundMaster?.unit_price || foundMaster?.srp || item.price);
+
+    // 2. Fallback check directly in database logs or products if still 0
+    if (priceVal <= 0) {
+      const { data: logMatch } = await supabase
+        .from("scanned_logs")
+        .select("price")
+        .eq("style_code", styleCodeStr)
+        .gt("price", 0)
+        .order("scanned_at", { ascending: false })
+        .limit(1);
+
+      if (logMatch && logMatch.length > 0) {
+        priceVal = cleanNumericPrice(logMatch[0].price);
+      }
+    }
+
+    if (priceVal <= 0) priceVal = 299.00; // Standard fallback default
+
+    setManualPrice(String(priceVal));
+  };
+
+  const selectedMasterPrice = useMemo(() => {
+    if (!selectedManualItem) return 0;
+    return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 299.00;
+  }, [selectedManualItem, manualPrice]);
 
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -447,7 +495,7 @@ export default function InventoryMonitoringPage() {
 
         const existing = existingMap.get(styleCodeStr);
 
-        const itemPrice = Number(masterProd.price) || 0;
+        const itemPrice = cleanNumericPrice(masterProd.price || masterProd.unit_price || masterProd.srp) || 299.00;
         const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
         const itemColor = masterProd.color || "Default";
         const itemSize = masterProd.size || "Free Size";
@@ -536,7 +584,7 @@ export default function InventoryMonitoringPage() {
       const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
 
       let masterProd: any = productsMaster.find(
-        (p) =>
+        (p: any) =>
           String(p.style_code).trim() === styleCodeStr ||
           (skuStr && String(p.sku).trim() === skuStr)
       );
@@ -561,7 +609,7 @@ export default function InventoryMonitoringPage() {
       const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
 
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
-      const unitPrice = manualPrice ? Number(manualPrice) : (selectedMasterPrice || Number(selectedManualItem.price) || 0);
+      const unitPrice = cleanNumericPrice(manualPrice) || selectedMasterPrice;
       const totalRev = unitPrice * manualQty;
       const now = new Date().toISOString();
 
@@ -1046,6 +1094,7 @@ export default function InventoryMonitoringPage() {
                   onChange={(e) => {
                     setManualStore(e.target.value);
                     setSelectedManualItem(null);
+                    setManualPrice("");
                   }}
                   className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
                 >
@@ -1074,7 +1123,7 @@ export default function InventoryMonitoringPage() {
                     .map((item) => (
                       <div
                         key={item.id}
-                        onClick={() => setSelectedManualItem(item)}
+                        onClick={() => handleSelectManualProduct(item)}
                         className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${selectedManualItem?.id === item.id ? 'bg-indigo-600/30 border-l-4 border-indigo-500 text-white' : 'hover:bg-slate-900 text-slate-300'}`}
                       >
                         <div>
