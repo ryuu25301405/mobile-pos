@@ -119,7 +119,6 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-// Helper to sanitize and extract numeric price from strings or numbers
 const cleanNumericPrice = (val: any): number => {
   if (val === null || val === undefined || val === "") return 0;
   if (typeof val === "number") return isNaN(val) ? 0 : val;
@@ -243,7 +242,7 @@ export default function InventoryMonitoringPage() {
             prodPriceMap.get(styleCodeStr) ||
             prodPriceMap.get(String(row.sku).trim()) ||
             cleanNumericPrice(matchedLog.price) ||
-            299.00;
+            0;
 
           return {
             id: String(row.id),
@@ -291,14 +290,12 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
-  // Handle Product Selection & Real-Time Price Auto-Fill
   const handleSelectManualProduct = async (item: StoreInventoryItem) => {
     setSelectedManualItem(item);
 
     const styleCodeStr = String(item.style_code).trim();
     const skuStr = item.sku ? String(item.sku).trim() : "";
 
-    // 1. Check local catalog
     let foundMaster: any = productsMaster.find(
       (p: any) =>
         String(p.style_code).trim() === styleCodeStr ||
@@ -307,7 +304,6 @@ export default function InventoryMonitoringPage() {
 
     let priceVal = cleanNumericPrice(foundMaster?.price || foundMaster?.unit_price || foundMaster?.srp || item.price);
 
-    // 2. Fallback check directly in database logs or products if still 0
     if (priceVal <= 0) {
       const { data: logMatch } = await supabase
         .from("scanned_logs")
@@ -322,14 +318,12 @@ export default function InventoryMonitoringPage() {
       }
     }
 
-    if (priceVal <= 0) priceVal = 299.00; // Standard fallback default
-
-    setManualPrice(String(priceVal));
+    setManualPrice(priceVal > 0 ? String(priceVal) : "");
   };
 
   const selectedMasterPrice = useMemo(() => {
     if (!selectedManualItem) return 0;
-    return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 299.00;
+    return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 0;
   }, [selectedManualItem, manualPrice]);
 
   const handleRestockSubmit = async (e: React.FormEvent) => {
@@ -495,7 +489,7 @@ export default function InventoryMonitoringPage() {
 
         const existing = existingMap.get(styleCodeStr);
 
-        const itemPrice = cleanNumericPrice(masterProd.price || masterProd.unit_price || masterProd.srp) || 299.00;
+        const itemPrice = cleanNumericPrice(masterProd.price || masterProd.unit_price || masterProd.srp) || 0;
         const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
         const itemColor = masterProd.color || "Default";
         const itemSize = masterProd.size || "Free Size";
@@ -1141,7 +1135,7 @@ export default function InventoryMonitoringPage() {
                   <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_name || selectedManualItem.style_code}</p>
                   <div className="grid grid-cols-2 gap-2 text-slate-300">
                     <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
-                    <div>Catalog Price: <span className="text-emerald-400 font-bold">₱{selectedMasterPrice.toFixed(2)}</span></div>
+                    <div>Catalog Price: <span className="text-emerald-400 font-bold">{selectedMasterPrice > 0 ? `₱${selectedMasterPrice.toFixed(2)}` : 'Not Set'}</span></div>
                   </div>
                 </div>
               )}
@@ -1162,7 +1156,7 @@ export default function InventoryMonitoringPage() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder={String(selectedMasterPrice || 0)}
+                    placeholder="Enter price..."
                     value={manualPrice}
                     onChange={(e) => setManualPrice(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
