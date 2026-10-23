@@ -352,7 +352,7 @@ export default function QlikViewAnalyticsPage() {
     if (allLogs.length > 0) {
       const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
-        const pr = parseFloat(row.price) || 0; // Fixed to parseFloat for exact decimal prices
+        const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
@@ -618,9 +618,20 @@ export default function QlikViewAnalyticsPage() {
 
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
+    const priceMap: Record<string, number> = {};
+
     inventoryData.forEach((inv) => {
       if (inv.store && inv.style_code) {
         stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
+        if (inv.price !== undefined && inv.price !== null && Number(inv.price) > 0) {
+          priceMap[String(inv.style_code).trim()] = parseFloat(String(inv.price));
+        }
+      }
+    });
+
+    data.forEach((log) => {
+      if (log.style_code && log.price > 0) {
+        priceMap[String(log.style_code).trim()] = parseFloat(String(log.price));
       }
     });
 
@@ -655,6 +666,9 @@ export default function QlikViewAnalyticsPage() {
 
     if (productsMaster.length > 0) {
       productsMaster.forEach((prod) => {
+        const styleCodeStr = prod.style_code ? String(prod.style_code).trim() : "";
+        const precisePrice = priceMap[styleCodeStr] || parseFloat(String(prod.price)) || 299.00;
+
         storesList.forEach((st) => {
           const k = `${st}-${prod.style_code}`;
           const storeBreakdown: Record<string, number> = {};
@@ -673,9 +687,9 @@ export default function QlikViewAnalyticsPage() {
             department: prod.department || "General",
             category: prod.category || "General",
             currentStock: stockMap[k] || 0,
-            price: parseFloat(String(prod.price)) || 299.00, // Preserves exact decimal prices
+            price: precisePrice,
             unitsSold: salesMap[k]?.units || 0,
-            revenue: salesMap[k]?.revenue || 0,
+            revenue: salesMap[k]?.revenue || (salesMap[k]?.units || 0) * precisePrice,
             storeBreakdown,
           });
         });
@@ -684,6 +698,9 @@ export default function QlikViewAnalyticsPage() {
       inventoryData.forEach((inv) => {
         const st = inv.store || "Unassigned Store";
         const styleCode = inv.style_code || "-";
+        const styleCodeStr = String(styleCode).trim();
+        const precisePrice = priceMap[styleCodeStr] || (inv.price !== undefined && inv.price !== null ? parseFloat(String(inv.price)) : 299.00);
+
         const k = `${st}-${styleCode}`;
         const storeBreakdown: Record<string, number> = {};
         storesList.forEach(s => {
@@ -701,9 +718,9 @@ export default function QlikViewAnalyticsPage() {
           department: inv.department || "General",
           category: inv.category || "General",
           currentStock: Number(inv.current_stock) || 0,
-          price: inv.price !== undefined && inv.price !== null ? parseFloat(String(inv.price)) : 299.00,
+          price: precisePrice,
           unitsSold: salesMap[k]?.units || 0,
-          revenue: salesMap[k]?.revenue || 0,
+          revenue: salesMap[k]?.revenue || (salesMap[k]?.units || 0) * precisePrice,
           storeBreakdown,
         });
       });
@@ -850,17 +867,6 @@ export default function QlikViewAnalyticsPage() {
     return { totalUnits, totalRevenue, avgPrice };
   }, [filteredProducts]);
 
-  const storeCardsSummary = useMemo(() => {
-    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
-    universe.stores.forEach((st) => map[st] = { store: st, totalUnits: 0, totalRevenue: 0 });
-    currentSubset.forEach((item) => {
-      if (!map[item.store]) map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0 };
-      map[item.store].totalUnits += item.quantity;
-      map[item.store].totalRevenue += item.revenue;
-    });
-    return Object.values(map);
-  }, [universe.stores, currentSubset]);
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col p-6 space-y-6">
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
@@ -918,33 +924,6 @@ export default function QlikViewAnalyticsPage() {
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Transaction Logs</p>
           <p className="text-2xl font-black text-sky-400 mt-1 font-mono">{metricsA.transactions.toLocaleString()} logs</p>
-        </div>
-      </div>
-
-      {/* Measure Toggle Bar */}
-      <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-        <button
-          onClick={cycleMeasure}
-          className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3.5 py-2 rounded-xl text-xs font-bold transition"
-        >
-          <Sigma className="w-4 h-4 text-indigo-400" />
-          <span>Measure: {activeMeasure.label}</span>
-          <RotateCcw className="w-3 h-3 text-indigo-400 ml-1" />
-        </button>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setVisualizationMode("chart")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${visualizationMode === "chart" ? "bg-indigo-600 text-white" : "bg-slate-950 text-slate-400 border border-slate-800"}`}
-          >
-            Bars
-          </button>
-          <button
-            onClick={() => setVisualizationMode("donut")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${visualizationMode === "donut" ? "bg-indigo-600 text-white" : "bg-slate-950 text-slate-400 border border-slate-800"}`}
-          >
-            Proportion Ring
-          </button>
         </div>
       </div>
 
