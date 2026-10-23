@@ -352,7 +352,7 @@ export default function QlikViewAnalyticsPage() {
     if (allLogs.length > 0) {
       const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
-        const pr = Number(row.price) || 0;
+        const pr = parseFloat(row.price) || 0; // Fixed: parseFloat retains full decimals instead of stripping them
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
@@ -379,10 +379,17 @@ export default function QlikViewAnalyticsPage() {
       const normalizedInv = allInv.map((inv: any) => ({
         ...inv,
         store: inv.store ? inv.store.trim() : "Unassigned Store",
+        price: inv.price !== null && inv.price !== undefined ? parseFloat(inv.price) : undefined,
       }));
       setInventoryData(normalizedInv as InventoryRecord[]);
     }
-    if (!prodRes.error && prodRes.data) setProductsMaster(prodRes.data as ProductMasterRecord[]);
+    if (!prodRes.error && prodRes.data) {
+      const normalizedProds = prodRes.data.map((p: any) => ({
+        ...p,
+        price: parseFloat(p.price) || 0,
+      }));
+      setProductsMaster(normalizedProds as ProductMasterRecord[]);
+    }
     if (!auditRes.error && auditRes.data) setAuditLogs(auditRes.data as AuditLogRecord[]);
 
     setLoading(false);
@@ -611,9 +618,20 @@ export default function QlikViewAnalyticsPage() {
 
   const masterCatalogProducts = useMemo(() => {
     const stockMap: Record<string, number> = {};
+    const priceMap: Record<string, number> = {};
+
     inventoryData.forEach((inv) => {
       if (inv.store && inv.style_code) {
         stockMap[`${inv.store}-${inv.style_code}`] = Number(inv.current_stock) || 0;
+        if (inv.price !== undefined && inv.price !== null && Number(inv.price) > 0) {
+          priceMap[String(inv.style_code).trim()] = parseFloat(String(inv.price));
+        }
+      }
+    });
+
+    data.forEach((log) => {
+      if (log.style_code && log.price > 0) {
+        priceMap[String(log.style_code).trim()] = parseFloat(String(log.price));
       }
     });
 
@@ -648,6 +666,9 @@ export default function QlikViewAnalyticsPage() {
 
     if (productsMaster.length > 0) {
       productsMaster.forEach((prod) => {
+        const styleCodeStr = prod.style_code ? String(prod.style_code).trim() : "";
+        const precisePrice = priceMap[styleCodeStr] || parseFloat(String(prod.price)) || 299.00;
+
         storesList.forEach((st) => {
           const k = `${st}-${prod.style_code}`;
           const storeBreakdown: Record<string, number> = {};
@@ -666,9 +687,9 @@ export default function QlikViewAnalyticsPage() {
             department: prod.department || "General",
             category: prod.category || "General",
             currentStock: stockMap[k] || 0,
-            price: Number(prod.price) || 299.00,
+            price: precisePrice,
             unitsSold: salesMap[k]?.units || 0,
-            revenue: salesMap[k]?.revenue || 0,
+            revenue: salesMap[k]?.revenue || (salesMap[k]?.units || 0) * precisePrice,
             storeBreakdown,
           });
         });
@@ -677,6 +698,9 @@ export default function QlikViewAnalyticsPage() {
       inventoryData.forEach((inv) => {
         const st = inv.store || "Unassigned Store";
         const styleCode = inv.style_code || "-";
+        const styleCodeStr = String(styleCode).trim();
+        const precisePrice = priceMap[styleCodeStr] || (inv.price !== undefined && inv.price !== null ? parseFloat(String(inv.price)) : 299.00);
+
         const k = `${st}-${styleCode}`;
         const storeBreakdown: Record<string, number> = {};
         storesList.forEach(s => {
@@ -694,9 +718,9 @@ export default function QlikViewAnalyticsPage() {
           department: inv.department || "General",
           category: inv.category || "General",
           currentStock: Number(inv.current_stock) || 0,
-          price: Number(inv.price) || 299.00,
+          price: precisePrice,
           unitsSold: salesMap[k]?.units || 0,
-          revenue: salesMap[k]?.revenue || 0,
+          revenue: salesMap[k]?.revenue || (salesMap[k]?.units || 0) * precisePrice,
           storeBreakdown,
         });
       });
@@ -780,7 +804,7 @@ export default function QlikViewAnalyticsPage() {
       if (!map[prodKey]) {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
-          category: item.category, department: item.department, price: item.price, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
+          category: item.category, department: item.department, price: parseFloat(String(item.price)) || 0, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
           currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0
         };
       }
@@ -1053,7 +1077,7 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
-              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
+              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
               <p className="text-[10px] text-emerald-400 font-mono mt-1">{metricsA.shareOfTotal.toFixed(1)}% of total universe</p>
             </div>
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl"><DollarSign className="w-5 h-5" /></div>
@@ -1080,7 +1104,7 @@ export default function QlikViewAnalyticsPage() {
           <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Average Unit Retail (AUR)</p>
-              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</h3>
+              <h3 className="text-2xl font-black text-white mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
               <p className="text-[10px] text-purple-400 font-mono mt-1">per unit retail avg</p>
             </div>
             <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-2xl"><Layers className="w-5 h-5" /></div>
@@ -1565,7 +1589,7 @@ export default function QlikViewAnalyticsPage() {
                             <td className="px-4 py-3 border-r border-slate-900/50 text-slate-300">
                               {prod.color} / <strong className="text-white">{prod.size}</strong>
                             </td>
-                            <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toFixed(0)}</td>
+                            <td className="px-4 py-3 text-right font-mono text-slate-300 border-r border-slate-900/50 text-sm">₱{prod.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className={`px-4 py-3 text-right font-mono font-bold border-r border-slate-900/50 text-sm ${prod.currentStock > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                               {prod.currentStock} pcs
                             </td>
@@ -1899,7 +1923,7 @@ export default function QlikViewAnalyticsPage() {
                                     <span className="text-white block font-semibold truncate select-none">{prod.color}</span>
                                     <span className="text-[10px] text-slate-400 block truncate select-none">{prod.size}</span>
                                   </td>
-                                  <td className={`px-3 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.price.toFixed(0)}</td>
+                                  <td className={`px-3 text-right text-slate-300 font-mono text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>₱{prod.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                   <td className={`px-3 text-right font-mono font-bold text-emerald-400 text-xs whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>{prod.units} pcs</td>
                                   <td className={`px-3 text-right whitespace-nowrap print:hidden select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <button onClick={() => setInspectedProduct(prod)} className="inline-flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm">
@@ -2073,9 +2097,9 @@ export default function QlikViewAnalyticsPage() {
                           <span className="select-none">Filtered Totals ({filteredProducts.length} styles):</span>
                         </div>
                         <div className="flex items-center gap-6 select-none">
-                          <span className="select-none">Avg Price: <strong className="text-indigo-400 select-none">₱{tableTotals.avgPrice.toFixed(2)}</strong></span>
+                          <span className="select-none">Avg Price: <strong className="text-indigo-400 select-none">₱{tableTotals.avgPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                           <span className="select-none">Total Units: <strong className="text-emerald-400 select-none">{tableTotals.totalUnits.toLocaleString()} pcs</strong></span>
-                          <span className="text-emerald-300 select-none">Est. Revenue: <strong className="select-none">₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</strong></span>
+                          <span className="text-emerald-300 select-none">Est. Revenue: <strong className="select-none">₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                         </div>
                       </div>
                     )}
@@ -2182,7 +2206,7 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                     <div className="text-right font-mono select-none">
                       <span className="font-black text-emerald-400 text-base block select-none">{prod.storeBreakdown[selectedBranchDetail] || 0} pcs</span>
-                      <span className="text-[11px] text-slate-500 select-none">₱{prod.price.toFixed(0)} / unit</span>
+                      <span className="text-[11px] text-slate-500 select-none">₱{prod.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / unit</span>
                     </div>
                   </div>
                 ))
