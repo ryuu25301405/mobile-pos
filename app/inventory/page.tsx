@@ -216,10 +216,8 @@ export default function InventoryMonitoringPage() {
       const prodData = (prodRes.data as any[]) || [];
       setProductsMaster(prodData);
 
-      // Build flexible maps for lookup (supporting partial code matches)
       const prodPriceMap = new Map<string, number>();
       const prodDescMap = new Map<string, string>();
-      const prodListForMatching: Array<{ code: string; desc: string; price: number }> = [];
 
       prodData.forEach((p) => {
         const pVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
@@ -234,9 +232,6 @@ export default function InventoryMonitoringPage() {
         if (pSku) {
           prodPriceMap.set(pSku, pVal);
           if (pDesc) prodDescMap.set(pSku, pDesc);
-        }
-        if (pCode || pDesc) {
-          prodListForMatching.push({ code: pCode, desc: pDesc, price: pVal });
         }
       });
 
@@ -263,28 +258,33 @@ export default function InventoryMonitoringPage() {
           const skuStr = row.sku ? String(row.sku).trim() : "";
           const matchedLog = logMap[styleCodeStr] || {};
 
-          // Find description using exact or partial match (e.g. inventory code "764163" inside product code "030761641635")
-          let matchedDesc =
+          // Robust lookup checking exact match or partial containment
+          const matchedProd = prodData.find(
+            (p: any) => {
+              const masterCode = p.style_code ? String(p.style_code).trim() : "";
+              const masterSku = p.sku ? String(p.sku).trim() : "";
+              return (
+                masterCode === styleCodeStr ||
+                masterCode.includes(styleCodeStr) ||
+                styleCodeStr.includes(masterCode) ||
+                (skuStr && (masterSku === skuStr || masterSku.includes(skuStr)))
+              );
+            }
+          ) || {};
+
+          const matchedDesc =
             row.description ||
+            matchedProd.description ||
+            matchedProd.style_name ||
             prodDescMap.get(styleCodeStr) ||
             prodDescMap.get(skuStr) ||
             matchedLog.description ||
             matchedLog.style_name ||
-            "";
-
-          if (!matchedDesc || matchedDesc === "-") {
-            const foundPartial = prodListForMatching.find(
-              (p) => p.code.includes(styleCodeStr) || (skuStr && p.code.includes(skuStr)) || styleCodeStr.includes(p.code)
-            );
-            if (foundPartial) {
-              matchedDesc = foundPartial.desc;
-            }
-          }
-
-          if (!matchedDesc) matchedDesc = "-";
+            "-";
 
           const matchedPrice =
             cleanNumericPrice(row.price) ||
+            cleanNumericPrice(matchedProd.price || matchedProd.unit_price || matchedProd.srp || matchedProd.amount) ||
             prodPriceMap.get(styleCodeStr) ||
             prodPriceMap.get(skuStr) ||
             cleanNumericPrice(matchedLog.price) ||
@@ -301,11 +301,11 @@ export default function InventoryMonitoringPage() {
             last_replenished_at: row.last_replenished_at,
             total_out: calculatedOut,
             price: matchedPrice,
-            style_name: row.style_name || matchedLog.style_name || styleCodeStr,
+            style_name: row.style_name || matchedProd.style_name || matchedLog.style_name || styleCodeStr,
             description: matchedDesc,
-            color: row.color || matchedLog.color || "Default",
-            size: row.size || matchedLog.size || "Free Size",
-            department: row.department || matchedLog.department || "General",
+            color: row.color || matchedProd.color || matchedLog.color || "Default",
+            size: row.size || matchedProd.size || matchedLog.size || "Free Size",
+            department: row.department || matchedProd.department || matchedLog.department || "General",
           };
         });
 
@@ -348,10 +348,10 @@ export default function InventoryMonitoringPage() {
 
     if (priceVal <= 0 || !descVal || descVal === "-") {
       const foundMaster: any = productsMaster.find(
-        (p: any) =>
-          String(p.style_code).trim().includes(styleCodeStr) ||
-          styleCodeStr.includes(String(p.style_code).trim()) ||
-          (skuStr && String(p.sku).trim() === skuStr)
+        (p: any) => {
+          const mc = String(p.style_code || "").trim();
+          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
+        }
       );
       if (foundMaster) {
         if (priceVal <= 0) {
@@ -359,21 +359,6 @@ export default function InventoryMonitoringPage() {
         }
         if (!descVal || descVal === "-") {
           descVal = foundMaster.description || foundMaster.style_name || "";
-        }
-      }
-    }
-
-    if (priceVal <= 0 || !descVal || descVal === "-") {
-      const { data: directProd } = await supabase
-        .from("products")
-        .select("*")
-        .limit(50);
-
-      if (directProd) {
-        const match = directProd.find((p: any) => String(p.style_code).includes(styleCodeStr) || styleCodeStr.includes(String(p.style_code)));
-        if (match) {
-          if (priceVal <= 0) priceVal = cleanNumericPrice(match.price || match.unit_price || match.srp || match.amount);
-          if (!descVal || descVal === "-") descVal = match.description || match.style_name || "";
         }
       }
     }
@@ -642,22 +627,11 @@ export default function InventoryMonitoringPage() {
       const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
 
       let masterProd: any = productsMaster.find(
-        (p: any) =>
-          String(p.style_code).trim().includes(styleCodeStr) ||
-          styleCodeStr.includes(String(p.style_code).trim()) ||
-          (skuStr && String(p.sku).trim() === skuStr)
-      );
-
-      if (!masterProd) {
-        const { data: directMatch } = await supabase
-          .from("products")
-          .select("*")
-          .limit(50);
-
-        if (directMatch) {
-          masterProd = directMatch.find((p: any) => String(p.style_code).includes(styleCodeStr) || styleCodeStr.includes(String(p.style_code)));
+        (p: any) => {
+          const mc = String(p.style_code || "").trim();
+          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
         }
-      }
+      );
 
       const p = masterProd || {};
 
@@ -761,8 +735,8 @@ export default function InventoryMonitoringPage() {
     if (!sortKey) return filtered;
 
     return [...filtered].sort((a, b) => {
-      let valA: string | number | null | undefined;
-      let valB: string | number | null | undefined;
+      let valA: string | number | null;
+      let valB: string | number | null;
 
       if (sortKey === "status") {
         valA = a.current_stock <= 0 ? 0 : a.current_stock <= a.safety_stock ? 1 : 2;
@@ -772,8 +746,8 @@ export default function InventoryMonitoringPage() {
         valB = b.last_replenished_at ? new Date(b.last_replenished_at).getTime() : 0;
       } else {
         const dataKey = sortKey as Exclude<ColumnKey, "status">;
-        valA = a[dataKey];
-        valB = b[dataKey];
+        valA = a[dataKey] ?? null;
+        valB = b[dataKey] ?? null;
       }
 
       if (typeof valA === "string") {
