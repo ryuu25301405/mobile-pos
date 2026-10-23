@@ -216,14 +216,28 @@ export default function InventoryMonitoringPage() {
       const prodData = (prodRes.data as any[]) || [];
       setProductsMaster(prodData);
 
+      // Build flexible maps for lookup (supporting partial code matches)
       const prodPriceMap = new Map<string, number>();
       const prodDescMap = new Map<string, string>();
+      const prodListForMatching: Array<{ code: string; desc: string; price: number }> = [];
+
       prodData.forEach((p) => {
         const pVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
-        if (p.style_code && pVal > 0) prodPriceMap.set(String(p.style_code).trim(), pVal);
-        if (p.sku && pVal > 0) prodPriceMap.set(String(p.sku).trim(), pVal);
-        if (p.style_code && p.description) prodDescMap.set(String(p.style_code).trim(), p.description);
-        if (p.sku && p.description) prodDescMap.set(String(p.sku).trim(), p.description);
+        const pCode = p.style_code ? String(p.style_code).trim() : "";
+        const pSku = p.sku ? String(p.sku).trim() : "";
+        const pDesc = p.description || p.style_name || "";
+
+        if (pCode) {
+          prodPriceMap.set(pCode, pVal);
+          if (pDesc) prodDescMap.set(pCode, pDesc);
+        }
+        if (pSku) {
+          prodPriceMap.set(pSku, pVal);
+          if (pDesc) prodDescMap.set(pSku, pDesc);
+        }
+        if (pCode || pDesc) {
+          prodListForMatching.push({ code: pCode, desc: pDesc, price: pVal });
+        }
       });
 
       const logMap: Record<string, any> = {};
@@ -246,21 +260,35 @@ export default function InventoryMonitoringPage() {
           const current = Number(row.current_stock) || 0;
           const calculatedOut = Math.max(0, initial - current);
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
+          const skuStr = row.sku ? String(row.sku).trim() : "";
           const matchedLog = logMap[styleCodeStr] || {};
+
+          // Find description using exact or partial match (e.g. inventory code "764163" inside product code "030761641635")
+          let matchedDesc =
+            row.description ||
+            prodDescMap.get(styleCodeStr) ||
+            prodDescMap.get(skuStr) ||
+            matchedLog.description ||
+            matchedLog.style_name ||
+            "";
+
+          if (!matchedDesc || matchedDesc === "-") {
+            const foundPartial = prodListForMatching.find(
+              (p) => p.code.includes(styleCodeStr) || (skuStr && p.code.includes(skuStr)) || styleCodeStr.includes(p.code)
+            );
+            if (foundPartial) {
+              matchedDesc = foundPartial.desc;
+            }
+          }
+
+          if (!matchedDesc) matchedDesc = "-";
+
           const matchedPrice =
             cleanNumericPrice(row.price) ||
             prodPriceMap.get(styleCodeStr) ||
-            prodPriceMap.get(String(row.sku).trim()) ||
+            prodPriceMap.get(skuStr) ||
             cleanNumericPrice(matchedLog.price) ||
             0;
-
-          const matchedDesc =
-            row.description ||
-            prodDescMap.get(styleCodeStr) ||
-            prodDescMap.get(String(row.sku).trim()) ||
-            matchedLog.description ||
-            matchedLog.style_name ||
-            "-";
 
           return {
             id: String(row.id),
@@ -321,7 +349,8 @@ export default function InventoryMonitoringPage() {
     if (priceVal <= 0 || !descVal || descVal === "-") {
       const foundMaster: any = productsMaster.find(
         (p: any) =>
-          String(p.style_code).trim() === styleCodeStr ||
+          String(p.style_code).trim().includes(styleCodeStr) ||
+          styleCodeStr.includes(String(p.style_code).trim()) ||
           (skuStr && String(p.sku).trim() === skuStr)
       );
       if (foundMaster) {
@@ -338,31 +367,14 @@ export default function InventoryMonitoringPage() {
       const { data: directProd } = await supabase
         .from("products")
         .select("*")
-        .or(`style_code.eq.${styleCodeStr},sku.eq.${skuStr || styleCodeStr}`)
-        .limit(1);
+        .limit(50);
 
-      if (directProd && directProd.length > 0) {
-        const p = directProd[0];
-        if (priceVal <= 0) {
-          priceVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
+      if (directProd) {
+        const match = directProd.find((p: any) => String(p.style_code).includes(styleCodeStr) || styleCodeStr.includes(String(p.style_code)));
+        if (match) {
+          if (priceVal <= 0) priceVal = cleanNumericPrice(match.price || match.unit_price || match.srp || match.amount);
+          if (!descVal || descVal === "-") descVal = match.description || match.style_name || "";
         }
-        if (!descVal || descVal === "-") {
-          descVal = p.description || p.style_name || "";
-        }
-      }
-    }
-
-    if (priceVal <= 0) {
-      const { data: logMatch } = await supabase
-        .from("scanned_logs")
-        .select("price, description, style_name")
-        .eq("style_code", styleCodeStr)
-        .order("scanned_at", { ascending: false })
-        .limit(1);
-
-      if (logMatch && logMatch.length > 0) {
-        if (priceVal <= 0) priceVal = cleanNumericPrice(logMatch[0].price);
-        if (!descVal || descVal === "-") descVal = logMatch[0].description || logMatch[0].style_name || "";
       }
     }
 
@@ -631,7 +643,8 @@ export default function InventoryMonitoringPage() {
 
       let masterProd: any = productsMaster.find(
         (p: any) =>
-          String(p.style_code).trim() === styleCodeStr ||
+          String(p.style_code).trim().includes(styleCodeStr) ||
+          styleCodeStr.includes(String(p.style_code).trim()) ||
           (skuStr && String(p.sku).trim() === skuStr)
       );
 
@@ -639,11 +652,10 @@ export default function InventoryMonitoringPage() {
         const { data: directMatch } = await supabase
           .from("products")
           .select("*")
-          .or(`style_code.eq.${styleCodeStr},sku.eq.${skuStr || styleCodeStr}`)
-          .limit(1);
+          .limit(50);
 
-        if (directMatch && directMatch.length > 0) {
-          masterProd = directMatch[0];
+        if (directMatch) {
+          masterProd = directMatch.find((p: any) => String(p.style_code).includes(styleCodeStr) || styleCodeStr.includes(String(p.style_code)));
         }
       }
 
