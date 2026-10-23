@@ -80,6 +80,7 @@ interface BulkImportItem {
 type ColumnKey =
   | "store"
   | "style_code"
+  | "description"
   | "sku"
   | "status"
   | "initial_stock"
@@ -99,6 +100,7 @@ interface ColumnDef {
 const DEFAULT_COLUMNS: ColumnDef[] = [
   { id: "store", label: "Store Location", align: "left", sortable: true },
   { id: "style_code", label: "Style Code & Details", align: "left", sortable: true },
+  { id: "description", label: "Description", align: "left", sortable: true },
   { id: "sku", label: "SKU", align: "left", sortable: true },
   { id: "status", label: "Status", align: "center", sortable: true },
   { id: "initial_stock", label: "Delivered / In", align: "right", sortable: true, headerBg: "bg-slate-800/30" },
@@ -728,6 +730,7 @@ export default function InventoryMonitoringPage() {
         !q ||
         item.style_code?.toLowerCase().includes(q) ||
         (item.style_name && item.style_name.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
         (item.sku && item.sku.toLowerCase().includes(q)) ||
         item.store.toLowerCase().includes(q);
 
@@ -816,6 +819,8 @@ export default function InventoryMonitoringPage() {
             </div>
           </div>
         );
+      case "description":
+        return <span className="text-slate-200 font-sans text-left block">{item.description && item.description !== "-" ? item.description : "-"}</span>;
       case "sku":
         return <span className="text-blue-400 font-mono text-left block">{item.sku || "-"}</span>;
       case "status":
@@ -973,7 +978,7 @@ export default function InventoryMonitoringPage() {
             <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search style code, name, SKU..."
+              placeholder="Search style code, description, name, SKU..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-4 py-2.5 rounded-xl text-white focus:outline-none focus:border-indigo-500"
