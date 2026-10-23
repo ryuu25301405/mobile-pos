@@ -749,8 +749,8 @@ export default function InventoryMonitoringPage() {
     if (!sortKey) return filtered;
 
     return [...filtered].sort((a, b) => {
-      let valA: string | number | null;
-      let valB: string | number | null;
+      let valA: string | number | null | undefined;
+      let valB: string | number | null | undefined;
 
       if (sortKey === "status") {
         valA = a.current_stock <= 0 ? 0 : a.current_stock <= a.safety_stock ? 1 : 2;
