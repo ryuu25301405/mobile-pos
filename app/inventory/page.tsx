@@ -258,7 +258,6 @@ export default function InventoryMonitoringPage() {
           const skuStr = row.sku ? String(row.sku).trim() : "";
           const matchedLog = logMap[styleCodeStr] || {};
 
-          // Robust lookup checking exact match or partial containment
           const matchedProd = prodData.find(
             (p: any) => {
               const masterCode = p.style_code ? String(p.style_code).trim() : "";
@@ -505,22 +504,14 @@ export default function InventoryMonitoringPage() {
     setBulkSubmitting(true);
     try {
       const now = new Date().toISOString();
-
-      const { data: prodMasterData } = await supabase.from("products").select("*");
-      const prodMap = new Map<string, any>();
-      if (prodMasterData) {
-        prodMasterData.forEach((p: any) => {
-          if (p.style_code) prodMap.set(String(p.style_code).trim(), p);
-          if (p.sku) prodMap.set(String(p.sku).trim(), p);
-        });
-      }
-
       const targetStore = bulkDefaultStore;
 
-      const { data: existingStoreRows } = await supabase
+      const { data: existingStoreRows, error: fetchErr } = await supabase
         .from("store_inventory")
         .select("*")
         .eq("store", targetStore);
+
+      if (fetchErr) throw fetchErr;
 
       const existingMap = new Map<string, any>();
       if (existingStoreRows) {
@@ -530,19 +521,20 @@ export default function InventoryMonitoringPage() {
       }
 
       let successCount = 0;
+      let errorMessages: string[] = [];
 
       for (const item of bulkPreview) {
         const styleCodeStr = String(item.style_code).trim();
         const skuStr = item.sku ? String(item.sku).trim() : null;
-        const masterProd = prodMap.get(styleCodeStr) || (skuStr ? prodMap.get(skuStr) : {}) || {};
 
-        const existing = existingMap.get(styleCodeStr);
-
-        const itemPrice = cleanNumericPrice(masterProd.price || masterProd.unit_price || masterProd.srp) || 0;
-        const itemName = masterProd.style_name || masterProd.description || styleCodeStr;
-        const itemColor = masterProd.color || "Default";
-        const itemSize = masterProd.size || "Free Size";
-        const itemDept = masterProd.department || "General";
+        // Find existing record with exact or partial style code match
+        let existing = existingMap.get(styleCodeStr);
+        if (!existing && existingStoreRows) {
+          existing = existingStoreRows.find((row: any) => {
+            const rc = String(row.style_code || "").trim();
+            return rc === styleCodeStr || rc.includes(styleCodeStr) || styleCodeStr.includes(rc);
+          });
+        }
 
         if (existing) {
           const newInitial = Number(item.quantity);
@@ -555,16 +547,16 @@ export default function InventoryMonitoringPage() {
               initial_stock: newInitial,
               current_stock: newCurrent,
               sku: skuStr || existing.sku,
-              price: existing.price || itemPrice,
-              style_name: existing.style_name || itemName,
-              color: existing.color || itemColor,
-              size: existing.size || itemSize,
-              department: existing.department || itemDept,
               last_replenished_at: now,
             })
             .eq("id", existing.id);
 
-          if (!updateErr) successCount++;
+          if (updateErr) {
+            console.error("Bulk update error:", updateErr);
+            errorMessages.push(updateErr.message);
+          } else {
+            successCount++;
+          }
         } else {
           const { error: insertErr } = await supabase
             .from("store_inventory")
@@ -572,25 +564,59 @@ export default function InventoryMonitoringPage() {
               store: targetStore,
               style_code: styleCodeStr,
               sku: skuStr,
-              initial_stock: item.quantity,
-              current_stock: item.quantity,
+              initial_stock: Number(item.quantity),
+              current_stock: Number(item.quantity),
               safety_stock: 5,
-              price: itemPrice,
-              style_name: itemName,
-              color: itemColor,
-              size: itemSize,
-              department: itemDept,
               last_replenished_at: now,
             });
 
-          if (!insertErr) successCount++;
+          if (insertErr) {
+            // If duplicate unique key, try fallback update
+            if (insertErr.code === "23505") {
+              const { data: refetchRow } = await supabase
+                .from("store_inventory")
+                .select("*")
+                .eq("store", targetStore)
+                .eq("style_code", styleCodeStr)
+                .maybeSingle();
+
+              if (refetchRow) {
+                const newInitial = Number(item.quantity);
+                const currentOut = Math.max(0, (Number(refetchRow.initial_stock) || 0) - (Number(refetchRow.current_stock) || 0));
+                const newCurrent = Math.max(0, newInitial - currentOut);
+                const { error: retryErr } = await supabase
+                  .from("store_inventory")
+                  .update({
+                    initial_stock: newInitial,
+                    current_stock: newCurrent,
+                    sku: skuStr || refetchRow.sku,
+                    last_replenished_at: now,
+                  })
+                  .eq("id", refetchRow.id);
+
+                if (!retryErr) {
+                  successCount++;
+                  continue;
+                }
+              }
+            }
+            console.error("Bulk insert error:", insertErr);
+            errorMessages.push(insertErr.message);
+          } else {
+            successCount++;
+          }
         }
       }
 
       setIsBulkOpen(false);
       setBulkPreview([]);
       fetchInventory();
-      alert(`Bulk delivery committed! Successfully processed ${successCount} out of ${bulkPreview.length} items to ${targetStore}.`);
+      
+      if (errorMessages.length > 0) {
+        alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.\nError: ${errorMessages[0]}`);
+      } else {
+        alert(`Bulk delivery committed! Successfully processed ${successCount} out of ${bulkPreview.length} items to ${targetStore}.`);
+      }
     } catch (err: any) {
       console.error("Bulk upload failed:", err);
       alert(`Bulk upload error: ${err?.message || "An error occurred"}`);
