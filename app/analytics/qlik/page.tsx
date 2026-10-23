@@ -352,7 +352,7 @@ export default function QlikViewAnalyticsPage() {
     if (allLogs.length > 0) {
       const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
-        const pr = parseFloat(row.price) || 0; // Ensured parseFloat for exact decimals
+        const pr = parseFloat(row.price) || 0; // Fixed: parseFloat retains full decimals
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
@@ -804,7 +804,7 @@ export default function QlikViewAnalyticsPage() {
       if (!map[prodKey]) {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
-          category: item.category, department: item.department, price: item.price, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
+          category: item.category, department: item.department, price: parseFloat(String(item.price)) || 0, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
           currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0
         };
       }
@@ -935,6 +935,33 @@ export default function QlikViewAnalyticsPage() {
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Transaction Logs</p>
           <p className="text-2xl font-black text-sky-400 mt-1 font-mono">{metricsA.transactions.toLocaleString()} logs</p>
+        </div>
+      </div>
+
+      {/* Measure Toggle Bar */}
+      <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+        <button
+          onClick={cycleMeasure}
+          className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3.5 py-2 rounded-xl text-xs font-bold transition"
+        >
+          <Sigma className="w-4 h-4 text-indigo-400" />
+          <span>Measure: {activeMeasure.label}</span>
+          <RotateCcw className="w-3 h-3 text-indigo-400 ml-1" />
+        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setVisualizationMode("chart")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${visualizationMode === "chart" ? "bg-indigo-600 text-white" : "bg-slate-950 text-slate-400 border border-slate-800"}`}
+          >
+            Bars
+          </button>
+          <button
+            onClick={() => setVisualizationMode("donut")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${visualizationMode === "donut" ? "bg-indigo-600 text-white" : "bg-slate-950 text-slate-400 border border-slate-800"}`}
+          >
+            Proportion Ring
+          </button>
         </div>
       </div>
 
