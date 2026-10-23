@@ -352,7 +352,7 @@ export default function QlikViewAnalyticsPage() {
     if (allLogs.length > 0) {
       const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
-        const pr = parseFloat(row.price) || 0;
+        const pr = parseFloat(row.price) || 0; // Ensured parseFloat for exact decimals
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
@@ -556,7 +556,7 @@ export default function QlikViewAnalyticsPage() {
         color: "colors", 
         size: "sizes", 
         style_code: "styles",
-        styleNames: "styleNames" 
+        style_name: "styleNames" 
       };
       const key = fieldKeyMap[field];
       const exists = prev[key].includes(value);
@@ -804,7 +804,7 @@ export default function QlikViewAnalyticsPage() {
       if (!map[prodKey]) {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
-          category: item.category, department: item.department, price: parseFloat(String(item.price)) || 0, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
+          category: item.category, department: item.department, price: item.price, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
           currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0
         };
       }
@@ -866,6 +866,17 @@ export default function QlikViewAnalyticsPage() {
     const avgPrice = filteredProducts.length > 0 ? filteredProducts.reduce((acc, p) => acc + p.price, 0) / filteredProducts.length : 0;
     return { totalUnits, totalRevenue, avgPrice };
   }, [filteredProducts]);
+
+  const storeCardsSummary = useMemo(() => {
+    const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
+    universe.stores.forEach((st) => map[st] = { store: st, totalUnits: 0, totalRevenue: 0 });
+    currentSubset.forEach((item) => {
+      if (!map[item.store]) map[item.store] = { store: item.store, totalUnits: 0, totalRevenue: 0 };
+      map[item.store].totalUnits += item.quantity;
+      map[item.store].totalRevenue += item.revenue;
+    });
+    return Object.values(map);
+  }, [universe.stores, currentSubset]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col p-6 space-y-6">
