@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { triggerScanFeedback } from "@/lib/feedback";
@@ -57,6 +57,10 @@ export default function Home() {
   const [tempStore, setTempStore] = useState<string>("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
 
+  // Network & Offline Queue State
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
+
   // Transaction Mode & Continuous Batch Scan State
   const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
   const [continuousMode, setContinuousMode] = useState<boolean>(false);
@@ -93,6 +97,86 @@ export default function Home() {
   const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
   const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
+
+  // Monitor Network Connectivity & Sync Queue
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setIsOnline(navigator.onLine);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncOfflineQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    // Check localStorage queue length on mount
+    const savedQueue = localStorage.getItem("pos_offline_queue");
+    if (savedQueue) {
+      try {
+        const queue = JSON.parse(savedQueue);
+        setOfflineQueueCount(queue.length);
+      } catch (e) {
+        console.error("Error reading offline queue", e);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Function to sync offline queue back to Supabase when reconnected
+  const syncOfflineQueue = async () => {
+    const savedQueue = localStorage.getItem("pos_offline_queue");
+    if (!savedQueue) return;
+
+    try {
+      const queue = JSON.parse(savedQueue);
+      if (queue.length === 0) return;
+
+      setLoading(true);
+      for (const task of queue) {
+        if (task.type === "log") {
+          await supabase.from("scanned_logs").insert([task.payload]);
+        } else if (task.type === "inventory_update") {
+          // Sync stock update
+          await supabase
+            .from("store_inventory")
+            .update(task.payload.updateData)
+            .eq("id", task.payload.id);
+        }
+      }
+
+      localStorage.removeItem("pos_offline_queue");
+      setOfflineQueueCount(0);
+      console.log("Successfully synced offline queue to Supabase!");
+    } catch (err) {
+      console.error("Failed to sync offline queue:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper to push tasks to offline localStorage queue if offline
+  const queueOfflineTask = (task: { type: string; payload: any }) => {
+    try {
+      const savedQueue = localStorage.getItem("pos_offline_queue");
+      const queue = savedQueue ? JSON.parse(savedQueue) : [];
+      queue.push(task);
+      localStorage.setItem("pos_offline_queue", JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+    } catch (err) {
+      console.error("Failed to save offline task", err);
+    }
+  };
 
   // Open scanner handler
   const handleOpenScanner = () => {
@@ -189,6 +273,22 @@ export default function Home() {
       const cleanStyle = lastScannedItem.styleCode?.trim() || "";
       const cleanSku = lastScannedItem.sku !== "-" ? lastScannedItem.sku?.trim() : "";
 
+      const updatePayload = {
+        current_stock: targetQty,
+        last_replenished_at: new Date().toISOString(),
+      };
+
+      if (!isOnline) {
+        queueOfflineTask({
+          type: "inventory_reconcile",
+          payload: { store: selectedStore, styleCode: cleanStyle, updateData: updatePayload }
+        });
+        setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
+        setReconcileSuccess(`Stock updated locally (Offline) to ${targetQty} pcs!`);
+        setReconciling(false);
+        return;
+      }
+
       let invQuery = supabase
         .from("store_inventory")
         .select("id")
@@ -205,15 +305,12 @@ export default function Home() {
       if (invData) {
         const { error } = await supabase
           .from("store_inventory")
-          .update({
-            current_stock: targetQty,
-            last_replenished_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("id", invData.id);
 
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("store_inventory").insert([
+        await supabase.from("store_inventory").insert([
           {
             store: selectedStore,
             style_code: cleanStyle,
@@ -224,8 +321,6 @@ export default function Home() {
             last_replenished_at: new Date().toISOString(),
           },
         ]);
-
-        if (error) throw error;
       }
 
       setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
@@ -247,36 +342,41 @@ export default function Home() {
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
-    // 1. Try matching exact barcode first
-    let { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("barcode", cleanCode)
-      .maybeSingle();
+    let data: any = null;
+    let error: any = null;
 
-    // 2. If not found by barcode, try style_code
-    if (!data) {
-      const res = await supabase
+    if (isOnline) {
+      // 1. Try matching exact barcode first
+      const res1 = await supabase
         .from("products")
         .select("*")
-        .ilike("style_code", cleanCode)
+        .eq("barcode", cleanCode)
         .maybeSingle();
-      data = res.data;
-      error = res.error;
+      data = res1.data;
+      error = res1.error;
+
+      // 2. If not found by barcode, try style_code
+      if (!data) {
+        const res2 = await supabase
+          .from("products")
+          .select("*")
+          .ilike("style_code", cleanCode)
+          .maybeSingle();
+        data = res2.data;
+      }
+
+      // 3. If still not found, try matching sku
+      if (!data) {
+        const res3 = await supabase
+          .from("products")
+          .select("*")
+          .ilike("sku", cleanCode)
+          .maybeSingle();
+        data = res3.data;
+      }
     }
 
-    // 3. If still not found, try matching sku
     if (!data) {
-      const res = await supabase
-        .from("products")
-        .select("*")
-        .ilike("sku", cleanCode)
-        .maybeSingle();
-      data = res.data;
-      error = res.error;
-    }
-
-    if (error || !data) {
       setLoading(false);
       triggerScanFeedback("error");
       setManualCode(cleanCode);
@@ -286,7 +386,7 @@ export default function Home() {
         sku: cleanCode,
         styleName: `Item ${cleanCode}`,
       }));
-      setErrorMessage(`Code "${cleanCode}" not found in database.`);
+      setErrorMessage(`Code "${cleanCode}" not found or offline.`);
       return;
     }
 
@@ -329,19 +429,16 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Handle database operations based on Transaction Mode
-    if (transactionMode === "sales") {
+    // Handle database operations or offline queueing
+    if (transactionMode === "sales" && isOnline) {
       try {
         let invQuery = supabase
           .from("store_inventory")
           .select("id, current_stock, safety_stock")
           .eq("store", selectedStore);
 
-        if (cleanStyle) {
-          invQuery = invQuery.eq("style_code", cleanStyle);
-        } else if (cleanSku) {
-          invQuery = invQuery.eq("sku", cleanSku);
-        }
+        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
+        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
 
         const { data: invData } = await invQuery.maybeSingle();
 
@@ -354,109 +451,43 @@ export default function Home() {
 
           const remaining = newCurrentStock;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
-
-          if (remaining <= 0) {
-            setStockAlert({ type: "out", remainingStock: remaining, safetyStock: safetyThreshold });
-          } else if (remaining <= safetyThreshold) {
-            setStockAlert({ type: "low", remainingStock: remaining, safetyStock: safetyThreshold });
-          } else {
-            setStockAlert({ type: "normal", remainingStock: remaining, safetyStock: safetyThreshold });
-          }
+          setStockAlert({
+            type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
         }
       } catch (err) {
-        console.warn("Could not update inventory for sale:", err);
+        console.warn("Inventory update warning:", err);
       }
 
-      await supabase.from("scanned_logs").insert([
-        {
-          store: selectedStore,
-          style_code: fetchedProduct.styleCode,
-          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-          style_name: fetchedProduct.styleName,
-          description: fetchedProduct.description,
-          color: fetchedProduct.color,
-          category: fetchedProduct.category,
-          department: fetchedProduct.department,
-          size: fetchedProduct.size,
-          price: fetchedProduct.price,
-          quantity: 1,
-          scanned_at: now.toISOString(),
-        },
-      ]);
-    } else if (transactionMode === "delivery") {
-      try {
-        let invQuery = supabase
-          .from("store_inventory")
-          .select("*")
-          .eq("store", selectedStore);
+      const logPayload = {
+        store: selectedStore,
+        style_code: fetchedProduct.styleCode,
+        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+        style_name: fetchedProduct.styleName,
+        description: fetchedProduct.description,
+        color: fetchedProduct.color,
+        category: fetchedProduct.category,
+        department: fetchedProduct.department,
+        size: fetchedProduct.size,
+        price: fetchedProduct.price,
+        quantity: 1,
+        scanned_at: now.toISOString(),
+      };
 
-        if (cleanStyle) {
-          invQuery = invQuery.eq("style_code", cleanStyle);
-        } else if (cleanSku) {
-          invQuery = invQuery.eq("sku", cleanSku);
-        }
-
-        const { data: existingInv } = await invQuery.maybeSingle();
-
-        if (existingInv) {
-          const newInitial = (Number(existingInv.initial_stock) || 0) + 1;
-          const newCurrent = (Number(existingInv.current_stock) || 0) + 1;
-          await supabase
-            .from("store_inventory")
-            .update({
-              initial_stock: newInitial,
-              current_stock: newCurrent,
-              last_replenished_at: now.toISOString(),
-            })
-            .eq("id", existingInv.id);
-
-          setStockAlert({ type: "normal", remainingStock: newCurrent, safetyStock: Number(existingInv.safety_stock ?? 5) });
-        } else {
-          await supabase.from("store_inventory").insert([
-            {
-              store: selectedStore,
-              style_code: cleanStyle,
-              sku: cleanSku || null,
-              initial_stock: 1,
-              current_stock: 1,
-              safety_stock: 5,
-              last_replenished_at: now.toISOString(),
-            },
-          ]);
-          setStockAlert({ type: "normal", remainingStock: 1, safetyStock: 5 });
-        }
-      } catch (err) {
-        console.warn("Could not process delivery restock:", err);
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([logPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: logPayload });
       }
-    } else if (transactionMode === "audit") {
-      try {
-        let invQuery = supabase
-          .from("store_inventory")
-          .select("current_stock, safety_stock")
-          .eq("store", selectedStore);
-
-        if (cleanStyle) {
-          invQuery = invQuery.eq("style_code", cleanStyle);
-        } else if (cleanSku) {
-          invQuery = invQuery.eq("sku", cleanSku);
-        }
-
-        const { data: invData } = await invQuery.maybeSingle();
-        if (invData) {
-          const remaining = Number(invData.current_stock);
-          const safetyThreshold = Number(invData.safety_stock ?? 5);
-          setStockAlert({ type: remaining <= safetyThreshold ? "low" : "normal", remainingStock: remaining, safetyStock: safetyThreshold });
-        } else {
-          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
-        }
-      } catch (err) {
-        console.warn("Could not check stock for audit:", err);
-      }
+    } else if (!isOnline) {
+      // Offline fallback alert
+      setStockAlert({ type: "normal", remainingStock: 1, safetyStock: 5 });
     }
 
     setLoading(false);
 
-    // If continuous mode is enabled, automatically resume scanning after 1.5 seconds
     if (continuousMode) {
       setTimeout(() => {
         handleScanNext();
@@ -515,13 +546,23 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
-      {/* Header & Controls */}
+      {/* Header & Network Status */}
       <header className="space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              Mobile Terminal
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                Mobile Terminal
+              </span>
+              {/* Connection Status Badge */}
+              <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                isOnline 
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+              }`}>
+                {isOnline ? "🟢 Online" : `🔴 Offline (${offlineQueueCount} queued)`}
+              </span>
+            </div>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
               Barcode / QR Scanner
             </h1>
@@ -1157,7 +1198,7 @@ export default function Home() {
       )}
 
       <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Active Session Log ({transactionMode})
+        Active Session Log ({transactionMode}) • Offline Mode Active
       </footer>
     </main>
   );
