@@ -57,8 +57,9 @@ export default function Home() {
   const [tempStore, setTempStore] = useState<string>("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
 
-  // Transaction Mode State
+  // Transaction Mode & Continuous Batch Scan State
   const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
+  const [continuousMode, setContinuousMode] = useState<boolean>(false);
 
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -399,6 +400,13 @@ export default function Home() {
     }
 
     setLoading(false);
+
+    // If continuous mode is enabled and there's no error, automatically resume scanning after 1.5 seconds
+    if (continuousMode) {
+      setTimeout(() => {
+        handleScanNext();
+      }, 1500);
+    }
   };
 
   const handleSaveManualProduct = async (e: React.FormEvent) => {
@@ -475,7 +483,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Store Location & Transaction Mode Picker Card */}
+        {/* Store Location, Transaction Mode & Continuous Batch Toggle Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Store Selection */}
@@ -514,6 +522,27 @@ export default function Home() {
                 <option value="delivery" className="text-white font-normal">📦 Delivery (Restock In)</option>
               </select>
             </div>
+          </div>
+
+          {/* Continuous Batch Scan Toggle */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Continuous Batch Mode
+              </span>
+              <p className="text-[11px] text-slate-500">Auto-resumes camera after 1.5s on success</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setContinuousMode(!continuousMode)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                continuousMode 
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-500/10' 
+                  : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
+              }`}
+            >
+              <span>{continuousMode ? "⚡ Enabled" : "💤 Disabled"}</span>
+            </button>
           </div>
         </div>
       </header>
@@ -644,9 +673,16 @@ export default function Home() {
           <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
               <span className="text-slate-400 font-medium">Store: <strong className="text-emerald-400">{selectedStore}</strong></span>
-              <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-2 py-0.5 rounded uppercase text-[10px]">
-                Mode: {transactionMode}
-              </span>
+              <div className="flex items-center gap-2">
+                {continuousMode && (
+                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold text-[9px]">
+                    Continuous
+                  </span>
+                )}
+                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-2 py-0.5 rounded uppercase text-[10px]">
+                  Mode: {transactionMode}
+                </span>
+              </div>
             </div>
 
             <div className="relative aspect-square bg-black">
@@ -681,7 +717,7 @@ export default function Home() {
                       <div className="w-full space-y-3 my-auto text-left">
                         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                           <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                            ✓ {transactionMode.toUpperCase()} Processed
+                            ✓ {transactionMode.toUpperCase()} Processed {continuousMode && "(Auto-resuming...)"}
                           </span>
                           <span className="text-xs font-mono text-emerald-400 font-bold">
                             {lastScannedItem.styleCode}
