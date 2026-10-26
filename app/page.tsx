@@ -57,7 +57,7 @@ export default function Home() {
   const [tempStore, setTempStore] = useState<string>("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
 
-  // New Transaction Mode State
+  // Transaction Mode State
   const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
 
   const [scanning, setScanning] = useState(false);
@@ -110,7 +110,7 @@ export default function Home() {
     setStockAlert(null);
   };
 
-  // Fixed handleScan with transaction mode handling (Sales, Audit, Delivery)
+  // Handle scan with dynamic behavior based on Transaction Mode
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -203,7 +203,6 @@ export default function Home() {
 
     // Handle database operations based on Transaction Mode
     if (transactionMode === "sales") {
-      // Deduct inventory & log sale
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -257,7 +256,6 @@ export default function Home() {
         },
       ]);
     } else if (transactionMode === "delivery") {
-      // Add stock intake / restock
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -303,7 +301,6 @@ export default function Home() {
         console.warn("Could not process delivery restock:", err);
       }
     } else if (transactionMode === "audit") {
-      // Audit mode: just query and display current stock without altering records
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -321,6 +318,8 @@ export default function Home() {
           const remaining = Number(invData.current_stock);
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           setStockAlert({ type: remaining <= safetyThreshold ? "low" : "normal", remainingStock: remaining, safetyStock: safetyThreshold });
+        } else {
+          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
         }
       } catch (err) {
         console.warn("Could not check stock for audit:", err);
@@ -330,7 +329,6 @@ export default function Home() {
     setLoading(false);
   };
 
-  // Handler to save manually added product to Supabase
   const handleSaveManualProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingManual(true);
@@ -357,7 +355,6 @@ export default function Home() {
       return;
     }
 
-    // Close manual modal and process scan immediately
     setIsManualModalOpen(false);
     setErrorMessage(null);
     await handleScan(manualCode);
@@ -691,12 +688,13 @@ export default function Home() {
                             </span>
                           </div>
 
+                          {/* Optimized Stock Display Card for Audit & Other Modes */}
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Size / Stock
+                              {transactionMode === "audit" ? "On-Hand Stock (Audit)" : "Size / Stock"}
                             </span>
-                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
-                              {stockAlert ? `${stockAlert.remainingStock} pcs` : lastScannedItem.size}
+                            <span className="text-emerald-400 font-mono font-bold text-sm truncate block">
+                              {stockAlert !== null ? `${stockAlert.remainingStock} pcs` : `${lastScannedItem.size}`}
                             </span>
                           </div>
                         </div>
