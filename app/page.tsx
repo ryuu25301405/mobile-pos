@@ -416,7 +416,7 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Handle Sales AND Pull Out modes (both deduct from stock)
+    // Inventory handling for Sales and Pull Out modes
     if ((transactionMode === "sales" || transactionMode === "pull_out") && isOnline) {
       try {
         let invQuery = supabase
@@ -1008,8 +1008,33 @@ export default function Home() {
                           );
                         })()}
 
-                        {/* Standard Stock Alerts for Sales, Delivery & Pull Out Modes */}
-                        {transactionMode !== "audit" && stockAlert && stockAlert.type === "out" && (
+                        {/* Pull Out Mode Stock Display Badge */}
+                        {transactionMode === "pull_out" && stockAlert && (
+                          <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold text-sm">
+                                🚚
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase text-rose-400 tracking-wider">
+                                  Pull Out Stock Status
+                                </p>
+                                <p className="text-slate-300 text-[11px]">
+                                  Deducted 1 unit from inventory
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Remaining Stock</span>
+                              <span className="text-rose-400 font-mono font-black text-base">
+                                {stockAlert.remainingStock} pcs
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Standard Stock Alerts for Sales & Delivery Modes */}
+                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "out" && (
                           <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
                             <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
                               ⚠
@@ -1025,7 +1050,7 @@ export default function Home() {
                           </div>
                         )}
 
-                        {transactionMode !== "audit" && stockAlert && stockAlert.type === "low" && (
+                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "low" && (
                           <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
                             <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
                               ⚠
@@ -1052,7 +1077,7 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Details Grid */}
+                        {/* Details Grid with Current Stock Display */}
                         <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
@@ -1060,6 +1085,15 @@ export default function Home() {
                             </span>
                             <span className="text-blue-400 font-mono font-bold text-sm truncate block">
                               {lastScannedItem.sku}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Current Stock
+                            </span>
+                            <span className="text-emerald-400 font-mono font-extrabold text-sm truncate block">
+                              {stockAlert ? `${stockAlert.remainingStock} pcs` : "N/A"}
                             </span>
                           </div>
 
@@ -1074,19 +1108,10 @@ export default function Home() {
 
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Category
+                              Size / Color
                             </span>
                             <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.category}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Size
-                            </span>
-                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
-                              {lastScannedItem.size}
+                              {lastScannedItem.size} • {lastScannedItem.color}
                             </span>
                           </div>
                         </div>
