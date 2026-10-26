@@ -110,6 +110,13 @@ export default function Home() {
     setStockAlert(null);
   };
 
+  // Calculate total count for a specific style code scanned in the current session
+  const getSessionCountForStyle = (code: string) => {
+    return sessionScans
+      .filter((s) => s.styleCode === code && s.store === selectedStore)
+      .reduce((acc, curr) => acc + curr.quantity, 0);
+  };
+
   // Handle scan with dynamic behavior based on Transaction Mode
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
@@ -615,8 +622,41 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {/* Real-time Inventory Alert Warning Box */}
-                        {stockAlert && stockAlert.type === "out" && (
+                        {/* Audit Mode Side-by-Side Stock Comparison Card */}
+                        {transactionMode === "audit" && stockAlert && (() => {
+                          const systemStock = stockAlert.remainingStock;
+                          const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
+                          const variance = countedStock - systemStock;
+
+                          return (
+                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2 shadow-xl">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
+                                Audit Stock Comparison
+                              </span>
+                              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
+                                  <span className="text-white font-bold text-base">{systemStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Counted</span>
+                                  <span className="text-emerald-400 font-bold text-base">{countedStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Variance</span>
+                                  <span className={`font-bold text-base ${
+                                    variance === 0 ? 'text-emerald-400' : variance > 0 ? 'text-amber-400' : 'text-rose-400'
+                                  }`}>
+                                    {variance > 0 ? `+${variance}` : variance}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Standard Stock Alerts for Sales & Delivery Modes */}
+                        {transactionMode !== "audit" && stockAlert && stockAlert.type === "out" && (
                           <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
                             <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
                               ⚠
@@ -632,7 +672,7 @@ export default function Home() {
                           </div>
                         )}
 
-                        {stockAlert && stockAlert.type === "low" && (
+                        {transactionMode !== "audit" && stockAlert && stockAlert.type === "low" && (
                           <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
                             <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
                               ⚠
@@ -688,13 +728,12 @@ export default function Home() {
                             </span>
                           </div>
 
-                          {/* Optimized Stock Display Card for Audit & Other Modes */}
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              {transactionMode === "audit" ? "On-Hand Stock (Audit)" : "Size / Stock"}
+                              Size
                             </span>
-                            <span className="text-emerald-400 font-mono font-bold text-sm truncate block">
-                              {stockAlert !== null ? `${stockAlert.remainingStock} pcs` : `${lastScannedItem.size}`}
+                            <span className="text-slate-200 font-bold text-emerald-400 truncate block">
+                              {lastScannedItem.size}
                             </span>
                           </div>
                         </div>
