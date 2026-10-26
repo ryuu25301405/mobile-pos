@@ -23,6 +23,8 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
+type TransactionMode = "sales" | "audit" | "delivery";
+
 interface ProductDetails {
   styleCode: string;
   sku?: string;
@@ -41,6 +43,7 @@ interface SessionScannedProduct extends ProductDetails {
   id: string;
   store: string;
   timestamp: string;
+  mode: TransactionMode;
 }
 
 interface StockAlertInfo {
@@ -53,6 +56,9 @@ export default function Home() {
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [tempStore, setTempStore] = useState<string>("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
+
+  // New Transaction Mode State
+  const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
 
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -104,7 +110,7 @@ export default function Home() {
     setStockAlert(null);
   };
 
-  // Fixed handleScan with price retrieval & real-time low-stock checking
+  // Fixed handleScan with transaction mode handling (Sales, Audit, Delivery)
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -187,61 +193,141 @@ export default function Home() {
       id: `${cleanCode}-${Date.now()}`,
       store: selectedStore,
       timestamp: formattedTimestamp,
+      mode: transactionMode,
     };
 
     setSessionScans((prev) => [newSessionItem, ...prev]);
 
-    await supabase.from("scanned_logs").insert([
-      {
-        store: selectedStore,
-        style_code: fetchedProduct.styleCode,
-        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-        style_name: fetchedProduct.styleName,
-        description: fetchedProduct.description,
-        color: fetchedProduct.color,
-        category: fetchedProduct.category,
-        department: fetchedProduct.department,
-        size: fetchedProduct.size,
-        price: fetchedProduct.price,
-        quantity: 1,
-        scanned_at: now.toISOString(),
-      },
-    ]);
+    const cleanStyle = fetchedProduct.styleCode?.trim() || "";
+    const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    try {
-      const cleanStyle = fetchedProduct.styleCode?.trim() || "";
-      const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
+    // Handle database operations based on Transaction Mode
+    if (transactionMode === "sales") {
+      // Deduct inventory & log sale
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("id, current_stock, safety_stock")
+          .eq("store", selectedStore);
 
-      let invQuery = supabase
-        .from("store_inventory")
-        .select("current_stock, safety_stock")
-        .eq("store", selectedStore);
-
-      if (cleanStyle) {
-        invQuery = invQuery.eq("style_code", cleanStyle);
-      } else if (cleanSku) {
-        invQuery = invQuery.eq("sku", cleanSku);
-      }
-
-      const { data: invData } = await invQuery.maybeSingle();
-
-      if (invData) {
-        const remaining = Number(invData.current_stock);
-        const safetyThreshold = Number(invData.safety_stock ?? 5);
-
-        if (remaining <= 0) {
-          setStockAlert({ type: "out", remainingStock: remaining, safetyStock: safetyThreshold });
-        } else if (remaining <= safetyThreshold) {
-          setStockAlert({ type: "low", remainingStock: remaining, safetyStock: safetyThreshold });
-        } else {
-          setStockAlert({ type: "normal", remainingStock: remaining, safetyStock: safetyThreshold });
+        if (cleanStyle) {
+          invQuery = invQuery.eq("style_code", cleanStyle);
+        } else if (cleanSku) {
+          invQuery = invQuery.eq("sku", cleanSku);
         }
+
+        const { data: invData } = await invQuery.maybeSingle();
+
+        if (invData) {
+          const newCurrentStock = Math.max(0, Number(invData.current_stock) - 1);
+          await supabase
+            .from("store_inventory")
+            .update({ current_stock: newCurrentStock })
+            .eq("id", invData.id);
+
+          const remaining = newCurrentStock;
+          const safetyThreshold = Number(invData.safety_stock ?? 5);
+
+          if (remaining <= 0) {
+            setStockAlert({ type: "out", remainingStock: remaining, safetyStock: safetyThreshold });
+          } else if (remaining <= safetyThreshold) {
+            setStockAlert({ type: "low", remainingStock: remaining, safetyStock: safetyThreshold });
+          } else {
+            setStockAlert({ type: "normal", remainingStock: remaining, safetyStock: safetyThreshold });
+          }
+        }
+      } catch (err) {
+        console.warn("Could not update inventory for sale:", err);
       }
-    } catch (err) {
-      console.warn("Could not check real-time stock:", err);
-    } finally {
-      setLoading(false);
+
+      await supabase.from("scanned_logs").insert([
+        {
+          store: selectedStore,
+          style_code: fetchedProduct.styleCode,
+          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+          style_name: fetchedProduct.styleName,
+          description: fetchedProduct.description,
+          color: fetchedProduct.color,
+          category: fetchedProduct.category,
+          department: fetchedProduct.department,
+          size: fetchedProduct.size,
+          price: fetchedProduct.price,
+          quantity: 1,
+          scanned_at: now.toISOString(),
+        },
+      ]);
+    } else if (transactionMode === "delivery") {
+      // Add stock intake / restock
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("*")
+          .eq("store", selectedStore);
+
+        if (cleanStyle) {
+          invQuery = invQuery.eq("style_code", cleanStyle);
+        } else if (cleanSku) {
+          invQuery = invQuery.eq("sku", cleanSku);
+        }
+
+        const { data: existingInv } = await invQuery.maybeSingle();
+
+        if (existingInv) {
+          const newInitial = (Number(existingInv.initial_stock) || 0) + 1;
+          const newCurrent = (Number(existingInv.current_stock) || 0) + 1;
+          await supabase
+            .from("store_inventory")
+            .update({
+              initial_stock: newInitial,
+              current_stock: newCurrent,
+              last_replenished_at: now.toISOString(),
+            })
+            .eq("id", existingInv.id);
+
+          setStockAlert({ type: "normal", remainingStock: newCurrent, safetyStock: Number(existingInv.safety_stock ?? 5) });
+        } else {
+          await supabase.from("store_inventory").insert([
+            {
+              store: selectedStore,
+              style_code: cleanStyle,
+              sku: cleanSku || null,
+              initial_stock: 1,
+              current_stock: 1,
+              safety_stock: 5,
+              last_replenished_at: now.toISOString(),
+            },
+          ]);
+          setStockAlert({ type: "normal", remainingStock: 1, safetyStock: 5 });
+        }
+      } catch (err) {
+        console.warn("Could not process delivery restock:", err);
+      }
+    } else if (transactionMode === "audit") {
+      // Audit mode: just query and display current stock without altering records
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("current_stock, safety_stock")
+          .eq("store", selectedStore);
+
+        if (cleanStyle) {
+          invQuery = invQuery.eq("style_code", cleanStyle);
+        } else if (cleanSku) {
+          invQuery = invQuery.eq("sku", cleanSku);
+        }
+
+        const { data: invData } = await invQuery.maybeSingle();
+        if (invData) {
+          const remaining = Number(invData.current_stock);
+          const safetyThreshold = Number(invData.safety_stock ?? 5);
+          setStockAlert({ type: remaining <= safetyThreshold ? "low" : "normal", remainingStock: remaining, safetyStock: safetyThreshold });
+        }
+      } catch (err) {
+        console.warn("Could not check stock for audit:", err);
+      }
     }
+
+    setLoading(false);
   };
 
   // Handler to save manually added product to Supabase
@@ -319,25 +405,46 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Store Location Picker Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-            Store Location <span className="text-red-400">*</span>
-          </label>
-          <select
-            value={selectedStore}
-            onChange={(e) => setSelectedStore(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
-          >
-            <option value="" disabled className="text-slate-500">
-              -- Select Store Location --
-            </option>
-            {STORES.map((store) => (
-              <option key={store} value={store} className="text-white font-normal">
-                {store}
-              </option>
-            ))}
-          </select>
+        {/* Store Location & Transaction Mode Picker Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Store Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Store Location <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="" disabled className="text-slate-500">
+                  -- Select Store --
+                </option>
+                {STORES.map((store) => (
+                  <option key={store} value={store} className="text-white font-normal">
+                    {store}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Transaction Mode Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Transaction Mode <span className="text-emerald-400">*</span>
+              </label>
+              <select
+                value={transactionMode}
+                onChange={(e) => setTransactionMode(e.target.value as TransactionMode)}
+                className="w-full bg-slate-950 border border-slate-800 text-amber-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="sales" className="text-white font-normal">🛍️ Sales (Checkout)</option>
+                <option value="audit" className="text-white font-normal">📋 Audit (Stock Check)</option>
+                <option value="delivery" className="text-white font-normal">📦 Delivery (Restock In)</option>
+              </select>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -346,7 +453,7 @@ export default function Home() {
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center space-x-2">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Current Session Scans
+              Current Session Scans ({transactionMode.toUpperCase()})
             </h2>
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] px-2 py-0.5 rounded-full">
               {totalSessionItems}
@@ -367,7 +474,7 @@ export default function Home() {
           <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-3xl p-8 text-center my-auto space-y-2">
             <p className="text-sm font-bold text-slate-300">No active scans right now</p>
             <p className="text-xs text-slate-500 max-w-xs mx-auto">
-              Select your store and tap "Scan Now" to begin adding items to this session.
+              Select your store and mode, then tap "Scan Now" to begin scanning.
             </p>
           </div>
         ) : (
@@ -378,7 +485,15 @@ export default function Home() {
                 className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm"
               >
                 <div className="space-y-0.5">
-                  <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                      item.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
+                      item.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {item.mode}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
                     {item.sku && item.sku !== "-" && (
@@ -458,8 +573,10 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
           <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
-              <span className="text-slate-400 font-medium">Store:</span>
-              <span className="font-bold text-emerald-400">{selectedStore}</span>
+              <span className="text-slate-400 font-medium">Store: <strong className="text-emerald-400">{selectedStore}</strong></span>
+              <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-2 py-0.5 rounded uppercase text-[10px]">
+                Mode: {transactionMode}
+              </span>
             </div>
 
             <div className="relative aspect-square bg-black">
@@ -467,7 +584,7 @@ export default function Home() {
 
               {loading && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
-                  Verifying & Checking Stock...
+                  Verifying & Processing ({transactionMode.toUpperCase()})...
                 </div>
               )}
 
@@ -494,7 +611,7 @@ export default function Home() {
                       <div className="w-full space-y-3 my-auto text-left">
                         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                           <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                            ✓ Saved to {selectedStore}
+                            ✓ {transactionMode.toUpperCase()} Processed
                           </span>
                           <span className="text-xs font-mono text-emerald-400 font-bold">
                             {lastScannedItem.styleCode}
@@ -512,7 +629,7 @@ export default function Home() {
                                 Depleted / Out of Stock
                               </p>
                               <p className="text-slate-200 text-[11px]">
-                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>! Replenishment required.
+                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>!
                               </p>
                             </div>
                           </div>
@@ -576,10 +693,10 @@ export default function Home() {
 
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Size
+                              Size / Stock
                             </span>
                             <span className="text-slate-200 font-bold text-emerald-400 truncate block">
-                              {lastScannedItem.size}
+                              {stockAlert ? `${stockAlert.remainingStock} pcs` : lastScannedItem.size}
                             </span>
                           </div>
                         </div>
@@ -752,7 +869,7 @@ export default function Home() {
       )}
 
       <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Active Session Log
+        Active Session Log ({transactionMode})
       </footer>
     </main>
   );
