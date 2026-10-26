@@ -148,6 +148,37 @@ export default function Home() {
     return Array.from(map.values());
   };
 
+  // Export Session Summary to CSV File
+  const handleExportCSV = () => {
+    const summary = getConsolidatedSummary();
+    if (summary.length === 0) return;
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Store,Transaction Mode,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
+
+    summary.forEach((item) => {
+      const row = [
+        `"${selectedStore}"`,
+        `"${transactionMode.toUpperCase()}"`,
+        `"${item.styleCode}"`,
+        `"${item.sku || '-'}"`,
+        `"${item.styleName.replace(/"/g, '""')}"`,
+        item.price.toFixed(2),
+        item.totalQty,
+      ].join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const filename = `session_summary_${selectedStore.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}.csv`;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // One-tap stock reconciliation function for Audit mode
   const handleReconcileStock = async (targetQty: number) => {
     if (!lastScannedItem) return;
@@ -682,8 +713,9 @@ export default function Home() {
             </div>
 
             <div className="space-y-2 overflow-y-auto flex-1 pr-1">
-              <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
-                Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong> | Mode: <strong className="text-amber-400 uppercase">{transactionMode}</strong>
+              <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                <span>Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong></span>
+                <span className="text-amber-400 font-bold uppercase">Mode: {transactionMode}</span>
               </div>
 
               {getConsolidatedSummary().map((summaryItem) => (
@@ -704,12 +736,18 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="pt-2 border-t border-slate-800">
+            <div className="flex space-x-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={handleExportCSV}
+                className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20"
+              >
+                📥 Export CSV
+              </button>
               <button
                 onClick={() => setIsSummaryModalOpen(false)}
-                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
               >
-                Confirm & Close Summary
+                Confirm & Close
               </button>
             </div>
           </div>
