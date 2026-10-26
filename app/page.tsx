@@ -70,6 +70,9 @@ export default function Home() {
   const [reconciling, setReconciling] = useState(false);
   const [reconcileSuccess, setReconcileSuccess] = useState<string | null>(null);
 
+  // Session Summary Modal State
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+
   // Manual Add Product Modal State
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualCode, setManualCode] = useState("");
@@ -122,6 +125,27 @@ export default function Home() {
     return sessionScans
       .filter((s) => s.styleCode === code && s.store === selectedStore)
       .reduce((acc, curr) => acc + curr.quantity, 0);
+  };
+
+  // Group session scans by styleCode for consolidated summary
+  const getConsolidatedSummary = () => {
+    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string }>();
+    for (const item of sessionScans) {
+      const key = item.styleCode;
+      if (map.has(key)) {
+        map.get(key)!.totalQty += item.quantity;
+      } else {
+        map.set(key, {
+          styleName: item.styleName,
+          styleCode: item.styleCode,
+          sku: item.sku,
+          price: item.price,
+          totalQty: item.quantity,
+          mode: item.mode,
+        });
+      }
+    }
+    return Array.from(map.values());
   };
 
   // One-tap stock reconciliation function for Audit mode
@@ -562,14 +586,24 @@ export default function Home() {
             </span>
           </div>
 
-          {totalSessionItems > 0 && (
-            <button
-              onClick={clearCurrentSession}
-              className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
-            >
-              Clear List
-            </button>
-          )}
+          <div className="flex items-center space-x-3">
+            {totalSessionItems > 0 && (
+              <>
+                <button
+                  onClick={() => setIsSummaryModalOpen(true)}
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20"
+                >
+                  📊 View Summary
+                </button>
+                <button
+                  onClick={clearCurrentSession}
+                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
+                >
+                  Clear List
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {sessionScans.length === 0 ? (
@@ -627,6 +661,60 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {/* Session Summary Modal */}
+      {isSummaryModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                  Confirmation Overview
+                </span>
+                <h2 className="text-lg font-black text-white mt-1">Session Summary</h2>
+              </div>
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                className="text-slate-400 hover:text-white font-bold text-base p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
+              <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong> | Mode: <strong className="text-amber-400 uppercase">{transactionMode}</strong>
+              </div>
+
+              {getConsolidatedSummary().map((summaryItem) => (
+                <div key={summaryItem.styleCode} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
+                      <span className="font-mono text-amber-400 font-bold">₱{summaryItem.price.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono font-black text-xs px-3 py-1 rounded-xl">
+                      {summaryItem.totalQty} pcs
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+              >
+                Confirm & Close Summary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Store Prompt Modal */}
       {isStoreModalOpen && (
