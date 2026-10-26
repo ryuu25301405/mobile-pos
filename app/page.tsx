@@ -65,6 +65,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Reconcile state
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileSuccess, setReconcileSuccess] = useState<string | null>(null);
+
   // Manual Add Product Modal State
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualCode, setManualCode] = useState("");
@@ -97,6 +101,7 @@ export default function Home() {
     setIsPaused(false);
     setErrorMessage(null);
     setStockAlert(null);
+    setReconcileSuccess(null);
   };
 
   // Confirm store selection from popup modal
@@ -108,13 +113,72 @@ export default function Home() {
     setIsPaused(false);
     setErrorMessage(null);
     setStockAlert(null);
+    setReconcileSuccess(null);
   };
 
-  // Calculate total count for a specific style code scanned in the current session
+  // Calculate total count for a specific style code scanned in current session
   const getSessionCountForStyle = (code: string) => {
     return sessionScans
       .filter((s) => s.styleCode === code && s.store === selectedStore)
       .reduce((acc, curr) => acc + curr.quantity, 0);
+  };
+
+  // One-tap stock reconciliation function for Audit mode
+  const handleReconcileStock = async (targetQty: number) => {
+    if (!lastScannedItem) return;
+    setReconciling(true);
+    setReconcileSuccess(null);
+
+    try {
+      const cleanStyle = lastScannedItem.styleCode?.trim() || "";
+      const cleanSku = lastScannedItem.sku !== "-" ? lastScannedItem.sku?.trim() : "";
+
+      let invQuery = supabase
+        .from("store_inventory")
+        .select("id")
+        .eq("store", selectedStore);
+
+      if (cleanStyle) {
+        invQuery = invQuery.eq("style_code", cleanStyle);
+      } else if (cleanSku) {
+        invQuery = invQuery.eq("sku", cleanSku);
+      }
+
+      const { data: invData } = await invQuery.maybeSingle();
+
+      if (invData) {
+        const { error } = await supabase
+          .from("store_inventory")
+          .update({
+            current_stock: targetQty,
+            last_replenished_at: new Date().toISOString(),
+          })
+          .eq("id", invData.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("store_inventory").insert([
+          {
+            store: selectedStore,
+            style_code: cleanStyle,
+            sku: cleanSku || null,
+            initial_stock: targetQty,
+            current_stock: targetQty,
+            safety_stock: 5,
+            last_replenished_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (error) throw error;
+      }
+
+      setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
+      setReconcileSuccess(`Stock updated to ${targetQty} pcs!`);
+    } catch (err: any) {
+      alert("Failed to update stock: " + (err?.message || "Error occurred"));
+    } finally {
+      setReconciling(false);
+    }
   };
 
   // Handle scan with dynamic behavior based on Transaction Mode
@@ -123,6 +187,7 @@ export default function Home() {
     setLoading(true);
     setErrorMessage(null);
     setStockAlert(null);
+    setReconcileSuccess(null);
 
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
@@ -371,6 +436,7 @@ export default function Home() {
     setErrorMessage(null);
     setLastScannedItem(null);
     setStockAlert(null);
+    setReconcileSuccess(null);
     setIsPaused(false);
   };
 
@@ -622,17 +688,25 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {/* Audit Mode Side-by-Side Stock Comparison Card */}
+                        {/* Audit Mode Side-by-Side Stock Comparison Card with One-Tap Reconcile */}
                         {transactionMode === "audit" && stockAlert && (() => {
                           const systemStock = stockAlert.remainingStock;
                           const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
                           const variance = countedStock - systemStock;
 
                           return (
-                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2 shadow-xl">
-                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
-                                Audit Stock Comparison
-                              </span>
+                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
+                                  Audit Stock Comparison
+                                </span>
+                                {reconcileSuccess && (
+                                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                    ✓ {reconcileSuccess}
+                                  </span>
+                                )}
+                              </div>
+
                               <div className="grid grid-cols-3 gap-2 text-center font-mono">
                                 <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
                                   <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
@@ -651,6 +725,18 @@ export default function Home() {
                                   </span>
                                 </div>
                               </div>
+
+                              {/* Show Reconcile Action Button when there is a Variance */}
+                              {variance !== 0 && !reconcileSuccess && (
+                                <button
+                                  type="button"
+                                  disabled={reconciling}
+                                  onClick={() => handleReconcileStock(countedStock)}
+                                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                                >
+                                  {reconciling ? "Reconciling..." : `⚡ Reconcile Database to ${countedStock} pcs`}
+                                </button>
+                              )}
                             </div>
                           );
                         })()}
