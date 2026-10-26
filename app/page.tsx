@@ -401,7 +401,7 @@ export default function Home() {
 
     setLoading(false);
 
-    // If continuous mode is enabled and there's no error, automatically resume scanning after 1.5 seconds
+    // If continuous mode is enabled, automatically resume scanning after 1.5 seconds
     if (continuousMode) {
       setTimeout(() => {
         handleScanNext();
@@ -460,7 +460,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
-      {/* Header & Store Selector */}
+      {/* Header & Controls */}
       <header className="space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
@@ -483,7 +483,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Store Location, Transaction Mode & Continuous Batch Toggle Card */}
+        {/* Store Location & Transaction Mode Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Store Selection */}
@@ -523,27 +523,30 @@ export default function Home() {
               </select>
             </div>
           </div>
+        </div>
 
-          {/* Continuous Batch Scan Toggle */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-            <div className="space-y-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Continuous Batch Mode
-              </span>
-              <p className="text-[11px] text-slate-500">Auto-resumes camera after 1.5s on success</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setContinuousMode(!continuousMode)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                continuousMode 
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-500/10' 
-                  : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              <span>{continuousMode ? "⚡ Enabled" : "💤 Disabled"}</span>
-            </button>
+        {/* Dedicated Continuous Batch Scanning Control Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+              ⚡ Continuous Batch Mode
+            </span>
+            <p className="text-[11px] text-slate-400">
+              {continuousMode ? "Active: Auto-resumes camera after success" : "Manual: Requires tapping 'Scan Next'"}
+            </p>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setContinuousMode(!continuousMode)}
+            className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer shadow-md ${
+              continuousMode 
+                ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20' 
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+            }`}
+          >
+            {continuousMode ? "ENABLED ON" : "TURN ON"}
+          </button>
         </div>
       </header>
 
