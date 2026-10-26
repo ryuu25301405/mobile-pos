@@ -23,7 +23,7 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-type TransactionMode = "sales" | "audit" | "delivery";
+type TransactionMode = "sales" | "audit" | "delivery" | "pull_out";
 
 interface ProductDetails {
   styleCode: string;
@@ -207,7 +207,7 @@ export default function Home() {
   const getConsolidatedSummary = () => {
     const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string }>();
     for (const item of sessionScans) {
-      const key = item.styleCode;
+      const key = `${item.styleCode}-${item.mode}`;
       if (map.has(key)) {
         map.get(key)!.totalQty += item.quantity;
       } else {
@@ -234,7 +234,7 @@ export default function Home() {
     summary.forEach((item) => {
       const row = [
         `"${selectedStore}"`,
-        `"${transactionMode.toUpperCase()}"`,
+        `"${item.mode.toUpperCase()}"`,
         `"${item.styleCode}"`,
         `"${item.sku || '-'}"`,
         `"${item.styleName.replace(/"/g, '""')}"`,
@@ -416,8 +416,8 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Restored Mode-based inventory handling
-    if (transactionMode === "sales" && isOnline) {
+    // Handle Sales AND Pull Out modes (both deduct from stock)
+    if ((transactionMode === "sales" || transactionMode === "pull_out") && isOnline) {
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -445,7 +445,7 @@ export default function Home() {
           });
         }
       } catch (err) {
-        console.warn("Sales inventory update error:", err);
+        console.warn("Stock deduction error:", err);
       }
 
       const logPayload = {
@@ -506,7 +506,6 @@ export default function Home() {
         console.warn("Delivery update error:", err);
       }
     } else if (transactionMode === "audit" && isOnline) {
-      // Correctly query current stock for Audit Comparison Card
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -665,6 +664,7 @@ export default function Home() {
                 <option value="sales" className="text-white font-normal">🛍️ Sales (Checkout)</option>
                 <option value="audit" className="text-white font-normal">📋 Audit (Stock Check)</option>
                 <option value="delivery" className="text-white font-normal">📦 Delivery (Restock In)</option>
+                <option value="pull_out" className="text-white font-normal">🚚 Pull Out (Stock Removal)</option>
               </select>
             </div>
           </div>
@@ -746,7 +746,9 @@ export default function Home() {
                     <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
                     <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
                       item.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
-                      item.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' : 'bg-amber-500/20 text-amber-400'
+                      item.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
+                      item.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                      'bg-amber-500/20 text-amber-400'
                     }`}>
                       {item.mode}
                     </span>
@@ -809,9 +811,19 @@ export default function Home() {
               </div>
 
               {getConsolidatedSummary().map((summaryItem) => (
-                <div key={summaryItem.styleCode} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                <div key={`${summaryItem.styleCode}-${summaryItem.mode}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        summaryItem.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
+                        summaryItem.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
+                        summaryItem.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400' :
+                        'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        {summaryItem.mode}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2 text-xs">
                       <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
                       <span className="font-mono text-amber-400 font-bold">₱{summaryItem.price.toFixed(2)}</span>
@@ -996,7 +1008,7 @@ export default function Home() {
                           );
                         })()}
 
-                        {/* Standard Stock Alerts for Sales & Delivery Modes */}
+                        {/* Standard Stock Alerts for Sales, Delivery & Pull Out Modes */}
                         {transactionMode !== "audit" && stockAlert && stockAlert.type === "out" && (
                           <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
                             <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
