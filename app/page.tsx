@@ -455,7 +455,6 @@ export default function Home() {
             safetyStock: safetyThreshold,
           });
         } else if (transactionMode === "pull_out") {
-          // If no row exists yet for pull out, insert new row with pull_out = 1
           await supabase.from("store_inventory").insert([
             {
               store: selectedStore,
