@@ -416,12 +416,12 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Inventory handling for Sales and Pull Out modes
-    if ((transactionMode === "sales" || transactionMode === "pull_out") && isOnline) {
+    // Inventory handling for Sales, Pull Out, and Delivery modes
+    if (isOnline) {
       try {
         let invQuery = supabase
           .from("store_inventory")
-          .select("*") // Fetch full row to safely preserve all existing counts
+          .select("*")
           .eq("store", selectedStore);
 
         if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
@@ -434,24 +434,23 @@ export default function Home() {
           const currentPullOut = Number(invData.pull_out) || 0;
           const currentTotalSold = Number(invData.total_sold) || Number(invData.sales) || 0;
 
-          const newCurrentStock = Math.max(0, currentStock - 1);
+          const updatePayload: Record<string, any> = {};
 
-          // Build explicit update payload preserving existing values
-          const updatePayload: Record<string, any> = {
-            current_stock: newCurrentStock,
-          };
-
-          if (transactionMode === "pull_out") {
-            updatePayload.pull_out = currentPullOut + 1;
-            updatePayload.last_replenished_at = now.toISOString();
-          } else if (transactionMode === "sales") {
-            // Include both possible column names safely
-            if ("total_sold" in invData) {
+          if (transactionMode === "sales") {
+            updatePayload.current_stock = Math.max(0, currentStock - 1);
+            if ("total_sold" in invData || !("sales" in invData)) {
               updatePayload.total_sold = currentTotalSold + 1;
             }
             if ("sales" in invData) {
               updatePayload.sales = currentTotalSold + 1;
             }
+          } else if (transactionMode === "pull_out") {
+            updatePayload.current_stock = Math.max(0, currentStock - 1);
+            updatePayload.pull_out = currentPullOut + 1;
+            updatePayload.last_replenished_at = now.toISOString();
+          } else if (transactionMode === "delivery") {
+            updatePayload.current_stock = currentStock + 1;
+            updatePayload.last_replenished_at = now.toISOString();
           }
 
           await supabase
@@ -459,7 +458,7 @@ export default function Home() {
             .update(updatePayload)
             .eq("id", invData.id);
 
-          const remaining = newCurrentStock;
+          const remaining = updatePayload.current_stock ?? currentStock;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
@@ -467,86 +466,28 @@ export default function Home() {
             safetyStock: safetyThreshold,
           });
         } else {
-          // If no row exists yet for this store/item, insert a new record
-          const newRowPayload: Record<string, any> = {
-            store: selectedStore,
-            style_code: cleanStyle,
-            sku: cleanSku || null,
-            initial_stock: 0,
-            current_stock: 0,
-            pull_out: transactionMode === "pull_out" ? 1 : 0,
-            total_sold: transactionMode === "sales" ? 1 : 0,
-            sales: transactionMode === "sales" ? 1 : 0,
-            safety_stock: 5,
-            last_replenished_at: now.toISOString(),
-          };
-
-          await supabase.from("store_inventory").insert([newRowPayload]);
-          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
-        }
-      } catch (err) {
-        console.warn("Stock deduction error:", err);
-      }
-
-      const logPayload = {
-        store: selectedStore,
-        transaction_mode: transactionMode,
-        style_code: fetchedProduct.styleCode,
-        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-        style_name: fetchedProduct.styleName,
-        description: fetchedProduct.description,
-        color: fetchedProduct.color,
-        category: fetchedProduct.category,
-        department: fetchedProduct.department,
-        size: fetchedProduct.size,
-        price: fetchedProduct.price,
-        quantity: 1,
-        scanned_at: now.toISOString(),
-      };
-
-      if (isOnline) {
-        await supabase.from("scanned_logs").insert([logPayload]);
-      } else {
-        queueOfflineTask({ type: "log", payload: logPayload });
-      }
-    } else if (transactionMode === "delivery" && isOnline) {
-      try {
-        let invQuery = supabase
-          .from("store_inventory")
-          .select("*")
-          .eq("store", selectedStore);
-
-        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
-        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
-
-        const { data: existingInv } = await invQuery.maybeSingle();
-
-        if (existingInv) {
-          const newCurrent = (Number(existingInv.current_stock) || 0) + 1;
-          await supabase
-            .from("store_inventory")
-            .update({ current_stock: newCurrent, last_replenished_at: now.toISOString() })
-            .eq("id", existingInv.id);
-
-          setStockAlert({ type: "normal", remainingStock: newCurrent, safetyStock: Number(existingInv.safety_stock ?? 5) });
-        } else {
+          // Insert new row if it doesn't exist yet
           await supabase.from("store_inventory").insert([
             {
               store: selectedStore,
               style_code: cleanStyle,
               sku: cleanSku || null,
-              initial_stock: 1,
-              current_stock: 1,
+              initial_stock: transactionMode === "delivery" ? 1 : 0,
+              current_stock: transactionMode === "delivery" ? 1 : 0,
+              pull_out: transactionMode === "pull_out" ? 1 : 0,
+              total_sold: transactionMode === "sales" ? 1 : 0,
+              sales: transactionMode === "sales" ? 1 : 0,
               safety_stock: 5,
               last_replenished_at: now.toISOString(),
             },
           ]);
-          setStockAlert({ type: "normal", remainingStock: 1, safetyStock: 5 });
+          setStockAlert({ type: "out", remainingStock: transactionMode === "delivery" ? 1 : 0, safetyStock: 5 });
         }
       } catch (err) {
-        console.warn("Delivery update error:", err);
+        console.warn("Stock update error:", err);
       }
 
+      // Log the transaction
       const logPayload = {
         store: selectedStore,
         transaction_mode: transactionMode,
@@ -562,55 +503,27 @@ export default function Home() {
         quantity: 1,
         scanned_at: now.toISOString(),
       };
-      if (isOnline) {
-        await supabase.from("scanned_logs").insert([logPayload]);
-      }
-    } else if (transactionMode === "audit" && isOnline) {
-      try {
-        let invQuery = supabase
-          .from("store_inventory")
-          .select("current_stock, safety_stock")
-          .eq("store", selectedStore);
 
-        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
-        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
-
-        const { data: invData } = await invQuery.maybeSingle();
-
-        if (invData) {
-          const remaining = Number(invData.current_stock);
-          const safetyThreshold = Number(invData.safety_stock ?? 5);
-          setStockAlert({
-            type: remaining <= safetyThreshold ? "low" : "normal",
-            remainingStock: remaining,
-            safetyStock: safetyThreshold,
-          });
-        } else {
-          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
+      await supabase.from("scanned_logs").insert([logPayload]);
+    } else {
+      queueOfflineTask({
+        type: "log",
+        payload: {
+          store: selectedStore,
+          transaction_mode: transactionMode,
+          style_code: fetchedProduct.styleCode,
+          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+          style_name: fetchedProduct.styleName,
+          description: fetchedProduct.description,
+          color: fetchedProduct.color,
+          category: fetchedProduct.category,
+          department: fetchedProduct.department,
+          size: fetchedProduct.size,
+          price: fetchedProduct.price,
+          quantity: 1,
+          scanned_at: now.toISOString(),
         }
-      } catch (err) {
-        console.warn("Audit stock query error:", err);
-      }
-
-      const logPayload = {
-        store: selectedStore,
-        transaction_mode: transactionMode,
-        style_code: fetchedProduct.styleCode,
-        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-        style_name: fetchedProduct.styleName,
-        description: fetchedProduct.description,
-        color: fetchedProduct.color,
-        category: fetchedProduct.category,
-        department: fetchedProduct.department,
-        size: fetchedProduct.size,
-        price: fetchedProduct.price,
-        quantity: 1,
-        scanned_at: now.toISOString(),
-      };
-      if (isOnline) {
-        await supabase.from("scanned_logs").insert([logPayload]);
-      }
-    } else if (!isOnline) {
+      });
       setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
     }
 
