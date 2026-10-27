@@ -428,28 +428,41 @@ export default function Home() {
 
         if (invData) {
           if (transactionMode === "sales") {
+            // Uses dedicated atomic RPC function which updates only current_stock and total_sold safely
             await supabase.rpc("record_sale_transaction_by_id", {
               target_id: invData.id,
             });
           } else if (transactionMode === "pull_out") {
             const currentStock = Number(invData.current_stock) || 0;
             const currentPullOut = Number(invData.pull_out) || 0;
+            const currentTotalSold = Number(invData.total_sold) || 0;
+            const currentInitial = Number(invData.initial_stock) || 0;
+            
+            // Explicitly preserve all columns so nothing resets to 0 or null
             await supabase
               .from("store_inventory")
               .update({
                 current_stock: Math.max(0, currentStock - 1),
                 pull_out: currentPullOut + 1,
+                total_sold: currentTotalSold,
+                initial_stock: currentInitial,
                 last_replenished_at: now.toISOString(),
               })
               .eq("id", invData.id);
           } else if (transactionMode === "delivery") {
             const currentStock = Number(invData.current_stock) || 0;
             const currentInitial = Number(invData.initial_stock) || 0;
+            const currentPullOut = Number(invData.pull_out) || 0;
+            const currentTotalSold = Number(invData.total_sold) || 0;
+
+            // Explicitly preserve pull_out and total_sold during delivery restocks
             await supabase
               .from("store_inventory")
               .update({
                 initial_stock: currentInitial + 1,
                 current_stock: currentStock + 1,
+                pull_out: currentPullOut,
+                total_sold: currentTotalSold,
                 last_replenished_at: now.toISOString(),
               })
               .eq("id", invData.id);
@@ -463,25 +476,20 @@ export default function Home() {
 
           const remaining = refreshed ? Number(refreshed.current_stock) : Math.max(0, (Number(invData.current_stock) || 0) - 1);
           const safetyThreshold = Number(invData.safety_stock ?? 5);
-          
-          // Calculate session mode count including the newly added item
-          const updatedSessionCount = sessionScans.filter(
-            (s) => s.styleCode === fetchedProduct.styleCode && s.store === selectedStore && s.mode === transactionMode
-          ).length + 1;
 
           let currentActiveCount = remaining;
           if (transactionMode === "sales") {
             currentActiveCount = refreshed?.total_sold !== undefined && refreshed?.total_sold !== null 
               ? Number(refreshed.total_sold) 
-              : updatedSessionCount;
+              : (Number(invData.total_sold) || 0) + 1;
           } else if (transactionMode === "pull_out") {
             currentActiveCount = refreshed?.pull_out !== undefined && refreshed?.pull_out !== null 
               ? Number(refreshed.pull_out) 
-              : updatedSessionCount;
+              : (Number(invData.pull_out) || 0) + 1;
           } else if (transactionMode === "delivery") {
             currentActiveCount = refreshed?.initial_stock !== undefined && refreshed?.initial_stock !== null 
               ? Number(refreshed.initial_stock) 
-              : updatedSessionCount;
+              : (Number(invData.initial_stock) || 0) + 1;
           }
 
           setStockAlert({
