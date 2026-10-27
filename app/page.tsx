@@ -442,6 +442,7 @@ export default function Home() {
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.total_sold = currentTotalSold + 1;
+            updatePayload.pull_out = currentPullOut; // Force-keep pull_out during sales
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
