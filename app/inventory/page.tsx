@@ -195,7 +195,6 @@ export default function InventoryMonitoringPage() {
         const { data: chunk, error: chunkErr } = await supabase
           .from("store_inventory")
           .select("*")
-          .order("current_stock", { ascending: false })
           .range(page * 1000, (page + 1) * 1000 - 1);
 
         if (chunkErr) throw chunkErr;
@@ -209,111 +208,59 @@ export default function InventoryMonitoringPage() {
         }
       }
 
-      const [prodRes, logsRes] = await Promise.all([
-        supabase.from("products").select("*"),
-        supabase.from("scanned_logs").select("store, style_code, transaction_mode, quantity")
-      ]);
-
+      const prodRes = await supabase.from("products").select("*");
       if (prodRes.error) throw prodRes.error;
 
       const prodData = (prodRes.data as any[]) || [];
       setProductsMaster(prodData);
 
-      const prodPriceMap = new Map<string, number>();
-      const prodDescMap = new Map<string, string>();
-
+      const prodMap = new Map<string, any>();
       prodData.forEach((p) => {
-        const pVal = cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount);
-        const pCode = p.style_code ? String(p.style_code).trim() : "";
-        const pSku = p.sku ? String(p.sku).trim() : "";
-        const pDesc = p.description || p.style_name || "";
+        const pCode = p.style_code ? String(p.style_code).trim().toLowerCase() : "";
+        const pSku = p.sku ? String(p.sku).trim().toLowerCase() : "";
+        const pBarcode = p.barcode ? String(p.barcode).trim().toLowerCase() : "";
+        const pVal = {
+          price: cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount),
+          description: p.description || p.style_name || "",
+          style_name: p.style_name || "",
+          color: p.color || "Default",
+          size: p.size || "Free Size",
+          department: p.department || "General",
+        };
 
-        if (pCode) {
-          prodPriceMap.set(pCode, pVal);
-          if (pDesc) prodDescMap.set(pCode, pDesc);
-        }
-        if (pSku) {
-          prodPriceMap.set(pSku, pVal);
-          if (pDesc) prodDescMap.set(pSku, pDesc);
-        }
+        if (pCode) prodMap.set(pCode, pVal);
+        if (pSku) prodMap.set(pSku, pVal);
+        if (pBarcode) prodMap.set(pBarcode, pVal);
       });
-
-      const storeStyleMetrics: Record<string, { pulledOut: number }> = {};
-      if (logsRes.data) {
-        logsRes.data.forEach((l: any) => {
-          const storeKey = l.store ? String(l.store).trim().toLowerCase() : "main store";
-          const styleKey = l.style_code ? String(l.style_code).trim().toLowerCase() : "";
-          const mode = String(l.transaction_mode || "").toLowerCase().replace(/[\s-]/g, "_");
-          const qty = Number(l.quantity) || 1;
-
-          const metricKey = `${storeKey}|${styleKey}`;
-          if (!storeStyleMetrics[metricKey]) {
-            storeStyleMetrics[metricKey] = { pulledOut: 0 };
-          }
-
-          if (mode === "pull_out" || mode === "pulled_out") {
-            storeStyleMetrics[metricKey].pulledOut += qty;
-          }
-        });
-      }
 
       if (allInvData) {
         const enriched: StoreInventoryItem[] = allInvData.map((row: any) => {
           const storeName = row.store ? row.store.trim() : "Main Store";
-          const initial = Number(row.initial_stock) || 0;
-          const current = Number(row.current_stock) || 0;
-          const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
+          const styleCodeStr = row.style_code ? String(row.style_code).trim() : "";
           const skuStr = row.sku ? String(row.sku).trim() : "";
           
-          const metricKey = `${storeName.toLowerCase()}|${styleCodeStr.toLowerCase()}`;
-          const metrics = storeStyleMetrics[metricKey] || { pulledOut: 0 };
+          const lookupKey1 = styleCodeStr.toLowerCase();
+          const lookupKey2 = skuStr.toLowerCase();
+          const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          // Directly read total_sold from the database column
+          // Read directly from database table columns
           const totalSoldVal = Number(row.total_sold) || 0;
-          const totalPulledOutVal = Number(row.pull_out) || metrics.pulledOut || 0;
-
-          const matchedProd = prodData.find(
-            (p: any) => {
-              const masterCode = p.style_code ? String(p.style_code).trim() : "";
-              const masterSku = p.sku ? String(p.sku).trim() : "";
-              return (
-                masterCode === styleCodeStr ||
-                masterCode.includes(styleCodeStr) ||
-                styleCodeStr.includes(masterCode) ||
-                (skuStr && (masterSku === skuStr || masterSku.includes(skuStr)))
-              );
-            }
-          ) || {};
-
-          const matchedDesc =
-            row.description ||
-            matchedProd.description ||
-            matchedProd.style_name ||
-            prodDescMap.get(styleCodeStr) ||
-            prodDescMap.get(skuStr) ||
-            "-";
-
-          const matchedPrice =
-            cleanNumericPrice(row.price) ||
-            cleanNumericPrice(matchedProd.price || matchedProd.unit_price || matchedProd.srp || matchedProd.amount) ||
-            prodPriceMap.get(styleCodeStr) ||
-            prodPriceMap.get(skuStr) ||
-            0;
+          const totalPulledOutVal = Number(row.pull_out) || 0;
 
           return {
             id: String(row.id),
             store: storeName,
-            style_code: styleCodeStr,
+            style_code: styleCodeStr || "-",
             sku: row.sku ? String(row.sku).trim() : null,
-            initial_stock: initial,
-            current_stock: current,
+            initial_stock: Number(row.initial_stock) || 0,
+            current_stock: Number(row.current_stock) || 0,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
             total_out: totalSoldVal,
             total_pulled_out: totalPulledOutVal,
-            price: matchedPrice,
+            price: cleanNumericPrice(row.price) || matchedProd.price || 0,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
-            description: matchedDesc,
+            description: row.description || matchedProd.description || styleCodeStr,
             color: row.color || matchedProd.color || "Default",
             size: row.size || matchedProd.size || "Free Size",
             department: row.department || matchedProd.department || "General",
@@ -902,7 +849,6 @@ export default function InventoryMonitoringPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6 flex flex-col">
-      {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
@@ -916,7 +862,6 @@ export default function InventoryMonitoringPage() {
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setIsAlertModalOpen(true)}
@@ -961,7 +906,6 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Stats Overview */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Delivered</p>
@@ -989,7 +933,6 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Filters & Controls */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 flex-1">
           <div className="relative min-w-[220px]">
@@ -1038,7 +981,6 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Main Inventory Table */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col flex-1">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left text-xs border-collapse">
@@ -1096,7 +1038,6 @@ export default function InventoryMonitoringPage() {
           </table>
         </div>
 
-        {/* Pagination Footer */}
         <div className="px-5 py-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 sticky bottom-0 z-30">
           <div className="text-xs text-slate-400 font-mono">
             Showing <span className="font-bold text-white">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
@@ -1141,7 +1082,6 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* Manual Sale Modal */}
       {isManualModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1287,7 +1227,6 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
-      {/* Single Restock Modal */}
       {isRestockOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
@@ -1368,7 +1307,6 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
-      {/* Bulk Upload Preview Modal */}
       {isBulkOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
@@ -1437,7 +1375,6 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
-      {/* Stock Alerts Modal */}
       {isAlertModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
