@@ -432,15 +432,13 @@ export default function Home() {
         if (invData) {
           const currentStock = Number(invData.current_stock) || 0;
           const currentPullOut = Number(invData.pull_out) || 0;
-          const currentTotalSold = Number(invData.total_sold) || Number(invData.sales) || Number(invData.sold) || 0;
+          const currentTotalSold = Number(invData.total_sold) || 0;
 
           const updatePayload: Record<string, any> = {};
 
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.total_sold = currentTotalSold + 1;
-            updatePayload.sales = currentTotalSold + 1;
-            updatePayload.sold = currentTotalSold + 1;
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
@@ -473,8 +471,6 @@ export default function Home() {
               current_stock: transactionMode === "delivery" ? 1 : 0,
               pull_out: transactionMode === "pull_out" ? 1 : 0,
               total_sold: transactionMode === "sales" ? 1 : 0,
-              sales: transactionMode === "sales" ? 1 : 0,
-              sold: transactionMode === "sales" ? 1 : 0,
               safety_stock: 5,
               last_replenished_at: now.toISOString(),
             },
