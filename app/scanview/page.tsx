@@ -36,7 +36,7 @@ interface RawLogItem {
   quantity: number;
   rawTimestamp: string;
   timestamp: string;
-  transaction_mode?: string;
+  transaction_mode: string;
 }
 
 interface GroupedProduct extends RawLogItem {
@@ -196,7 +196,8 @@ export default function ScanViewPage() {
         item.styleName.toLowerCase().includes(q) ||
         item.store.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
-        item.department.toLowerCase().includes(q);
+        item.department.toLowerCase().includes(q) ||
+        item.transaction_mode.toLowerCase().includes(q);
 
       if (!matchesSearch) return false;
 
@@ -264,11 +265,11 @@ export default function ScanViewPage() {
       let groupKey = "";
 
       if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
+        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}|${item.transaction_mode}`;
       } else if (groupBy === "category") {
-        groupKey = `${item.store}|${item.category}|${item.styleCode}`;
+        groupKey = `${item.store}|${item.category}|${item.styleCode}|${item.transaction_mode}`;
       } else if (groupBy === "department") {
-        groupKey = `${item.store}|${item.department}|${item.styleCode}`;
+        groupKey = `${item.store}|${item.department}|${item.styleCode}|${item.transaction_mode}`;
       }
 
       if (groupedMap.has(groupKey)) {
@@ -325,6 +326,7 @@ export default function ScanViewPage() {
 
     const exportData = processedItems.map((item) => ({
       "Store Location": item.store,
+      "Transaction Mode": item.transaction_mode.toUpperCase(),
       "Style Code": item.styleCode,
       "SKU": item.sku,
       "Style Name": item.styleName,
@@ -397,7 +399,7 @@ export default function ScanViewPage() {
 
           <button
             onClick={fetchScannedLogs}
-            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
+            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800 cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -422,21 +424,21 @@ export default function ScanViewPage() {
                 <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">File Format</p>
                 <button
                   onClick={() => handleExport("xlsx")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between cursor-pointer"
                 >
                   <span>Excel Workbook</span>
                   <span className="text-[10px] text-emerald-400 font-mono">.XLSX</span>
                 </button>
                 <button
                   onClick={() => handleExport("xls")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between cursor-pointer"
                 >
                   <span>Legacy Excel</span>
                   <span className="text-[10px] text-emerald-400 font-mono">.XLS</span>
                 </button>
                 <button
                   onClick={() => handleExport("csv")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between cursor-pointer"
                 >
                   <span>CSV File</span>
                   <span className="text-[10px] text-emerald-400 font-mono">.CSV</span>
@@ -500,7 +502,7 @@ export default function ScanViewPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search code, SKU, product, category..."
+            placeholder="Search code, SKU, product, mode..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
@@ -527,7 +529,7 @@ export default function ScanViewPage() {
             onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
             className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
           >
-            <option value="store_style">Group: Store + QR Code</option>
+            <option value="store_style">Group: Store + QR Code + Mode</option>
             <option value="category">Group: Category</option>
             <option value="department">Group: Department</option>
             <option value="none">Group: None (Raw Entries)</option>
@@ -574,11 +576,11 @@ export default function ScanViewPage() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <button onClick={() => handlePresetDate("today")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Today</button>
-          <button onClick={() => handlePresetDate("7days")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Last 7 Days</button>
-          <button onClick={() => handlePresetDate("month")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">This Month</button>
+          <button onClick={() => handlePresetDate("today")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition cursor-pointer">Today</button>
+          <button onClick={() => handlePresetDate("7days")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition cursor-pointer">Last 7 Days</button>
+          <button onClick={() => handlePresetDate("month")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition cursor-pointer">This Month</button>
           {(startDate || endDate) && (
-            <button onClick={() => handlePresetDate("clear")} className="text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg transition">Reset</button>
+            <button onClick={() => handlePresetDate("clear")} className="text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg transition cursor-pointer">Reset</button>
           )}
         </div>
       </section>
@@ -601,6 +603,7 @@ export default function ScanViewPage() {
               <thead>
                 <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Store Location</th>
+                  <th className="py-3 px-4">Transaction Mode</th>
                   <th className="py-3 px-4">Style Code</th>
                   <th className="py-3 px-4">SKU</th>
                   <th className="py-3 px-4">Product Name</th>
@@ -620,6 +623,16 @@ export default function ScanViewPage() {
                   >
                     <td className="py-3 px-4 font-semibold text-emerald-400">
                       {item.store}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${
+                        item.transaction_mode === 'sales' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        item.transaction_mode === 'delivery' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                        item.transaction_mode === 'pull_out' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {item.transaction_mode}
+                      </span>
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-200">
                       {item.styleCode}
