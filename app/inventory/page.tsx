@@ -243,7 +243,7 @@ export default function InventoryMonitoringPage() {
           const lookupKey2 = skuStr.toLowerCase();
           const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          // Read directly from database table columns
+          // Direct database column mapping
           const totalSoldVal = Number(row.total_sold) || 0;
           const totalPulledOutVal = Number(row.pull_out) || 0;
 
@@ -256,8 +256,8 @@ export default function InventoryMonitoringPage() {
             current_stock: Number(row.current_stock) || 0,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: totalSoldVal,
-            total_pulled_out: totalPulledOutVal,
+            total_out: totalSoldVal,         // Reads directly from total_sold
+            total_pulled_out: totalPulledOutVal, // Reads directly from pull_out
             price: cleanNumericPrice(row.price) || matchedProd.price || 0,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: row.description || matchedProd.description || styleCodeStr,
