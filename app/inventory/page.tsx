@@ -46,7 +46,7 @@ interface StoreInventoryItem {
   safety_stock: number;
   last_replenished_at: string;
   total_out: number;
-  total_pulled_out: number; // Tracks pull out mode quantities
+  total_pulled_out: number;
   price?: number;
   style_name?: string;
   color?: string;
@@ -238,13 +238,13 @@ export default function InventoryMonitoringPage() {
         }
       });
 
-      // Aggregate transaction quantities accurately by store and style_code based on transaction_mode
+      // Robust Aggregation: Case-insensitive & space-insensitive matching for transaction modes
       const storeStyleMetrics: Record<string, { sold: number; pulledOut: number }> = {};
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
-          const storeKey = l.store ? String(l.store).trim() : "Main Store";
-          const styleKey = l.style_code ? String(l.style_code).trim() : "";
-          const mode = l.transaction_mode || "sales";
+          const storeKey = l.store ? String(l.store).trim().toLowerCase() : "main store";
+          const styleKey = l.style_code ? String(l.style_code).trim().toLowerCase() : "";
+          const mode = String(l.transaction_mode || "sales").toLowerCase().replace(/[\s-]/g, "_");
           const qty = Number(l.quantity) || 1;
 
           const metricKey = `${storeKey}|${styleKey}`;
@@ -252,9 +252,9 @@ export default function InventoryMonitoringPage() {
             storeStyleMetrics[metricKey] = { sold: 0, pulledOut: 0 };
           }
 
-          if (mode === "sales") {
+          if (mode === "sales" || mode === "pos") {
             storeStyleMetrics[metricKey].sold += qty;
-          } else if (mode === "pull_out") {
+          } else if (mode === "pull_out" || mode === "pulled_out") {
             storeStyleMetrics[metricKey].pulledOut += qty;
           }
         });
@@ -268,8 +268,11 @@ export default function InventoryMonitoringPage() {
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
           const skuStr = row.sku ? String(row.sku).trim() : "";
           
-          const metricKey = `${storeName}|${styleCodeStr}`;
-          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: Number(row.pull_out) || 0 };
+          const metricKey = `${storeName.toLowerCase()}|${styleCodeStr.toLowerCase()}`;
+          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: 0 };
+
+          const totalPulledOutVal = Number(row.pull_out) || metrics.pulledOut || 0;
+          const totalSoldVal = metrics.sold;
 
           const matchedProd = prodData.find(
             (p: any) => {
@@ -308,8 +311,8 @@ export default function InventoryMonitoringPage() {
             current_stock: current,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: metrics.sold,
-            total_pulled_out: metrics.pulledOut,
+            total_out: totalSoldVal,
+            total_pulled_out: totalPulledOutVal,
             price: matchedPrice,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: matchedDesc,
