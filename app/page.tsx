@@ -432,7 +432,7 @@ export default function Home() {
           const currentPullOut = Number(invData.pull_out) || 0;
           const currentTotalSold = Number(invData.total_sold) || 0;
 
-          // Safely preserve all current metrics so they never reset to 0
+          // Explicitly preserve pull_out and total_sold together in every update
           const updatePayload: Record<string, any> = {
             current_stock: currentStock,
             pull_out: currentPullOut,
