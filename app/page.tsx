@@ -421,7 +421,7 @@ export default function Home() {
       try {
         let invQuery = supabase
           .from("store_inventory")
-          .select("id, current_stock, safety_stock")
+          .select("id, current_stock, safety_stock, pull_out")
           .eq("store", selectedStore);
 
         if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
@@ -431,9 +431,20 @@ export default function Home() {
 
         if (invData) {
           const newCurrentStock = Math.max(0, Number(invData.current_stock) - 1);
+          const currentPullOut = Number(invData.pull_out) || 0;
+          const newPullOut = transactionMode === "pull_out" ? currentPullOut + 1 : currentPullOut;
+
+          const updatePayload: any = {
+            current_stock: newCurrentStock,
+          };
+          if (transactionMode === "pull_out") {
+            updatePayload.pull_out = newPullOut;
+            updatePayload.last_replenished_at = now.toISOString();
+          }
+
           await supabase
             .from("store_inventory")
-            .update({ current_stock: newCurrentStock })
+            .update(updatePayload)
             .eq("id", invData.id);
 
           const remaining = newCurrentStock;
@@ -443,6 +454,21 @@ export default function Home() {
             remainingStock: remaining,
             safetyStock: safetyThreshold,
           });
+        } else if (transactionMode === "pull_out") {
+          // If no row exists yet for pull out, insert new row with pull_out = 1
+          await supabase.from("store_inventory").insert([
+            {
+              store: selectedStore,
+              style_code: cleanStyle,
+              sku: cleanSku || null,
+              initial_stock: 0,
+              current_stock: 0,
+              pull_out: 1,
+              safety_stock: 5,
+              last_replenished_at: now.toISOString(),
+            },
+          ]);
+          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
         }
       } catch (err) {
         console.warn("Stock deduction error:", err);
@@ -450,7 +476,7 @@ export default function Home() {
 
       const logPayload = {
         store: selectedStore,
-        transaction_mode: transactionMode, // <--- Added transaction_mode here
+        transaction_mode: transactionMode,
         style_code: fetchedProduct.styleCode,
         sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
         style_name: fetchedProduct.styleName,
@@ -509,7 +535,7 @@ export default function Home() {
 
       const logPayload = {
         store: selectedStore,
-        transaction_mode: transactionMode, // <--- Also include for delivery logs if recorded
+        transaction_mode: transactionMode,
         style_code: fetchedProduct.styleCode,
         sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
         style_name: fetchedProduct.styleName,
@@ -554,7 +580,7 @@ export default function Home() {
 
       const logPayload = {
         store: selectedStore,
-        transaction_mode: transactionMode, // <--- Also include for audit logs
+        transaction_mode: transactionMode,
         style_code: fetchedProduct.styleCode,
         sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
         style_name: fetchedProduct.styleName,
