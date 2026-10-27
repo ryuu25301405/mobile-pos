@@ -625,14 +625,31 @@ export default function ScanViewPage() {
                       {item.store}
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${
-                        item.transaction_mode === 'sales' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                        item.transaction_mode === 'delivery' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                        item.transaction_mode === 'pull_out' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {item.transaction_mode}
-                      </span>
+                      {item.transaction_mode === 'sales' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10">
+                          <span>🛍️</span> Sales
+                        </span>
+                      )}
+                      {item.transaction_mode === 'delivery' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm shadow-blue-500/10">
+                          <span>📦</span> Delivery
+                        </span>
+                      )}
+                      {item.transaction_mode === 'pull_out' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/10">
+                          <span>🚚</span> Pull Out
+                        </span>
+                      )}
+                      {item.transaction_mode === 'audit' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10">
+                          <span>📋</span> Audit
+                        </span>
+                      )}
+                      {!['sales', 'delivery', 'pull_out', 'audit'].includes(item.transaction_mode) && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+                          {item.transaction_mode}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-200">
                       {item.styleCode}
