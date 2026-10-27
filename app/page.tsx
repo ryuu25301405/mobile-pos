@@ -322,7 +322,6 @@ export default function Home() {
     }
   };
 
-  // Handle scan with dynamic behavior based on Transaction Mode
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -416,7 +415,6 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Inventory handling for Sales, Pull Out, and Delivery modes
     if (isOnline) {
       try {
         let invQuery = supabase
@@ -434,11 +432,16 @@ export default function Home() {
           const currentPullOut = Number(invData.pull_out) || 0;
           const currentTotalSold = Number(invData.total_sold) || 0;
 
-          const updatePayload: Record<string, any> = {};
+          // Safely preserve all current metrics so they never reset to 0
+          const updatePayload: Record<string, any> = {
+            current_stock: currentStock,
+            pull_out: currentPullOut,
+            total_sold: currentTotalSold,
+          };
 
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
-            updatePayload.total_sold = currentTotalSold + 1; // Properly increments total_sold
+            updatePayload.total_sold = currentTotalSold + 1;
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
@@ -453,7 +456,7 @@ export default function Home() {
             .update(updatePayload)
             .eq("id", invData.id);
 
-          const remaining = updatePayload.current_stock ?? currentStock;
+          const remaining = updatePayload.current_stock;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
@@ -461,7 +464,6 @@ export default function Home() {
             safetyStock: safetyThreshold,
           });
         } else {
-          // Insert new row if it doesn't exist yet
           await supabase.from("store_inventory").insert([
             {
               store: selectedStore,
@@ -475,13 +477,16 @@ export default function Home() {
               last_replenished_at: now.toISOString(),
             },
           ]);
-          setStockAlert({ type: "out", remainingStock: transactionMode === "delivery" ? 1 : 0, safetyStock: 5 });
+          setStockAlert({ 
+            type: transactionMode === "delivery" ? "normal" : "out", 
+            remainingStock: transactionMode === "delivery" ? 1 : 0, 
+            safetyStock: 5 
+          });
         }
       } catch (err) {
         console.warn("Stock update error:", err);
       }
 
-      // Log the transaction
       const logPayload = {
         store: selectedStore,
         transaction_mode: transactionMode,
@@ -581,7 +586,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
-      {/* Header & Network Status */}
       <header className="space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
@@ -613,10 +617,8 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Store Location & Transaction Mode Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Store Selection */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                 Store Location <span className="text-red-400">*</span>
@@ -637,7 +639,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* Transaction Mode Selection */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                 Transaction Mode <span className="text-emerald-400">*</span>
@@ -656,7 +657,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Dedicated Continuous Batch Scanning Control Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -681,7 +681,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Current Session Scanned Items View */}
       <section className="my-6 flex-1">
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center space-x-2">
@@ -771,7 +770,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* Session Summary Modal */}
       {isSummaryModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left">
@@ -842,7 +840,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Store Prompt Modal */}
       {isStoreModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 text-left">
@@ -884,7 +881,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Camera Viewport Modal */}
       {scanning && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
           <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
@@ -911,7 +907,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Detailed Scan Results Overlay */}
               {isPaused && (
                 <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
                   {errorMessage ? (
@@ -941,7 +936,6 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {/* Audit Mode Side-by-Side Stock Comparison Card with One-Tap Reconcile */}
                         {transactionMode === "audit" && stockAlert && (() => {
                           const systemStock = stockAlert.remainingStock;
                           const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
@@ -979,7 +973,6 @@ export default function Home() {
                                 </div>
                               </div>
 
-                              {/* Show Reconcile Action Button when there is a Variance */}
                               {variance !== 0 && !reconcileSuccess && (
                                 <button
                                   type="button"
@@ -994,7 +987,6 @@ export default function Home() {
                           );
                         })()}
 
-                        {/* Pull Out Mode Stock Display Badge */}
                         {transactionMode === "pull_out" && stockAlert && (
                           <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
                             <div className="flex items-center gap-2.5">
@@ -1019,7 +1011,6 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Standard Stock Alerts for Sales & Delivery Modes */}
                         {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "out" && (
                           <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
                             <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
@@ -1063,7 +1054,6 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Details Grid with Current Stock Display */}
                         <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                           <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
@@ -1133,7 +1123,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Manual Product Registration Modal */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-left">
