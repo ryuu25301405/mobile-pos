@@ -211,7 +211,7 @@ export default function InventoryMonitoringPage() {
 
       const [prodRes, logsRes] = await Promise.all([
         supabase.from("products").select("*"),
-        supabase.from("scanned_logs").select("store, style_code, transaction_mode, style_name, description, color, size, department, price, quantity")
+        supabase.from("scanned_logs").select("store, style_code, transaction_mode, quantity")
       ]);
 
       if (prodRes.error) throw prodRes.error;
@@ -238,23 +238,20 @@ export default function InventoryMonitoringPage() {
         }
       });
 
-      // Robust Aggregation: Case-insensitive & space-insensitive matching for transaction modes
-      const storeStyleMetrics: Record<string, { sold: number; pulledOut: number }> = {};
+      const storeStyleMetrics: Record<string, { pulledOut: number }> = {};
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
           const storeKey = l.store ? String(l.store).trim().toLowerCase() : "main store";
           const styleKey = l.style_code ? String(l.style_code).trim().toLowerCase() : "";
-          const mode = String(l.transaction_mode || "sales").toLowerCase().replace(/[\s-]/g, "_");
+          const mode = String(l.transaction_mode || "").toLowerCase().replace(/[\s-]/g, "_");
           const qty = Number(l.quantity) || 1;
 
           const metricKey = `${storeKey}|${styleKey}`;
           if (!storeStyleMetrics[metricKey]) {
-            storeStyleMetrics[metricKey] = { sold: 0, pulledOut: 0 };
+            storeStyleMetrics[metricKey] = { pulledOut: 0 };
           }
 
-          if (mode === "sales" || mode === "pos") {
-            storeStyleMetrics[metricKey].sold += qty;
-          } else if (mode === "pull_out" || mode === "pulled_out") {
+          if (mode === "pull_out" || mode === "pulled_out") {
             storeStyleMetrics[metricKey].pulledOut += qty;
           }
         });
@@ -269,10 +266,11 @@ export default function InventoryMonitoringPage() {
           const skuStr = row.sku ? String(row.sku).trim() : "";
           
           const metricKey = `${storeName.toLowerCase()}|${styleCodeStr.toLowerCase()}`;
-          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: 0 };
+          const metrics = storeStyleMetrics[metricKey] || { pulledOut: 0 };
 
+          // Directly read total_sold from the column we added to store_inventory
+          const totalSoldVal = Number(row.total_sold) || 0;
           const totalPulledOutVal = Number(row.pull_out) || metrics.pulledOut || 0;
-          const totalSoldVal = metrics.sold;
 
           const matchedProd = prodData.find(
             (p: any) => {
@@ -672,13 +670,17 @@ export default function InventoryMonitoringPage() {
       const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
 
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
+      const newTotalSold = (selectedManualItem.total_out || 0) + manualQty;
       const unitPrice = cleanNumericPrice(manualPrice) || selectedMasterPrice;
       const totalRev = unitPrice * manualQty;
       const saleTimestamp = manualDate ? new Date(manualDate).toISOString() : new Date().toISOString();
 
       const { error: invErr } = await supabase
         .from("store_inventory")
-        .update({ current_stock: newCurrentStock })
+        .update({ 
+          current_stock: newCurrentStock,
+          total_sold: newTotalSold
+        })
         .eq("id", selectedManualItem.id);
 
       if (invErr) throw invErr;
@@ -864,13 +866,13 @@ export default function InventoryMonitoringPage() {
       case "total_out":
         return (
           <span className="font-mono font-bold text-emerald-400 text-right block">
-            {item.total_out > 0 ? `-${item.total_out}` : "0"}
+            {item.total_out > 0 ? `${item.total_out}` : "0"}
           </span>
         );
       case "total_pulled_out":
         return (
           <span className="font-mono font-bold text-rose-400 text-right block">
-            {item.total_pulled_out > 0 ? `-${item.total_pulled_out}` : "0"}
+            {item.total_pulled_out > 0 ? `${item.total_pulled_out}` : "0"}
           </span>
         );
       case "current_stock":
@@ -967,11 +969,11 @@ export default function InventoryMonitoringPage() {
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sold</p>
-          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">-{stats.totalOut}</p>
+          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">{stats.totalOut}</p>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Pulled Out</p>
-          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">-{stats.totalPulledOut}</p>
+          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">{stats.totalPulledOut}</p>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Available Stock</p>
