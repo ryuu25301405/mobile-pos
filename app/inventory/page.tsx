@@ -46,6 +46,7 @@ interface StoreInventoryItem {
   safety_stock: number;
   last_replenished_at: string;
   total_out: number;
+  total_pulled_out: number; // Added to track pull out mode
   price?: number;
   style_name?: string;
   color?: string;
@@ -85,6 +86,7 @@ type ColumnKey =
   | "status"
   | "initial_stock"
   | "total_out"
+  | "total_pulled_out"
   | "current_stock"
   | "safety_stock"
   | "last_replenished_at";
@@ -104,8 +106,9 @@ const DEFAULT_COLUMNS: ColumnDef[] = [
   { id: "sku", label: "SKU", align: "left", sortable: true },
   { id: "status", label: "Status", align: "center", sortable: true },
   { id: "initial_stock", label: "Delivered / In", align: "right", sortable: true, headerBg: "bg-slate-800/30" },
-  { id: "total_out", label: "Total Out (Sold)", align: "right", sortable: true, headerBg: "bg-rose-950/20" },
-  { id: "current_stock", label: "Available Stock", align: "right", sortable: true, headerBg: "bg-emerald-950/20" },
+  { id: "total_out", label: "Total Sold", align: "right", sortable: true, headerBg: "bg-emerald-950/20" },
+  { id: "total_pulled_out", label: "Pulled Out", align: "right", sortable: true, headerBg: "bg-rose-950/20" },
+  { id: "current_stock", label: "Available Stock", align: "right", sortable: true, headerBg: "bg-indigo-950/20" },
   { id: "safety_stock", label: "Safety Level", align: "right", sortable: true },
   { id: "last_replenished_at", label: "Last Received", align: "right", sortable: true },
 ];
@@ -208,7 +211,7 @@ export default function InventoryMonitoringPage() {
 
       const [prodRes, logsRes] = await Promise.all([
         supabase.from("products").select("*"),
-        supabase.from("scanned_logs").select("style_code, style_name, description, color, size, department, price")
+        supabase.from("scanned_logs").select("store, style_code, transaction_mode, style_name, description, color, size, department, price, quantity")
       ]);
 
       if (prodRes.error) throw prodRes.error;
@@ -235,28 +238,38 @@ export default function InventoryMonitoringPage() {
         }
       });
 
-      const logMap: Record<string, any> = {};
+      // Aggregate transaction quantities by store and style_code based on transaction_mode
+      const storeStyleMetrics: Record<string, { sold: number; pulledOut: number }> = {};
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
-          if (l.style_code) {
-            const styleKey = String(l.style_code).trim();
-            logMap[styleKey] = l;
-            const logP = cleanNumericPrice(l.price);
-            if (logP > 0 && !prodPriceMap.has(styleKey)) {
-              prodPriceMap.set(styleKey, logP);
-            }
+          const storeKey = l.store ? String(l.store).trim() : "Main Store";
+          const styleKey = l.style_code ? String(l.style_code).trim() : "";
+          const mode = l.transaction_mode || "sales";
+          const qty = Number(l.quantity) || 1;
+
+          const metricKey = `${storeKey}|${styleKey}`;
+          if (!storeStyleMetrics[metricKey]) {
+            storeStyleMetrics[metricKey] = { sold: 0, pulledOut: 0 };
+          }
+
+          if (mode === "sales") {
+            storeStyleMetrics[metricKey].sold += qty;
+          } else if (mode === "pull_out") {
+            storeStyleMetrics[metricKey].pulledOut += qty;
           }
         });
       }
 
       if (allInvData) {
         const enriched: StoreInventoryItem[] = allInvData.map((row: any) => {
+          const storeName = row.store ? row.store.trim() : "Main Store";
           const initial = Number(row.initial_stock) || 0;
           const current = Number(row.current_stock) || 0;
-          const calculatedOut = Math.max(0, initial - current);
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "-";
           const skuStr = row.sku ? String(row.sku).trim() : "";
-          const matchedLog = logMap[styleCodeStr] || {};
+          
+          const metricKey = `${storeName}|${styleCodeStr}`;
+          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: 0 };
 
           const matchedProd = prodData.find(
             (p: any) => {
@@ -277,8 +290,6 @@ export default function InventoryMonitoringPage() {
             matchedProd.style_name ||
             prodDescMap.get(styleCodeStr) ||
             prodDescMap.get(skuStr) ||
-            matchedLog.description ||
-            matchedLog.style_name ||
             "-";
 
           const matchedPrice =
@@ -286,25 +297,25 @@ export default function InventoryMonitoringPage() {
             cleanNumericPrice(matchedProd.price || matchedProd.unit_price || matchedProd.srp || matchedProd.amount) ||
             prodPriceMap.get(styleCodeStr) ||
             prodPriceMap.get(skuStr) ||
-            cleanNumericPrice(matchedLog.price) ||
             0;
 
           return {
             id: String(row.id),
-            store: row.store ? row.store.trim() : "Main Store",
+            store: storeName,
             style_code: styleCodeStr,
-            sku: row.sku ? String(row.sku).trim() : (matchedLog.sku ? String(matchedLog.sku).trim() : null),
+            sku: row.sku ? String(row.sku).trim() : null,
             initial_stock: initial,
             current_stock: current,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: calculatedOut,
+            total_out: metrics.sold,
+            total_pulled_out: metrics.pulledOut,
             price: matchedPrice,
-            style_name: row.style_name || matchedProd.style_name || matchedLog.style_name || styleCodeStr,
+            style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: matchedDesc,
-            color: row.color || matchedProd.color || matchedLog.color || "Default",
-            size: row.size || matchedProd.size || matchedLog.size || "Free Size",
-            department: row.department || matchedProd.department || matchedLog.department || "General",
+            color: row.color || matchedProd.color || "Default",
+            size: row.size || matchedProd.size || "Free Size",
+            department: row.department || matchedProd.department || "General",
           };
         });
 
@@ -340,8 +351,6 @@ export default function InventoryMonitoringPage() {
     setSelectedManualItem(item);
 
     const styleCodeStr = String(item.style_code).trim();
-    const skuStr = item.sku ? String(item.sku).trim() : "";
-
     let priceVal = cleanNumericPrice(item.price);
     let descVal = item.description || "";
 
@@ -527,7 +536,6 @@ export default function InventoryMonitoringPage() {
         const styleCodeStr = String(item.style_code).trim();
         const skuStr = item.sku ? String(item.sku).trim() : null;
 
-        // Find existing record with exact or partial style code match
         let existing = existingMap.get(styleCodeStr);
         if (!existing && existingStoreRows) {
           existing = existingStoreRows.find((row: any) => {
@@ -552,7 +560,6 @@ export default function InventoryMonitoringPage() {
             .eq("id", existing.id);
 
           if (updateErr) {
-            console.error("Bulk update error:", updateErr);
             errorMessages.push(updateErr.message);
           } else {
             successCount++;
@@ -571,7 +578,6 @@ export default function InventoryMonitoringPage() {
             });
 
           if (insertErr) {
-            // If duplicate unique key, try fallback update
             if (insertErr.code === "23505") {
               const { data: refetchRow } = await supabase
                 .from("store_inventory")
@@ -600,7 +606,6 @@ export default function InventoryMonitoringPage() {
                 }
               }
             }
-            console.error("Bulk insert error:", insertErr);
             errorMessages.push(insertErr.message);
           } else {
             successCount++;
@@ -613,9 +618,9 @@ export default function InventoryMonitoringPage() {
       fetchInventory();
       
       if (errorMessages.length > 0) {
-        alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.\nError: ${errorMessages[0]}`);
+        alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.`);
       } else {
-        alert(`Bulk delivery committed! Successfully processed ${successCount} out of ${bulkPreview.length} items to ${targetStore}.`);
+        alert(`Bulk delivery committed! Successfully processed ${successCount} items to ${targetStore}.`);
       }
     } catch (err: any) {
       console.error("Bulk upload failed:", err);
@@ -643,10 +648,6 @@ export default function InventoryMonitoringPage() {
         setManualErrorMsg(`Insufficient stock! Available balance is ${selectedManualItem.current_stock} pcs.`);
         setManualSubmitting(false);
         return;
-      }
-
-      if (!selectedManualItem.id) {
-        throw new Error("Selected item is missing a unique database row ID. Please refresh inventory.");
       }
 
       const styleCodeStr = String(selectedManualItem.style_code).trim();
@@ -683,6 +684,7 @@ export default function InventoryMonitoringPage() {
         .from("scanned_logs")
         .insert({
           store: manualStore,
+          transaction_mode: "sales", // Explicitly tag as sales transaction
           style_code: styleCodeStr,
           sku: skuStr || p.sku || "-",
           style_name: finalStyleName,
@@ -802,13 +804,14 @@ export default function InventoryMonitoringPage() {
   const stats = useMemo(() => {
     const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
     const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
+    const totalPulledOut = items.reduce((acc, curr) => acc + curr.total_pulled_out, 0);
     const totalAvailable = items.reduce((acc, curr) => acc + curr.current_stock, 0);
     const lowStockCount = items.filter(
       (i) => i.current_stock > 0 && i.current_stock <= i.safety_stock
     ).length;
     const outOfStockCount = items.filter((i) => i.current_stock <= 0).length;
 
-    return { totalIn, totalOut, totalAvailable, lowStockCount, outOfStockCount };
+    return { totalIn, totalOut, totalPulledOut, totalAvailable, lowStockCount, outOfStockCount };
   }, [items]);
 
   const renderCellContent = (colId: ColumnKey, item: StoreInventoryItem) => {
@@ -857,15 +860,21 @@ export default function InventoryMonitoringPage() {
         return <span className="font-mono text-slate-200 text-right block">{item.initial_stock}</span>;
       case "total_out":
         return (
-          <span className="font-mono font-bold text-rose-400 text-right block">
+          <span className="font-mono font-bold text-emerald-400 text-right block">
             {item.total_out > 0 ? `-${item.total_out}` : "0"}
+          </span>
+        );
+      case "total_pulled_out":
+        return (
+          <span className="font-mono font-bold text-rose-400 text-right block">
+            {item.total_pulled_out > 0 ? `-${item.total_pulled_out}` : "0"}
           </span>
         );
       case "current_stock":
         return (
           <span
             className={`font-bold font-mono text-sm text-right block ${
-              isOut ? "text-rose-400" : isLow ? "text-amber-400" : "text-emerald-400"
+              isOut ? "text-rose-400" : isLow ? "text-amber-400" : "text-indigo-400"
             }`}
           >
             {item.current_stock}
@@ -897,7 +906,7 @@ export default function InventoryMonitoringPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Store Inventory Monitoring</h1>
             <p className="text-xs text-slate-400">
-              Real-time multi-store inventory tracking and stock management
+              Real-time multi-store inventory tracking across sales, deliveries, audits, and pull-outs
             </p>
           </div>
         </div>
@@ -948,24 +957,28 @@ export default function InventoryMonitoringPage() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Delivered</p>
           <p className="text-2xl font-black text-white mt-1 font-mono">{stats.totalIn}</p>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
-          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sold (Out)</p>
-          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">-{stats.totalOut}</p>
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sold</p>
+          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">-{stats.totalOut}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Pulled Out</p>
+          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">-{stats.totalPulledOut}</p>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Available Stock</p>
-          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">{stats.totalAvailable}</p>
+          <p className="text-2xl font-black text-indigo-400 mt-1 font-mono">{stats.totalAvailable}</p>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Low Stock Items</p>
           <p className="text-2xl font-black text-amber-400 mt-1 font-mono">{stats.lowStockCount}</p>
         </div>
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md col-span-2 sm:col-span-1">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Out of Stock</p>
           <p className="text-2xl font-black text-rose-500 mt-1 font-mono">{stats.outOfStockCount}</p>
         </div>
