@@ -46,7 +46,7 @@ interface StoreInventoryItem {
   safety_stock: number;
   last_replenished_at: string;
   total_out: number;
-  total_pulled_out: number; // Added to track pull out mode
+  total_pulled_out: number; // Tracks pull out mode quantities
   price?: number;
   style_name?: string;
   color?: string;
@@ -238,7 +238,7 @@ export default function InventoryMonitoringPage() {
         }
       });
 
-      // Aggregate transaction quantities by store and style_code based on transaction_mode
+      // Aggregate transaction quantities accurately by store and style_code based on transaction_mode
       const storeStyleMetrics: Record<string, { sold: number; pulledOut: number }> = {};
       if (logsRes.data) {
         logsRes.data.forEach((l: any) => {
@@ -269,7 +269,7 @@ export default function InventoryMonitoringPage() {
           const skuStr = row.sku ? String(row.sku).trim() : "";
           
           const metricKey = `${storeName}|${styleCodeStr}`;
-          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: 0 };
+          const metrics = storeStyleMetrics[metricKey] || { sold: Math.max(0, initial - current), pulledOut: Number(row.pull_out) || 0 };
 
           const matchedProd = prodData.find(
             (p: any) => {
@@ -684,7 +684,7 @@ export default function InventoryMonitoringPage() {
         .from("scanned_logs")
         .insert({
           store: manualStore,
-          transaction_mode: "sales", // Explicitly tag as sales transaction
+          transaction_mode: "sales",
           style_code: styleCodeStr,
           sku: skuStr || p.sku || "-",
           style_name: finalStyleName,
