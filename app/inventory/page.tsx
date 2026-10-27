@@ -243,9 +243,9 @@ export default function InventoryMonitoringPage() {
           const lookupKey2 = skuStr.toLowerCase();
           const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          // STRICT DATABASE BINDING: Read directly from raw table columns
-          const rawTotalSold = Number(row.total_sold) || 0;
-          const rawPullOut = Number(row.pull_out) || 0;
+          // NULL-SAFE MAPPING: Robust coercion to prevent frontend display zeroing
+          const rawTotalSold = row.total_sold !== null && row.total_sold !== undefined ? Number(row.total_sold) : 0;
+          const rawPullOut = row.pull_out !== null && row.pull_out !== undefined ? Number(row.pull_out) : 0;
 
           return {
             id: String(row.id),
@@ -256,8 +256,8 @@ export default function InventoryMonitoringPage() {
             current_stock: Number(row.current_stock) || 0,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: rawTotalSold,         // Locked to total_sold column
-            total_pulled_out: rawPullOut,    // Locked to pull_out column
+            total_out: rawTotalSold,
+            total_pulled_out: rawPullOut,
             price: cleanNumericPrice(row.price) || matchedProd.price || 0,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: row.description || matchedProd.description || styleCodeStr,
