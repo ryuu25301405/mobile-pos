@@ -24,6 +24,7 @@ const STORES = [
 interface RawLogItem {
   id: string;
   store: string;
+  transaction_mode: string;
   styleCode: string;
   sku: string;
   styleName: string;
@@ -44,12 +45,14 @@ interface GroupedProduct extends RawLogItem {
 
 type GroupByOption = "store_style" | "category" | "department" | "none";
 type SortOption = "newest" | "oldest" | "qty_desc" | "qty_asc" | "name_asc";
+type ModeFilterOption = "all" | "sales" | "delivery" | "audit" | "pull_out";
 
 export default function ScanViewPage() {
   const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+  const [selectedModeFilter, setSelectedModeFilter] = useState<ModeFilterOption>("all");
 
   // Date Filter States
   const [startDate, setStartDate] = useState<string>("");
@@ -94,6 +97,10 @@ export default function ScanViewPage() {
         query = query.eq("store", selectedStoreFilter);
       }
 
+      if (selectedModeFilter !== "all") {
+        query = query.eq("transaction_mode", selectedModeFilter);
+      }
+
       const { data, error } = await query;
 
       if (error || !data || data.length === 0) {
@@ -111,6 +118,7 @@ export default function ScanViewPage() {
     const logs: RawLogItem[] = allData.map((item: any) => ({
       id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
       store: item.store || "Unassigned Store",
+      transaction_mode: item.transaction_mode || "sales",
       styleCode: item.style_code || "N/A",
       sku: item.sku || "-",
       styleName: item.style_name || "Unassigned Item",
@@ -127,7 +135,7 @@ export default function ScanViewPage() {
 
     setRawLogs(logs);
     setLoading(false);
-  }, [selectedStoreFilter]);
+  }, [selectedStoreFilter, selectedModeFilter]);
 
   useEffect(() => {
     fetchScannedLogs();
@@ -145,7 +153,7 @@ export default function ScanViewPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStoreFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
+  }, [searchQuery, selectedStoreFilter, selectedModeFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
 
   const handleRemoveItem = async (itemToRemove: GroupedProduct) => {
     setRawLogs((prev) => prev.filter((item) => item.id !== itemToRemove.id));
@@ -157,7 +165,8 @@ export default function ScanViewPage() {
         .from("scanned_logs")
         .delete()
         .eq("store", itemToRemove.store)
-        .eq("style_code", itemToRemove.styleCode);
+        .eq("style_code", itemToRemove.styleCode)
+        .eq("transaction_mode", itemToRemove.transaction_mode);
     }
   };
 
@@ -181,6 +190,21 @@ export default function ScanViewPage() {
     } else if (type === "clear") {
       setStartDate("");
       setEndDate("");
+    }
+  };
+
+  const getModeBadge = (mode: string) => {
+    switch (mode) {
+      case "sales":
+        return <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">🛍️ Sales</span>;
+      case "delivery":
+        return <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">📦 Delivery</span>;
+      case "audit":
+        return <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">📋 Audit</span>;
+      case "pull_out":
+        return <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">🚚 Pull Out</span>;
+      default:
+        return <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{mode}</span>;
     }
   };
 
@@ -262,11 +286,11 @@ export default function ScanViewPage() {
       let groupKey = "";
 
       if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
+        groupKey = `${item.store}|${item.transaction_mode}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
       } else if (groupBy === "category") {
-        groupKey = `${item.store}|${item.category}|${item.styleCode}`;
+        groupKey = `${item.store}|${item.transaction_mode}|${item.category}|${item.styleCode}`;
       } else if (groupBy === "department") {
-        groupKey = `${item.store}|${item.department}|${item.styleCode}`;
+        groupKey = `${item.store}|${item.transaction_mode}|${item.department}|${item.styleCode}`;
       }
 
       if (groupedMap.has(groupKey)) {
@@ -323,6 +347,7 @@ export default function ScanViewPage() {
 
     const exportData = processedItems.map((item) => ({
       "Store Location": item.store,
+      "Transaction Mode": item.transaction_mode.toUpperCase(),
       "Style Code": item.styleCode,
       "SKU": item.sku,
       "Style Name": item.styleName,
@@ -342,8 +367,9 @@ export default function ScanViewPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
+    const modeLabel = selectedModeFilter === "all" ? "All_Modes" : selectedModeFilter.toUpperCase();
     const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
+    const fileName = `Scanned_Logs_${storeLabel}_${modeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -492,13 +518,13 @@ export default function ScanViewPage() {
 
       {/* Desktop Horizontal Control Bar */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
+        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             type="text"
-            placeholder="Search code, SKU, product, category..."
+            placeholder="Search code, SKU, product..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
@@ -519,7 +545,21 @@ export default function ScanViewPage() {
           </select>
         </div>
 
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+          <select
+            value={selectedModeFilter}
+            onChange={(e) => setSelectedModeFilter(e.target.value as ModeFilterOption)}
+            className="w-full bg-transparent text-xs font-bold text-amber-400 focus:outline-none cursor-pointer"
+          >
+            <option value="all" className="bg-slate-900 text-white">Mode: All Transactions</option>
+            <option value="sales" className="bg-slate-900 text-white">🛍️ Sales</option>
+            <option value="delivery" className="bg-slate-900 text-white">📦 Delivery</option>
+            <option value="audit" className="bg-slate-900 text-white">📋 Audit</option>
+            <option value="pull_out" className="bg-slate-900 text-white">🚚 Pull Out</option>
+          </select>
+        </div>
+
+        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={groupBy}
             onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
@@ -528,7 +568,7 @@ export default function ScanViewPage() {
             <option value="store_style">Group: Store + QR Code</option>
             <option value="category">Group: Category</option>
             <option value="department">Group: Department</option>
-            <option value="none">Group: None (Raw Entries)</option>
+            <option value="none">Group: None (Raw)</option>
           </select>
         </div>
 
@@ -591,7 +631,7 @@ export default function ScanViewPage() {
         ) : processedItems.length === 0 ? (
           <div className="p-12 text-center space-y-2">
             <p className="text-sm font-bold text-white">No entries match your search filters.</p>
-            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
+            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, transaction mode, or search keywords.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -599,6 +639,7 @@ export default function ScanViewPage() {
               <thead>
                 <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Store Location</th>
+                  <th className="py-3 px-4">Mode</th>
                   <th className="py-3 px-4">Style Code</th>
                   <th className="py-3 px-4">SKU</th>
                   <th className="py-3 px-4">Product Name</th>
@@ -618,6 +659,9 @@ export default function ScanViewPage() {
                   >
                     <td className="py-3 px-4 font-semibold text-emerald-400">
                       {item.store}
+                    </td>
+                    <td className="py-3 px-4">
+                      {getModeBadge(item.transaction_mode)}
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-200">
                       {item.styleCode}
