@@ -421,7 +421,7 @@ export default function Home() {
       try {
         let invQuery = supabase
           .from("store_inventory")
-          .select("id, current_stock, safety_stock, pull_out, total_sold")
+          .select("*") // Fetch full row to safely preserve all existing counts
           .eq("store", selectedStore);
 
         if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
@@ -430,11 +430,14 @@ export default function Home() {
         const { data: invData } = await invQuery.maybeSingle();
 
         if (invData) {
-          const newCurrentStock = Math.max(0, Number(invData.current_stock) - 1);
+          const currentStock = Number(invData.current_stock) || 0;
           const currentPullOut = Number(invData.pull_out) || 0;
-          const currentTotalSold = Number(invData.total_sold) || 0;
+          const currentTotalSold = Number(invData.total_sold) || Number(invData.sales) || 0;
 
-          const updatePayload: any = {
+          const newCurrentStock = Math.max(0, currentStock - 1);
+
+          // Build explicit update payload preserving existing values
+          const updatePayload: Record<string, any> = {
             current_stock: newCurrentStock,
           };
 
@@ -442,7 +445,13 @@ export default function Home() {
             updatePayload.pull_out = currentPullOut + 1;
             updatePayload.last_replenished_at = now.toISOString();
           } else if (transactionMode === "sales") {
-            updatePayload.total_sold = currentTotalSold + 1;
+            // Include both possible column names safely
+            if ("total_sold" in invData) {
+              updatePayload.total_sold = currentTotalSold + 1;
+            }
+            if ("sales" in invData) {
+              updatePayload.sales = currentTotalSold + 1;
+            }
           }
 
           await supabase
@@ -459,19 +468,20 @@ export default function Home() {
           });
         } else {
           // If no row exists yet for this store/item, insert a new record
-          await supabase.from("store_inventory").insert([
-            {
-              store: selectedStore,
-              style_code: cleanStyle,
-              sku: cleanSku || null,
-              initial_stock: 0,
-              current_stock: 0,
-              pull_out: transactionMode === "pull_out" ? 1 : 0,
-              total_sold: transactionMode === "sales" ? 1 : 0,
-              safety_stock: 5,
-              last_replenished_at: now.toISOString(),
-            },
-          ]);
+          const newRowPayload: Record<string, any> = {
+            store: selectedStore,
+            style_code: cleanStyle,
+            sku: cleanSku || null,
+            initial_stock: 0,
+            current_stock: 0,
+            pull_out: transactionMode === "pull_out" ? 1 : 0,
+            total_sold: transactionMode === "sales" ? 1 : 0,
+            sales: transactionMode === "sales" ? 1 : 0,
+            safety_stock: 5,
+            last_replenished_at: now.toISOString(),
+          };
+
+          await supabase.from("store_inventory").insert([newRowPayload]);
           setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
         }
       } catch (err) {
