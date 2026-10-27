@@ -438,12 +438,8 @@ export default function Home() {
 
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
-            if ("total_sold" in invData || !("sales" in invData)) {
-              updatePayload.total_sold = currentTotalSold + 1;
-            }
-            if ("sales" in invData) {
-              updatePayload.sales = currentTotalSold + 1;
-            }
+            updatePayload.total_sold = currentTotalSold + 1;
+            updatePayload.sales = currentTotalSold + 1;
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
