@@ -37,6 +37,7 @@ import {
   Activity,
   Database,
   ChevronLeft,
+  ChevronRight,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
