@@ -427,10 +427,9 @@ export default function Home() {
 
         if (invData) {
           if (transactionMode === "sales") {
-            // ATOMIC RPC: Physically impossible for pull_out to be touched or reset
-            await supabase.rpc("record_sale_transaction", {
-              target_store: selectedStore,
-              target_style_code: cleanStyle || cleanSku,
+            // ATOMIC ID-BASED RPC: Physically targets only this exact row ID
+            await supabase.rpc("record_sale_transaction_by_id", {
+              target_id: invData.id,
             });
           } else if (transactionMode === "pull_out") {
             const currentStock = Number(invData.current_stock) || 0;
