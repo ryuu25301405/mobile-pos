@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import Link from "next/link";
+import { useState, useEffect } from "react";
+import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import * as XLSX from "xlsx";
-import { Boxes } from "lucide-react";
+import { triggerScanFeedback } from "@/lib/feedback";
+
+const Scanner = dynamicImport(() => import("@/components/Scanner"), {
+  ssr: false,
+});
 
 export const dynamic = 'force-dynamic';
 
 const STORES = [
-  "All Stores",
   "Metro Gaisano Ayala Cebu",
   "Metro Gaisano Colon",
   "Metro Gaisano Mandaue",
@@ -21,11 +23,11 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-interface RawLogItem {
-  id: string;
-  store: string;
+type TransactionMode = "sales" | "audit" | "delivery" | "pull_out";
+
+interface ProductDetails {
   styleCode: string;
-  sku: string;
+  sku?: string;
   styleName: string;
   description: string;
   color: string;
@@ -34,682 +36,1275 @@ interface RawLogItem {
   size: string;
   price: number;
   quantity: number;
-  rawTimestamp: string;
+  barcode?: string;
+}
+
+interface SessionScannedProduct extends ProductDetails {
+  id: string;
+  store: string;
   timestamp: string;
+  mode: TransactionMode;
 }
 
-interface GroupedProduct extends RawLogItem {
-  scanCount: number;
+interface StockAlertInfo {
+  type: "out" | "low" | "normal";
+  remainingStock: number;
+  safetyStock: number;
 }
 
-type GroupByOption = "store_style" | "category" | "department" | "none";
-type SortOption = "newest" | "oldest" | "qty_desc" | "qty_asc" | "name_asc";
+export default function Home() {
+  const [selectedStore, setSelectedStore] = useState<string>("");
+  const [tempStore, setTempStore] = useState<string>("");
+  const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
 
-export default function ScanViewPage() {
-  const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+  // Network & Offline Queue State
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
-  // Date Filter States
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
+  // Transaction Mode & Continuous Batch Scan State
+  const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
+  const [continuousMode, setContinuousMode] = useState<boolean>(false);
 
-  // Grouping & Sorting States
-  const [groupBy, setGroupBy] = useState<GroupByOption>("store_style");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [scanning, setScanning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Pagination States
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(25);
+  // Reconcile state
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileSuccess, setReconcileSuccess] = useState<string | null>(null);
 
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
+  // Session Summary Modal State
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
-  const formatTimestamp = (isoString?: string) => {
-    if (!isoString) return "N/A";
-    const rawDate = new Date(isoString);
-    return rawDate.toLocaleString("en-PH", {
-      timeZone: "Asia/Manila",
-      dateStyle: "short",
-      timeStyle: "medium",
-    });
-  };
+  // Manual Add Product Modal State
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [manualForm, setManualForm] = useState({
+    styleName: "",
+    styleCode: "",
+    sku: "",
+    category: "UNDERWEAR",
+    department: "MEN",
+    color: "BLACK",
+    size: "Free Size",
+    price: "150.00",
+    description: "Newly registered item",
+  });
+  const [savingManual, setSavingManual] = useState(false);
 
-  const fetchScannedLogs = useCallback(async () => {
-    setLoading(true);
-    let allData: any[] = [];
-    let page = 0;
-    const pageSize = 1000;
-    let fetchMore = true;
+  // Local state for current active session scans
+  const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
+  const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
+  const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
 
-    while (fetchMore) {
-      let query = supabase
-        .from("scanned_logs")
-        .select("*")
-        .order("scanned_at", { ascending: false })
-        .range(page * pageSize, (page + 1) * pageSize - 1);
+  // Monitor Network Connectivity & Sync Queue
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-      if (selectedStoreFilter !== "All Stores") {
-        query = query.eq("store", selectedStoreFilter);
-      }
+    setIsOnline(navigator.onLine);
 
-      const { data, error } = await query;
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncOfflineQueue();
+    };
 
-      if (error || !data || data.length === 0) {
-        fetchMore = false;
-      } else {
-        allData = [...allData, ...data];
-        if (data.length < pageSize) {
-          fetchMore = false;
-        } else {
-          page++;
-        }
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    const savedQueue = localStorage.getItem("pos_offline_queue");
+    if (savedQueue) {
+      try {
+        const queue = JSON.parse(savedQueue);
+        setOfflineQueueCount(queue.length);
+      } catch (e) {
+        console.error("Error reading offline queue", e);
       }
     }
 
-    const logs: RawLogItem[] = allData.map((item: any) => ({
-      id: item.id ? String(item.id) : `${item.style_code}-${Math.random()}`,
-      store: item.store || "Unassigned Store",
-      styleCode: item.style_code || "N/A",
-      sku: item.sku || "-",
-      styleName: item.style_name || "Unassigned Item",
-      description: item.description || "",
-      color: item.color || "-",
-      category: item.category || "-",
-      department: item.department || "-",
-      size: item.size || "-",
-      price: Number(item.price) || 0,
-      quantity: item.quantity || 1,
-      rawTimestamp: item.scanned_at || "",
-      timestamp: formatTimestamp(item.scanned_at),
-    }));
-
-    setRawLogs(logs);
-    setLoading(false);
-  }, [selectedStoreFilter]);
-
-  useEffect(() => {
-    fetchScannedLogs();
-  }, [fetchScannedLogs]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
-        setIsExportOpen(false);
-      }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, selectedStoreFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
+  const syncOfflineQueue = async () => {
+    const savedQueue = localStorage.getItem("pos_offline_queue");
+    if (!savedQueue) return;
 
-  const handleRemoveItem = async (itemToRemove: GroupedProduct) => {
-    setRawLogs((prev) => prev.filter((item) => item.id !== itemToRemove.id));
+    try {
+      const queue = JSON.parse(savedQueue);
+      if (queue.length === 0) return;
 
-    if (groupBy === "none") {
-      await supabase.from("scanned_logs").delete().eq("id", itemToRemove.id);
-    } else {
-      await supabase
-        .from("scanned_logs")
-        .delete()
-        .eq("store", itemToRemove.store)
-        .eq("style_code", itemToRemove.styleCode);
-    }
-  };
-
-  const handlePresetDate = (type: "today" | "7days" | "month" | "clear") => {
-    const now = new Date();
-    const formatDate = (d: Date) => d.toISOString().split("T")[0];
-
-    if (type === "today") {
-      const todayStr = formatDate(now);
-      setStartDate(todayStr);
-      setEndDate(todayStr);
-    } else if (type === "7days") {
-      const past = new Date();
-      past.setDate(now.getDate() - 7);
-      setStartDate(formatDate(past));
-      setEndDate(formatDate(now));
-    } else if (type === "month") {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(formatDate(firstDay));
-      setEndDate(formatDate(now));
-    } else if (type === "clear") {
-      setStartDate("");
-      setEndDate("");
-    }
-  };
-
-  const filteredRawLogs = useMemo(() => {
-    return rawLogs.filter((item) => {
-      const q = searchQuery.toLowerCase();
-
-      const matchesSearch =
-        item.styleCode.toLowerCase().includes(q) ||
-        item.sku.toLowerCase().includes(q) ||
-        item.styleName.toLowerCase().includes(q) ||
-        item.store.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q) ||
-        item.department.toLowerCase().includes(q);
-
-      if (!matchesSearch) return false;
-
-      if (startDate || endDate) {
-        if (!item.rawTimestamp) return false;
-
-        const itemDate = new Date(item.rawTimestamp);
-        itemDate.setHours(0, 0, 0, 0);
-
-        if (startDate) {
-          const start = new Date(startDate);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
+      setLoading(true);
+      for (const task of queue) {
+        if (task.type === "log") {
+          await supabase.from("scanned_logs").insert([task.payload]);
+        } else if (task.type === "inventory_update" || task.type === "inventory_reconcile") {
+          await supabase
+            .from("store_inventory")
+            .update(task.payload.updateData)
+            .eq("id", task.payload.id);
         }
       }
 
-      return true;
-    });
-  }, [rawLogs, searchQuery, startDate, endDate]);
-
-  const metrics = useMemo(() => {
-    const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
-    const uniqueStyles = new Set(filteredRawLogs.map((log) => log.styleCode)).size;
-
-    const categoryCounts: Record<string, number> = {};
-    filteredRawLogs.forEach((log) => {
-      const cat = log.category !== "-" ? log.category : "Unassigned";
-      categoryCounts[cat] = (categoryCounts[cat] || 0) + log.quantity;
-    });
-    const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
-
-    const storeCounts: Record<string, number> = {};
-    filteredRawLogs.forEach((log) => {
-      storeCounts[log.store] = (storeCounts[log.store] || 0) + log.quantity;
-    });
-    const topStore = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0] || ["N/A", 0];
-
-    return {
-      totalUnits,
-      uniqueStyles,
-      topCategoryName: topCategory[0],
-      topCategoryQty: topCategory[1],
-      topStoreName: topStore[0],
-      topStoreQty: topStore[1],
-    };
-  }, [filteredRawLogs]);
-
-  const groupedItems = useMemo(() => {
-    if (groupBy === "none") {
-      return filteredRawLogs.map((log) => ({
-        ...log,
-        scanCount: 1,
-      }));
+      localStorage.removeItem("pos_offline_queue");
+      setOfflineQueueCount(0);
+      console.log("Successfully synced offline queue to Supabase!");
+    } catch (err) {
+      console.error("Failed to sync offline queue:", err);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const groupedMap = new Map<string, GroupedProduct>();
+  const queueOfflineTask = (task: { type: string; payload: any }) => {
+    try {
+      const savedQueue = localStorage.getItem("pos_offline_queue");
+      const queue = savedQueue ? JSON.parse(savedQueue) : [];
+      queue.push(task);
+      localStorage.setItem("pos_offline_queue", JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+    } catch (err) {
+      console.error("Failed to save offline task", err);
+    }
+  };
 
-    filteredRawLogs.forEach((item) => {
-      let groupKey = "";
+  const handleOpenScanner = () => {
+    if (!selectedStore) {
+      setTempStore(STORES[0]);
+      setIsStoreModalOpen(true);
+      return;
+    }
+    setScanning(true);
+    setIsPaused(false);
+    setErrorMessage(null);
+    setStockAlert(null);
+    setReconcileSuccess(null);
+  };
 
-      if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}`;
-      } else if (groupBy === "category") {
-        groupKey = `${item.store}|${item.category}|${item.styleCode}`;
-      } else if (groupBy === "department") {
-        groupKey = `${item.store}|${item.department}|${item.styleCode}`;
-      }
+  const handleConfirmStore = () => {
+    if (!tempStore) return;
+    setSelectedStore(tempStore);
+    setIsStoreModalOpen(false);
+    setScanning(true);
+    setIsPaused(false);
+    setErrorMessage(null);
+    setStockAlert(null);
+    setReconcileSuccess(null);
+  };
 
-      if (groupedMap.has(groupKey)) {
-        const existing = groupedMap.get(groupKey)!;
-        existing.quantity += item.quantity;
-        existing.scanCount += 1;
-        if (new Date(item.rawTimestamp) > new Date(existing.rawTimestamp)) {
-          existing.rawTimestamp = item.rawTimestamp;
-          existing.timestamp = item.timestamp;
-        }
+  const getSessionCountForStyle = (code: string) => {
+    return sessionScans
+      .filter((s) => s.styleCode === code && s.store === selectedStore)
+      .reduce((acc, curr) => acc + curr.quantity, 0);
+  };
+
+  const getConsolidatedSummary = () => {
+    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string }>();
+    for (const item of sessionScans) {
+      const key = `${item.styleCode}-${item.mode}`;
+      if (map.has(key)) {
+        map.get(key)!.totalQty += item.quantity;
       } else {
-        groupedMap.set(groupKey, {
-          ...item,
-          scanCount: 1,
+        map.set(key, {
+          styleName: item.styleName,
+          styleCode: item.styleCode,
+          sku: item.sku,
+          price: item.price,
+          totalQty: item.quantity,
+          mode: item.mode,
         });
       }
-    });
-
-    return Array.from(groupedMap.values());
-  }, [filteredRawLogs, groupBy]);
-
-  const processedItems = useMemo(() => {
-    const list = [...groupedItems];
-
-    return list.sort((a, b) => {
-      if (sortBy === "newest") {
-        return new Date(b.rawTimestamp).getTime() - new Date(a.rawTimestamp).getTime();
-      }
-      if (sortBy === "oldest") {
-        return new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime();
-      }
-      if (sortBy === "qty_desc") {
-        return b.quantity - a.quantity;
-      }
-      if (sortBy === "qty_asc") {
-        return a.quantity - b.quantity;
-      }
-      if (sortBy === "name_asc") {
-        return a.styleName.localeCompare(b.styleName);
-      }
-      return 0;
-    });
-  }, [groupedItems, sortBy]);
-
-  const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, processedItems.length);
-  const paginatedItems = useMemo(() => {
-    return processedItems.slice(startIndex, endIndex);
-  }, [processedItems, startIndex, endIndex]);
-
-  const handleExport = (format: "xlsx" | "xls" | "csv") => {
-    if (processedItems.length === 0) return;
-
-    const exportData = processedItems.map((item) => ({
-      "Store Location": item.store,
-      "Style Code": item.styleCode,
-      "SKU": item.sku,
-      "Style Name": item.styleName,
-      "Description": item.description,
-      "Category": item.category,
-      "Department": item.department,
-      "Color": item.color,
-      "Size": item.size,
-      "Price": item.price,
-      "Quantity": item.quantity,
-      "Total Scan Logs": item.scanCount,
-      "Timestamp": item.timestamp,
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
-
-    const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
-    const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
-
-    if (format === "csv") {
-      XLSX.writeFile(workbook, fileName, { bookType: "csv" });
-    } else if (format === "xls") {
-      XLSX.writeFile(workbook, fileName, { bookType: "biff8" });
-    } else {
-      XLSX.writeFile(workbook, fileName, { bookType: "xlsx" });
     }
-
-    setIsExportOpen(false);
+    return Array.from(map.values());
   };
 
+  const handleExportCSV = () => {
+    const summary = getConsolidatedSummary();
+    if (summary.length === 0) return;
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Store,Transaction Mode,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
+
+    summary.forEach((item) => {
+      const row = [
+        `"${selectedStore}"`,
+        `"${item.mode.toUpperCase()}"`,
+        `"${item.styleCode}"`,
+        `"${item.sku || '-'}"`,
+        `"${item.styleName.replace(/"/g, '""')}"`,
+        item.price.toFixed(2),
+        item.totalQty,
+      ].join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const filename = `session_summary_${selectedStore.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}.csv`;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleReconcileStock = async (targetQty: number) => {
+    if (!lastScannedItem) return;
+    setReconciling(true);
+    setReconcileSuccess(null);
+
+    try {
+      const cleanStyle = lastScannedItem.styleCode?.trim() || "";
+      const cleanSku = lastScannedItem.sku !== "-" ? lastScannedItem.sku?.trim() : "";
+
+      const updatePayload = {
+        current_stock: targetQty,
+        last_replenished_at: new Date().toISOString(),
+      };
+
+      if (!isOnline) {
+        queueOfflineTask({
+          type: "inventory_reconcile",
+          payload: { store: selectedStore, styleCode: cleanStyle, updateData: updatePayload }
+        });
+        setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
+        setReconcileSuccess(`Stock updated locally (Offline) to ${targetQty} pcs!`);
+        setReconciling(false);
+        return;
+      }
+
+      let invQuery = supabase
+        .from("store_inventory")
+        .select("id")
+        .eq("store", selectedStore);
+
+      if (cleanStyle) {
+        invQuery = invQuery.eq("style_code", cleanStyle);
+      } else if (cleanSku) {
+        invQuery = invQuery.eq("sku", cleanSku);
+      }
+
+      const { data: invData } = await invQuery.maybeSingle();
+
+      if (invData) {
+        const { error } = await supabase
+          .from("store_inventory")
+          .update(updatePayload)
+          .eq("id", invData.id);
+
+        if (error) throw error;
+      } else {
+        await supabase.from("store_inventory").insert([
+          {
+            store: selectedStore,
+            style_code: cleanStyle,
+            sku: cleanSku || null,
+            initial_stock: targetQty,
+            current_stock: targetQty,
+            safety_stock: 5,
+            last_replenished_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
+      setReconcileSuccess(`Stock updated to ${targetQty} pcs!`);
+    } catch (err: any) {
+      alert("Failed to update stock: " + (err?.message || "Error occurred"));
+    } finally {
+      setReconciling(false);
+    }
+  };
+
+  // Handle scan with dynamic behavior and universal logging for all transaction modes
+  const handleScan = async (scannedBarcode: string) => {
+    setIsPaused(true);
+    setLoading(true);
+    setErrorMessage(null);
+    setStockAlert(null);
+    setReconcileSuccess(null);
+
+    const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
+
+    let data: any = null;
+    let error: any = null;
+
+    if (isOnline) {
+      const res1 = await supabase
+        .from("products")
+        .select("*")
+        .eq("barcode", cleanCode)
+        .maybeSingle();
+      data = res1.data;
+      error = res1.error;
+
+      if (!data) {
+        const res2 = await supabase
+          .from("products")
+          .select("*")
+          .ilike("style_code", cleanCode)
+          .maybeSingle();
+        data = res2.data;
+      }
+
+      if (!data) {
+        const res3 = await supabase
+          .from("products")
+          .select("*")
+          .ilike("sku", cleanCode)
+          .maybeSingle();
+        data = res3.data;
+      }
+    }
+
+    if (!data) {
+      setLoading(false);
+      triggerScanFeedback("error");
+      setManualCode(cleanCode);
+      setManualForm((prev) => ({
+        ...prev,
+        styleCode: cleanCode,
+        sku: cleanCode,
+        styleName: `Item ${cleanCode}`,
+      }));
+      setErrorMessage(`Code "${cleanCode}" not found or offline.`);
+      return;
+    }
+
+    triggerScanFeedback("success");
+
+    const fetchedProduct: ProductDetails = {
+      styleCode: data.style_code || cleanCode,
+      sku: data.sku || "-",
+      styleName: data.style_name || "Unassigned Item",
+      description: data.description || "N/A",
+      color: data.color || "-",
+      category: data.category || "-",
+      department: data.department || "-",
+      size: data.size || "-",
+      price: Number(data.price) || 0,
+      quantity: 1,
+      barcode: data.barcode || cleanCode,
+    };
+
+    setLastScannedItem(fetchedProduct);
+
+    const now = new Date();
+    const formattedTimestamp = now.toLocaleTimeString("en-PH", {
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const newSessionItem: SessionScannedProduct = {
+      ...fetchedProduct,
+      id: `${cleanCode}-${Date.now()}`,
+      store: selectedStore,
+      timestamp: formattedTimestamp,
+      mode: transactionMode,
+    };
+
+    setSessionScans((prev) => [newSessionItem, ...prev]);
+
+    const cleanStyle = fetchedProduct.styleCode?.trim() || "";
+    const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
+
+    // Standardized log payload containing transaction_mode for all modules to query
+    const baseLogPayload = {
+      store: selectedStore,
+      transaction_mode: transactionMode, // Saves the exact transaction mode identifier
+      style_code: fetchedProduct.styleCode,
+      sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+      style_name: fetchedProduct.styleName,
+      description: fetchedProduct.description,
+      color: fetchedProduct.color,
+      category: fetchedProduct.category,
+      department: fetchedProduct.department,
+      size: fetchedProduct.size,
+      price: fetchedProduct.price,
+      quantity: 1,
+      scanned_at: now.toISOString(),
+    };
+
+    // 1. Sales or Pull Out: Deduct stock and log transaction
+    if ((transactionMode === "sales" || transactionMode === "pull_out") && isOnline) {
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("id, current_stock, safety_stock")
+          .eq("store", selectedStore);
+
+        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
+        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
+
+        const { data: invData } = await invQuery.maybeSingle();
+
+        if (invData) {
+          const newCurrentStock = Math.max(0, Number(invData.current_stock) - 1);
+          await supabase
+            .from("store_inventory")
+            .update({ current_stock: newCurrentStock })
+            .eq("id", invData.id);
+
+          const remaining = newCurrentStock;
+          const safetyThreshold = Number(invData.safety_stock ?? 5);
+          setStockAlert({
+            type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
+        }
+      } catch (err) {
+        console.warn("Stock deduction error:", err);
+      }
+
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
+      }
+    } 
+    // 2. Delivery: Restock in and log transaction
+    else if (transactionMode === "delivery" && isOnline) {
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("*")
+          .eq("store", selectedStore);
+
+        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
+        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
+
+        const { data: existingInv } = await invQuery.maybeSingle();
+
+        if (existingInv) {
+          const newCurrent = (Number(existingInv.current_stock) || 0) + 1;
+          await supabase
+            .from("store_inventory")
+            .update({ current_stock: newCurrent, last_replenished_at: now.toISOString() })
+            .eq("id", existingInv.id);
+
+          setStockAlert({ type: "normal", remainingStock: newCurrent, safetyStock: Number(existingInv.safety_stock ?? 5) });
+        } else {
+          await supabase.from("store_inventory").insert([
+            {
+              store: selectedStore,
+              style_code: cleanStyle,
+              sku: cleanSku || null,
+              initial_stock: 1,
+              current_stock: 1,
+              safety_stock: 5,
+              last_replenished_at: now.toISOString(),
+            },
+          ]);
+          setStockAlert({ type: "normal", remainingStock: 1, safetyStock: 5 });
+        }
+      } catch (err) {
+        console.warn("Delivery update error:", err);
+      }
+
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
+      }
+    } 
+    // 3. Audit: Stock check and log transaction
+    else if (transactionMode === "audit" && isOnline) {
+      try {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("current_stock, safety_stock")
+          .eq("store", selectedStore);
+
+        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
+        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
+
+        const { data: invData } = await invQuery.maybeSingle();
+
+        if (invData) {
+          const remaining = Number(invData.current_stock);
+          const safetyThreshold = Number(invData.safety_stock ?? 5);
+          setStockAlert({
+            type: remaining <= safetyThreshold ? "low" : "normal",
+            remainingStock: remaining,
+            safetyStock: safetyThreshold,
+          });
+        } else {
+          setStockAlert({ type: "out", remainingStock: 0, safetyStock: 5 });
+        }
+      } catch (err) {
+        console.warn("Audit stock query error:", err);
+      }
+
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
+      }
+    } else if (!isOnline) {
+      setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
+      queueOfflineTask({ type: "log", payload: baseLogPayload });
+    }
+
+    setLoading(false);
+
+    if (continuousMode) {
+      setTimeout(() => {
+        handleScanNext();
+      }, 1500);
+    }
+  };
+
+  const handleSaveManualProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingManual(true);
+
+    const newProductPayload = {
+      barcode: manualCode,
+      style_code: manualForm.styleCode || manualCode,
+      sku: manualForm.sku || manualCode,
+      style_name: manualForm.styleName,
+      description: manualForm.description,
+      color: manualForm.color,
+      category: manualForm.category,
+      department: manualForm.department,
+      size: manualForm.size,
+      price: parseFloat(manualForm.price) || 0.0,
+    };
+
+    const { error } = await supabase.from("products").insert([newProductPayload]);
+
+    setSavingManual(false);
+
+    if (error) {
+      alert("Failed to save product: " + error.message);
+      return;
+    }
+
+    setIsManualModalOpen(false);
+    setErrorMessage(null);
+    await handleScan(manualCode);
+  };
+
+  const handleScanNext = () => {
+    setErrorMessage(null);
+    setLastScannedItem(null);
+    setStockAlert(null);
+    setReconcileSuccess(null);
+    setIsPaused(false);
+  };
+
+  const handleRemoveFromSession = (id: string) => {
+    setSessionScans((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const clearCurrentSession = () => {
+    setSessionScans([]);
+  };
+
+  const totalSessionItems = sessionScans.length;
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 max-w-[1600px] mx-auto antialiased space-y-5">
-      {/* Top Header Bar */}
-      <header className="flex items-center justify-between border-b border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-              Desktop Workspace
-            </span>
-            <span className="text-xs text-slate-500 font-mono">
-              Total Records: {rawLogs.length}
-            </span>
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
+      {/* Header & Network Status */}
+      <header className="space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                Mobile Terminal
+              </span>
+              <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                isOnline 
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+              }`}>
+                {isOnline ? "🟢 Online" : `🔴 Offline (${offlineQueueCount} queued)`}
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
+              Barcode / QR Scanner
+            </h1>
           </div>
-          <h1 className="text-2xl font-black text-white mt-1">
-            Scanned Inventory & Database Management
-          </h1>
-        </div>
-
-        <div className="flex items-center space-x-2.5">
-          <Link
-            href="/reports/daily-sales"
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-indigo-500/30 shadow-lg shadow-indigo-600/10"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span>Daily Sales Report</span>
-          </Link>
-
-          <Link
-            href="/inventory"
-            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
-          >
-            <Boxes className="h-4 w-4 text-indigo-400" />
-            <span>Live Inventory</span>
-          </Link>
 
           <button
-            onClick={fetchScannedLogs}
-            className="bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-slate-800"
+            onClick={handleOpenScanner}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            <span>Refresh</span>
+            <span>Scan Now</span>
           </button>
+        </div>
 
-          <div className="relative" ref={exportRef}>
-            <button
-              onClick={() => setIsExportOpen(!isExportOpen)}
-              disabled={processedItems.length === 0}
-              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Export Report</span>
-            </button>
+        {/* Store Location & Transaction Mode Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Store Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Store Location <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="" disabled className="text-slate-500">
+                  -- Select Store --
+                </option>
+                {STORES.map((store) => (
+                  <option key={store} value={store} className="text-white font-normal">
+                    {store}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            {isExportOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">File Format</p>
-                <button
-                  onClick={() => handleExport("xlsx")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>Excel Workbook</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.XLSX</span>
-                </button>
-                <button
-                  onClick={() => handleExport("xls")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>Legacy Excel</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.XLS</span>
-                </button>
-                <button
-                  onClick={() => handleExport("csv")}
-                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition flex items-center justify-between"
-                >
-                  <span>CSV File</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">.CSV</span>
-                </button>
-              </div>
-            )}
+            {/* Transaction Mode Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Transaction Mode <span className="text-emerald-400">*</span>
+              </label>
+              <select
+                value={transactionMode}
+                onChange={(e) => setTransactionMode(e.target.value as TransactionMode)}
+                className="w-full bg-slate-950 border border-slate-800 text-amber-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="sales" className="text-white font-normal">🛍️ Sales (Checkout)</option>
+                <option value="audit" className="text-white font-normal">📋 Audit (Stock Check)</option>
+                <option value="delivery" className="text-white font-normal">📦 Delivery (Restock In)</option>
+                <option value="pull_out" className="text-white font-normal">🚚 Pull Out (Stock Removal)</option>
+              </select>
+            </div>
           </div>
+        </div>
+
+        {/* Dedicated Continuous Batch Scanning Control Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+              ⚡ Continuous Batch Mode
+            </span>
+            <p className="text-[11px] text-slate-400">
+              {continuousMode ? "Active: Auto-resumes camera after success" : "Manual: Requires tapping 'Scan Next'"}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setContinuousMode(!continuousMode)}
+            className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer shadow-md ${
+              continuousMode 
+                ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20' 
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+            }`}
+          >
+            {continuousMode ? "ENABLED ON" : "TURN ON"}
+          </button>
         </div>
       </header>
 
-      {/* Summary KPI Ribbon */}
-      <section className="grid grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Volume</p>
-            <p className="text-2xl font-black text-white mt-0.5">{metrics.totalUnits} <span className="text-xs text-emerald-400 font-bold">units</span></p>
+      {/* Current Session Scanned Items View */}
+      <section className="my-6 flex-1">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Current Session Scans ({transactionMode.toUpperCase()})
+            </h2>
+            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] px-2 py-0.5 rounded-full">
+              {totalSessionItems}
+            </span>
           </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+
+          <div className="flex items-center space-x-3">
+            {totalSessionItems > 0 && (
+              <>
+                <button
+                  onClick={() => setIsSummaryModalOpen(true)}
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20"
+                >
+                  📊 View Summary
+                </button>
+                <button
+                  onClick={clearCurrentSession}
+                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
+                >
+                  Clear List
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unique QR Codes</p>
-            <p className="text-2xl font-black text-white mt-0.5">{metrics.uniqueStyles} <span className="text-xs text-blue-400 font-bold">styles</span></p>
-          </div>
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Category</p>
-            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topCategoryName}</p>
-            <p className="text-[10px] text-purple-400 font-bold">{metrics.topCategoryQty} pcs logged</p>
-          </div>
-          <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 11h.01M7 15h.01M11 7h.01M11 11h.01M11 15h.01M15 7h.01M15 11h.01M15 15h.01" /></svg>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Primary Store Volume</p>
-            <p className="text-lg font-black text-white truncate max-w-[160px] mt-0.5">{metrics.topStoreName}</p>
-            <p className="text-[10px] text-amber-400 font-bold">{metrics.topStoreQty} pcs logged</p>
-          </div>
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-          </div>
-        </div>
-      </section>
-
-      {/* Desktop Horizontal Control Bar */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search code, SKU, product, category..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
-          />
-        </div>
-
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={selectedStoreFilter}
-            onChange={(e) => setSelectedStoreFilter(e.target.value)}
-            className="w-full bg-transparent text-xs font-bold text-emerald-400 focus:outline-none cursor-pointer"
-          >
-            {STORES.map((store) => (
-              <option key={store} value={store} className="bg-slate-900 text-white font-normal">
-                {store}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupByOption)}
-            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
-          >
-            <option value="store_style">Group: Store + QR Code</option>
-            <option value="category">Group: Category</option>
-            <option value="department">Group: Department</option>
-            <option value="none">Group: None (Raw Entries)</option>
-          </select>
-        </div>
-
-        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="w-full bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
-          >
-            <option value="newest">Sort: Newest</option>
-            <option value="oldest">Sort: Oldest</option>
-            <option value="qty_desc">Sort: Highest Qty</option>
-            <option value="qty_asc">Sort: Lowest Qty</option>
-            <option value="name_asc">Sort: Product A-Z</option>
-          </select>
-        </div>
-      </section>
-
-      {/* Desktop Date Bar */}
-      <section className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Date Range:</span>
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[10px] text-slate-500 font-bold uppercase">From</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
-            />
-          </div>
-          <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[10px] text-slate-500 font-bold uppercase">To</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-transparent text-xs text-emerald-400 font-bold focus:outline-none cursor-pointer scheme-dark"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button onClick={() => handlePresetDate("today")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Today</button>
-          <button onClick={() => handlePresetDate("7days")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">Last 7 Days</button>
-          <button onClick={() => handlePresetDate("month")} className="text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3 py-1 rounded-lg transition">This Month</button>
-          {(startDate || endDate) && (
-            <button onClick={() => handlePresetDate("clear")} className="text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg transition">Reset</button>
-          )}
-        </div>
-      </section>
-
-      {/* Main Data Table */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-        {loading ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs text-slate-400">Loading database items...</p>
-          </div>
-        ) : processedItems.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
-            <p className="text-sm font-bold text-white">No entries match your search filters.</p>
-            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
+        {sessionScans.length === 0 ? (
+          <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-3xl p-8 text-center my-auto space-y-2">
+            <p className="text-sm font-bold text-slate-300">No active scans right now</p>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+              Select your store and mode, then tap "Scan Now" to begin scanning.
+            </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3 px-4">Store Location</th>
-                  <th className="py-3 px-4">Style Code</th>
-                  <th className="py-3 px-4">SKU</th>
-                  <th className="py-3 px-4">Product Name</th>
-                  <th className="py-3 px-4">Category / Dept</th>
-                  <th className="py-3 px-4">Color / Size</th>
-                  <th className="py-3 px-4 text-right">Price</th>
-                  <th className="py-3 px-4 text-center">Quantity</th>
-                  <th className="py-3 px-4 text-right">Last Scanned</th>
-                  <th className="py-3 px-4 text-center w-12">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 text-xs">
-                {paginatedItems.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            {sessionScans.map((item) => (
+              <div
+                key={item.id}
+                className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm"
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                      item.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
+                      item.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
+                      item.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                      'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {item.mode}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
+                    {item.sku && item.sku !== "-" && (
+                      <span className="font-mono text-blue-400 text-xs font-semibold">SKU: {item.sku}</span>
+                    )}
+                    <span className="font-mono text-amber-400 text-xs font-bold">
+                      ₱{item.price.toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    {item.store} • {item.timestamp}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <span className="bg-slate-950 text-slate-300 border border-slate-800 font-bold text-xs px-2.5 py-1 rounded-lg">
+                    x{item.quantity}
+                  </span>
+                  <button
+                    onClick={() => handleRemoveFromSession(item.id)}
+                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition"
+                    title="Remove from current session"
                   >
-                    <td className="py-3 px-4 font-semibold text-emerald-400">
-                      {item.store}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-200">
-                      {item.styleCode}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-semibold text-blue-400">
-                      {item.sku}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
-                      {item.styleName}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400">
-                      {item.category !== "-" ? item.category : item.department}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400">
-                      {item.color !== "-" ? item.color : ""}{item.size !== "-" ? ` / ${item.size}` : "-"}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                      ₱{item.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3 px-4 text-center font-bold">
-                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
-                        {item.quantity} pcs
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-400 text-[11px]">
-                      {item.timestamp}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleRemoveItem(item)}
-                        className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800 cursor-pointer"
-                        title="Delete Item"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+      </section>
 
-        {/* Pagination Bar */}
-        {processedItems.length > 0 && (
-          <div className="bg-slate-950 border-t border-slate-800 p-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <span className="text-xs text-slate-400 font-medium">
-                Showing <span className="text-white font-bold">{startIndex + 1}</span> to{" "}
-                <span className="text-white font-bold">{endIndex}</span> of{" "}
-                <span className="text-white font-bold">{processedItems.length}</span> entries
-              </span>
+      {/* Session Summary Modal */}
+      {isSummaryModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                  Confirmation Overview
+                </span>
+                <h2 className="text-lg font-black text-white mt-1">Session Summary</h2>
+              </div>
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                className="text-slate-400 hover:text-white font-bold text-base p-1"
+              >
+                ✕
+              </button>
+            </div>
 
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-slate-500">Per page:</span>
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
+            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
+              <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                <span>Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong></span>
+                <span className="text-amber-400 font-bold uppercase">Mode: {transactionMode}</span>
+              </div>
+
+              {getConsolidatedSummary().map((summaryItem) => (
+                <div key={`${summaryItem.styleCode}-${summaryItem.mode}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        summaryItem.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
+                        summaryItem.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
+                        summaryItem.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400' :
+                        'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        {summaryItem.mode}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
+                      <span className="font-mono text-amber-400 font-bold">₱{summaryItem.price.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono font-black text-xs px-3 py-1 rounded-xl">
+                      {summaryItem.totalQty} pcs
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex space-x-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={handleExportCSV}
+                className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20"
+              >
+                📥 Export CSV
+              </button>
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+              >
+                Confirm & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Store Prompt Modal */}
+      {isStoreModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 text-left">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold text-white">Select Current Store</h2>
+              <p className="text-xs text-slate-400">Please choose a store before opening camera.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store</label>
+              <select
+                value={tempStore}
+                onChange={(e) => setTempStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 font-semibold cursor-pointer"
+              >
+                {STORES.map((store) => (
+                  <option key={store} value={store}>
+                    {store}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={handleConfirmStore}
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+              >
+                Confirm & Open Scanner
+              </button>
+              <button
+                onClick={() => setIsStoreModalOpen(false)}
+                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera Viewport Modal */}
+      {scanning && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
+          <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
+            <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
+              <span className="text-slate-400 font-medium">Store: <strong className="text-emerald-400">{selectedStore}</strong></span>
+              <div className="flex items-center gap-2">
+                {continuousMode && (
+                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold text-[9px]">
+                    Continuous
+                  </span>
+                )}
+                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-2 py-0.5 rounded uppercase text-[10px]">
+                  Mode: {transactionMode}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
-              >
-                Previous
-              </button>
-              <span className="text-xs text-slate-400 font-mono px-2">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
-              >
-                Next
-              </button>
+            <div className="relative aspect-square bg-black">
+              <Scanner onScan={handleScan} isPaused={isPaused} />
+
+              {loading && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
+                  Verifying & Processing ({transactionMode.toUpperCase()})...
+                </div>
+              )}
+
+              {/* Detailed Scan Results Overlay */}
+              {isPaused && (
+                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
+                  {errorMessage ? (
+                    <div className="space-y-3 my-auto">
+                      <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                        ✕
+                      </div>
+                      <h3 className="text-base font-bold text-white">Item Not Found</h3>
+                      <p className="text-xs text-red-300/80 max-w-xs">{errorMessage}</p>
+
+                      <button
+                        onClick={() => setIsManualModalOpen(true)}
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 mt-2"
+                      >
+                        + Add Manually & Register
+                      </button>
+                    </div>
+                  ) : (
+                    lastScannedItem && (
+                      <div className="w-full space-y-3 my-auto text-left">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
+                            ✓ {transactionMode.toUpperCase()} Processed {continuousMode && "(Auto-resuming...)"}
+                          </span>
+                          <span className="text-xs font-mono text-emerald-400 font-bold">
+                            {lastScannedItem.styleCode}
+                          </span>
+                        </div>
+
+                        {/* Audit Mode Side-by-Side Stock Comparison Card with One-Tap Reconcile */}
+                        {transactionMode === "audit" && stockAlert && (() => {
+                          const systemStock = stockAlert.remainingStock;
+                          const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
+                          const variance = countedStock - systemStock;
+
+                          return (
+                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
+                                  Audit Stock Comparison
+                                </span>
+                                {reconcileSuccess && (
+                                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                    ✓ {reconcileSuccess}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
+                                  <span className="text-white font-bold text-base">{systemStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Counted</span>
+                                  <span className="text-emerald-400 font-bold text-base">{countedStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Variance</span>
+                                  <span className={`font-bold text-base ${
+                                    variance === 0 ? 'text-emerald-400' : variance > 0 ? 'text-amber-400' : 'text-rose-400'
+                                  }`}>
+                                    {variance > 0 ? `+${variance}` : variance}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Show Reconcile Action Button when there is a Variance */}
+                              {variance !== 0 && !reconcileSuccess && (
+                                <button
+                                  type="button"
+                                  disabled={reconciling}
+                                  onClick={() => handleReconcileStock(countedStock)}
+                                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                                >
+                                  {reconciling ? "Reconciling..." : `⚡ Reconcile Database to ${countedStock} pcs`}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Pull Out Mode Stock Display Badge */}
+                        {transactionMode === "pull_out" && stockAlert && (
+                          <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold text-sm">
+                                🚚
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase text-rose-400 tracking-wider">
+                                  Pull Out Stock Status
+                                </p>
+                                <p className="text-slate-300 text-[11px]">
+                                  Deducted 1 unit from inventory
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Remaining Stock</span>
+                              <span className="text-rose-400 font-mono font-black text-base">
+                                {stockAlert.remainingStock} pcs
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Standard Stock Alerts for Sales & Delivery Modes */}
+                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "out" && (
+                          <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
+                            <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
+                              ⚠
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-black uppercase text-rose-400 tracking-wider">
+                                Depleted / Out of Stock
+                              </p>
+                              <p className="text-slate-200 text-[11px]">
+                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>!
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "low" && (
+                          <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
+                            <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
+                              ⚠
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-black uppercase text-amber-300 tracking-wider">
+                                Low Stock Alert
+                              </p>
+                              <p className="text-slate-200 text-[11px]">
+                                Only <strong className="text-amber-300 font-bold">{stockAlert.remainingStock} units</strong> left on shelf (Safety Level: {stockAlert.safetyStock} pcs).
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <h3 className="text-base font-bold text-white leading-snug">
+                            {lastScannedItem.styleName}
+                          </h3>
+                          {lastScannedItem.description && lastScannedItem.description !== "N/A" && (
+                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                              {lastScannedItem.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Details Grid with Current Stock Display */}
+                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              SKU
+                            </span>
+                            <span className="text-blue-400 font-mono font-bold text-sm truncate block">
+                              {lastScannedItem.sku}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Current Stock
+                            </span>
+                            <span className="text-emerald-400 font-mono font-extrabold text-sm truncate block">
+                              {stockAlert ? `${stockAlert.remainingStock} pcs` : "N/A"}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Price
+                            </span>
+                            <span className="text-amber-400 font-mono font-bold text-sm truncate block">
+                              ₱{lastScannedItem.price.toFixed(2)}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Size / Color
+                            </span>
+                            <span className="text-slate-200 font-semibold truncate block">
+                              {lastScannedItem.size} • {lastScannedItem.color}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+
+                  <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
+                    <button
+                      onClick={handleScanNext}
+                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                    >
+                      Scan Next
+                    </button>
+                    <button
+                      onClick={() => setScanning(false)}
+                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={() => setScanning(false)}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60"
+            >
+              Close Camera View
+            </button>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+
+      {/* Manual Product Registration Modal */}
+      {isManualModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-left">
+            <div>
+              <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                New Product Registration
+              </span>
+              <h2 className="text-lg font-black text-white mt-1">Add Unlisted Barcode</h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">Code: {manualCode}</p>
+            </div>
+
+            <form onSubmit={handleSaveManualProduct} className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Product / Style Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={manualForm.styleName}
+                  onChange={(e) => setManualForm({ ...manualForm, styleName: e.target.value })}
+                  placeholder="e.g. Classic Men Boxer Brief"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Style Code
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.styleCode}
+                    onChange={(e) => setManualForm({ ...manualForm, styleCode: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    SKU
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.sku}
+                    onChange={(e) => setManualForm({ ...manualForm, sku: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.department}
+                    onChange={(e) => setManualForm({ ...manualForm, department: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.category}
+                    onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Color
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.color}
+                    onChange={(e) => setManualForm({ ...manualForm, color: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Size
+                  </label>
+                  <input
+                    type="text"
+                    value={manualForm.size}
+                    onChange={(e) => setManualForm({ ...manualForm, size: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Price (₱)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={manualForm.price}
+                    onChange={(e) => setManualForm({ ...manualForm, price: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-amber-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-2 pt-3">
+                <button
+                  type="submit"
+                  disabled={savingManual}
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                >
+                  {savingManual ? "Saving to Database..." : "Save & Process Scan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
+        Active Session Log ({transactionMode})
+      </footer>
     </main>
   );
 }
