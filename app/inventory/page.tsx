@@ -1,17 +1,120 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from "react";
-import dynamicImport from "next/dynamic";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { triggerScanFeedback } from "@/lib/feedback";
+import * as XLSX from "xlsx";
+import {
+  Boxes,
+  Store,
+  Search,
+  PlusCircle,
+  AlertTriangle,
+  XCircle,
+  RefreshCw,
+  ScanBarcode,
+  BarChart3,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  CheckCircle2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
+  SlidersHorizontal,
+  RotateCcw,
+  DollarSign,
+  Hash,
+  ShoppingBag,
+  Upload,
+  X,
+  Check,
+  Bell,
+  Loader2,
+  Calendar,
+} from "lucide-react";
 
-const Scanner = dynamicImport(() => import("@/components/Scanner"), {
-  ssr: false,
-});
+interface StoreInventoryItem {
+  id: string;
+  store: string;
+  style_code: string;
+  sku: string | null;
+  initial_stock: number;
+  current_stock: number;
+  safety_stock: number;
+  last_replenished_at: string;
+  total_out: number;
+  total_pulled_out: number;
+  price?: number;
+  style_name?: string;
+  color?: string;
+  size?: string;
+  department?: string;
+  description?: string;
+}
 
-export const dynamic = 'force-dynamic';
+interface ProductMasterRecord {
+  id: string;
+  style_code: string;
+  sku: string;
+  style_name: string;
+  department: string;
+  category: string;
+  color: string;
+  size: string;
+  price?: number;
+  unit_price?: number;
+  srp?: number;
+  amount?: number;
+  description?: string;
+}
+
+interface BulkImportItem {
+  store: string;
+  style_code: string;
+  sku: string;
+  quantity: number;
+}
+
+type ColumnKey =
+  | "store"
+  | "style_code"
+  | "description"
+  | "sku"
+  | "status"
+  | "initial_stock"
+  | "total_out"
+  | "total_pulled_out"
+  | "current_stock"
+  | "safety_stock"
+  | "last_replenished_at";
+
+interface ColumnDef {
+  id: ColumnKey;
+  label: string;
+  align: "left" | "center" | "right";
+  sortable: boolean;
+  headerBg?: string;
+}
+
+const DEFAULT_COLUMNS: ColumnDef[] = [
+  { id: "store", label: "Store Location", align: "left", sortable: true },
+  { id: "style_code", label: "Style Code & Details", align: "left", sortable: true },
+  { id: "description", label: "Description", align: "left", sortable: true },
+  { id: "sku", label: "SKU", align: "left", sortable: true },
+  { id: "status", label: "Status", align: "center", sortable: true },
+  { id: "initial_stock", label: "Delivered / In", align: "right", sortable: true, headerBg: "bg-slate-800/30" },
+  { id: "total_out", label: "Total Sold", align: "right", sortable: true, headerBg: "bg-emerald-950/20" },
+  { id: "total_pulled_out", label: "Pulled Out", align: "right", sortable: true, headerBg: "bg-rose-950/20" },
+  { id: "current_stock", label: "Available Stock", align: "right", sortable: true, headerBg: "bg-indigo-950/20" },
+  { id: "safety_stock", label: "Safety Level", align: "right", sortable: true },
+  { id: "last_replenished_at", label: "Last Received", align: "right", sortable: true },
+];
 
 const STORES = [
+  "All Stores",
   "Metro Gaisano Ayala Cebu",
   "Metro Gaisano Colon",
   "Metro Gaisano Mandaue",
@@ -23,1238 +126,1100 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
-type TransactionMode = "sales" | "audit" | "delivery" | "pull_out";
+const cleanNumericPrice = (val: any): number => {
+  if (val === null || val === undefined || val === "") return 0;
+  if (typeof val === "number") return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/[^\d.]/g, "");
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+};
 
-interface ProductDetails {
-  styleCode: string;
-  sku?: string;
-  styleName: string;
-  description: string;
-  color: string;
-  category: string;
-  department: string;
-  size: string;
-  price: number;
-  quantity: number;
-  barcode?: string;
-}
+export default function InventoryMonitoringPage() {
+  const [items, setItems] = useState<StoreInventoryItem[]>([]);
+  const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [selectedStore, setSelectedStore] = useState<string>("All Stores");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [filterStockStatus, setFilterStockStatus] = useState<"ALL" | "LOW" | "OUT">("ALL");
 
-interface SessionScannedProduct extends ProductDetails {
-  id: string;
-  store: string;
-  timestamp: string;
-  mode: TransactionMode;
-}
+  const [sortKey, setSortKey] = useState<ColumnKey | null>("current_stock");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
-interface StockAlertInfo {
-  type: "out" | "low" | "normal";
-  remainingStock: number;
-  safetyStock: number;
-}
+  const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
-export default function Home() {
-  const [selectedStore, setSelectedStore] = useState<string>("");
-  const [tempStore, setTempStore] = useState<string>("");
-  const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
+  const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
+  const [restockStyleCode, setRestockStyleCode] = useState<string>("");
+  const [restockSku, setRestockSku] = useState<string>("");
+  const [restockStore, setRestockStore] = useState<string>(STORES[1]);
+  const [restockQty, setRestockQty] = useState<number>(10);
+  const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
 
-  // Network & Offline Queue State
-  const [isOnline, setIsOnline] = useState<boolean>(true);
-  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
 
-  // Transaction Mode & Continuous Batch Scan State
-  const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
-  const [continuousMode, setContinuousMode] = useState<boolean>(false);
+  const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
+  const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
+  const [bulkPreview, setBulkPreview] = useState<BulkImportItem[]>([]);
+  const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
 
-  const [scanning, setScanning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
+  const [manualSearchQuery, setManualSearchQuery] = useState<string>("");
+  const [selectedManualItem, setSelectedManualItem] = useState<StoreInventoryItem | null>(null);
+  const [manualQty, setManualQty] = useState<number>(1);
+  const [manualPrice, setManualPrice] = useState<string>("");
+  const [manualStore, setManualStore] = useState<string>(STORES[1]);
+  const [manualDate, setManualDate] = useState<string>(
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  );
+  const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
+  const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
+  const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
+  
+  const [lastSubmittedTime, setLastSubmittedTime] = useState<number>(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reconcile state
-  const [reconciling, setReconciling] = useState(false);
-  const [reconcileSuccess, setReconcileSuccess] = useState<string | null>(null);
-
-  // Session Summary Modal State
-  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
-
-  // Manual Add Product Modal State
-  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
-  const [manualCode, setManualCode] = useState("");
-  const [manualForm, setManualForm] = useState({
-    styleName: "",
-    styleCode: "",
-    sku: "",
-    category: "UNDERWEAR",
-    department: "MEN",
-    color: "BLACK",
-    size: "Free Size",
-    price: "150.00",
-    description: "Newly registered item",
-  });
-  const [savingManual, setSavingManual] = useState(false);
-
-  // Local state for current active session scans
-  const [sessionScans, setSessionScans] = useState<SessionScannedProduct[]>([]);
-  const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
-  const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
-
-  // Monitor Network Connectivity & Sync Queue
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    setCurrentPage(1);
+  }, [selectedStore, searchQuery, filterStockStatus, pageSize, sortKey, sortDirection]);
 
-    setIsOnline(navigator.onLine);
-
-    const handleOnline = () => {
-      setIsOnline(true);
-      syncOfflineQueue();
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    const savedQueue = localStorage.getItem("pos_offline_queue");
-    if (savedQueue) {
-      try {
-        const queue = JSON.parse(savedQueue);
-        setOfflineQueueCount(queue.length);
-      } catch (e) {
-        console.error("Error reading offline queue", e);
-      }
-    }
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  const syncOfflineQueue = async () => {
-    const savedQueue = localStorage.getItem("pos_offline_queue");
-    if (!savedQueue) return;
+  const fetchInventory = useCallback(async () => {
+    setLoading(true);
 
     try {
-      const queue = JSON.parse(savedQueue);
-      if (queue.length === 0) return;
+      let allInvData: any[] = [];
+      let page = 0;
+      let fetchMore = true;
 
-      setLoading(true);
-      for (const task of queue) {
-        if (task.type === "log") {
-          await supabase.from("scanned_logs").insert([task.payload]);
-        } else if (task.type === "inventory_update" || task.type === "inventory_reconcile") {
-          await supabase
-            .from("store_inventory")
-            .update(task.payload.updateData)
-            .eq("id", task.payload.id);
+      while (fetchMore) {
+        const { data: chunk, error: chunkErr } = await supabase
+          .from("store_inventory")
+          .select("*")
+          .range(page * 1000, (page + 1) * 1000 - 1);
+
+        if (chunkErr) throw chunkErr;
+
+        if (chunk && chunk.length > 0) {
+          allInvData = [...allInvData, ...chunk];
+          if (chunk.length < 1000) fetchMore = false;
+          page++;
+        } else {
+          fetchMore = false;
         }
       }
 
-      localStorage.removeItem("pos_offline_queue");
-      setOfflineQueueCount(0);
-      console.log("Successfully synced offline queue to Supabase!");
+      const prodRes = await supabase.from("products").select("*");
+      if (prodRes.error) throw prodRes.error;
+
+      const prodData = (prodRes.data as any[]) || [];
+      setProductsMaster(prodData);
+
+      const prodMap = new Map<string, any>();
+      prodData.forEach((p) => {
+        const pCode = p.style_code ? String(p.style_code).trim().toLowerCase() : "";
+        const pSku = p.sku ? String(p.sku).trim().toLowerCase() : "";
+        const pBarcode = p.barcode ? String(p.barcode).trim().toLowerCase() : "";
+        const pVal = {
+          price: cleanNumericPrice(p.price || p.unit_price || p.srp || p.amount),
+          description: p.description || p.style_name || "",
+          style_name: p.style_name || "",
+          color: p.color || "Default",
+          size: p.size || "Free Size",
+          department: p.department || "General",
+        };
+
+        if (pCode) prodMap.set(pCode, pVal);
+        if (pSku) prodMap.set(pSku, pVal);
+        if (pBarcode) prodMap.set(pBarcode, pVal);
+      });
+
+      if (allInvData) {
+        const enriched: StoreInventoryItem[] = allInvData.map((row: any) => {
+          const storeName = row.store ? row.store.trim() : "Main Store";
+          const styleCodeStr = row.style_code ? String(row.style_code).trim() : "";
+          const skuStr = row.sku ? String(row.sku).trim() : "";
+          
+          const lookupKey1 = styleCodeStr.toLowerCase();
+          const lookupKey2 = skuStr.toLowerCase();
+          const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
+
+          // STRICT DATABASE BINDING: Read directly from raw table columns
+          const rawTotalSold = Number(row.total_sold) || 0;
+          const rawPullOut = Number(row.pull_out) || 0;
+
+          return {
+            id: String(row.id),
+            store: storeName,
+            style_code: styleCodeStr || "-",
+            sku: row.sku ? String(row.sku).trim() : null,
+            initial_stock: Number(row.initial_stock) || 0,
+            current_stock: Number(row.current_stock) || 0,
+            safety_stock: row.safety_stock ?? 5,
+            last_replenished_at: row.last_replenished_at,
+            total_out: rawTotalSold,         // Locked to total_sold column
+            total_pulled_out: rawPullOut,    // Locked to pull_out column
+            price: cleanNumericPrice(row.price) || matchedProd.price || 0,
+            style_name: row.style_name || matchedProd.style_name || styleCodeStr,
+            description: row.description || matchedProd.description || styleCodeStr,
+            color: row.color || matchedProd.color || "Default",
+            size: row.size || matchedProd.size || "Free Size",
+            department: row.department || matchedProd.department || "General",
+          };
+        });
+
+        setItems(enriched);
+      }
     } catch (err) {
-      console.error("Failed to sync offline queue:", err);
+      console.error("Error fetching inventory:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const queueOfflineTask = (task: { type: string; payload: any }) => {
-    try {
-      const savedQueue = localStorage.getItem("pos_offline_queue");
-      const queue = savedQueue ? JSON.parse(savedQueue) : [];
-      queue.push(task);
-      localStorage.setItem("pos_offline_queue", JSON.stringify(queue));
-      setOfflineQueueCount(queue.length);
-    } catch (err) {
-      console.error("Failed to save offline task", err);
-    }
-  };
+  useEffect(() => {
+    fetchInventory();
+  }, [fetchInventory]);
 
-  const handleOpenScanner = () => {
-    if (!selectedStore) {
-      setTempStore(STORES[0]);
-      setIsStoreModalOpen(true);
-      return;
-    }
-    setScanning(true);
-    setIsPaused(false);
-    setErrorMessage(null);
-    setStockAlert(null);
-    setReconcileSuccess(null);
-  };
+  useEffect(() => {
+    const channel = supabase
+      .channel("store_inventory_feed")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "store_inventory" },
+        () => fetchInventory()
+      )
+      .subscribe();
 
-  const handleConfirmStore = () => {
-    if (!tempStore) return;
-    setSelectedStore(tempStore);
-    setIsStoreModalOpen(false);
-    setScanning(true);
-    setIsPaused(false);
-    setErrorMessage(null);
-    setStockAlert(null);
-    setReconcileSuccess(null);
-  };
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchInventory]);
 
-  const getSessionCountForStyle = (code: string) => {
-    return sessionScans
-      .filter((s) => s.styleCode === code && s.store === selectedStore)
-      .reduce((acc, curr) => acc + curr.quantity, 0);
-  };
+  const handleSelectManualProduct = async (item: StoreInventoryItem) => {
+    setSelectedManualItem(item);
 
-  const getConsolidatedSummary = () => {
-    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string }>();
-    for (const item of sessionScans) {
-      const key = `${item.styleCode}-${item.mode}`;
-      if (map.has(key)) {
-        map.get(key)!.totalQty += item.quantity;
-      } else {
-        map.set(key, {
-          styleName: item.styleName,
-          styleCode: item.styleCode,
-          sku: item.sku,
-          price: item.price,
-          totalQty: item.quantity,
-          mode: item.mode,
-        });
+    const styleCodeStr = String(item.style_code).trim();
+    let priceVal = cleanNumericPrice(item.price);
+    let descVal = item.description || "";
+
+    if (priceVal <= 0 || !descVal || descVal === "-") {
+      const foundMaster: any = productsMaster.find(
+        (p: any) => {
+          const mc = String(p.style_code || "").trim();
+          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
+        }
+      );
+      if (foundMaster) {
+        if (priceVal <= 0) {
+          priceVal = cleanNumericPrice(foundMaster.price || foundMaster.unit_price || foundMaster.srp || foundMaster.amount);
+        }
+        if (!descVal || descVal === "-") {
+          descVal = foundMaster.description || foundMaster.style_name || "";
+        }
       }
     }
-    return Array.from(map.values());
+
+    if (descVal && descVal !== "-") {
+      setSelectedManualItem({ ...item, description: descVal });
+    }
+
+    setManualPrice(priceVal > 0 ? String(priceVal) : "");
   };
 
-  const handleExportCSV = () => {
-    const summary = getConsolidatedSummary();
-    if (summary.length === 0) return;
+  const selectedMasterPrice = useMemo(() => {
+    if (!selectedManualItem) return 0;
+    return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 0;
+  }, [selectedManualItem, manualPrice]);
 
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Store,Transaction Mode,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
+  const handleRestockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!restockStyleCode.trim()) return;
 
-    summary.forEach((item) => {
-      const row = [
-        `"${selectedStore}"`,
-        `"${item.mode.toUpperCase()}"`,
-        `"${item.styleCode}"`,
-        `"${item.sku || '-'}"`,
-        `"${item.styleName.replace(/"/g, '""')}"`,
-        item.price.toFixed(2),
-        item.totalQty,
-      ].join(",");
-      csvContent += row + "\n";
-    });
+    setRestockSubmitting(true);
+    try {
+      const codeStr = String(restockStyleCode).trim();
+      const skuStr = restockSku ? String(restockSku).trim() : null;
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    const filename = `session_summary_${selectedStore.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}.csv`;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const { data: existing, error: checkErr } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", restockStore)
+        .eq("style_code", codeStr)
+        .maybeSingle();
+
+      if (checkErr) throw checkErr;
+
+      const now = new Date().toISOString();
+
+      if (existing) {
+        const newInitial = (Number(existing.initial_stock) || 0) + Number(restockQty);
+        const newCurrent = (Number(existing.current_stock) || 0) + Number(restockQty);
+
+        const { error: updateErr } = await supabase
+          .from("store_inventory")
+          .update({
+            initial_stock: newInitial,
+            current_stock: newCurrent,
+            sku: skuStr || existing.sku,
+            last_replenished_at: now,
+          })
+          .eq("id", existing.id);
+
+        if (updateErr) throw updateErr;
+      } else {
+        const { error: insertErr } = await supabase
+          .from("store_inventory")
+          .insert({
+            store: restockStore,
+            style_code: codeStr,
+            sku: skuStr,
+            initial_stock: Number(restockQty),
+            current_stock: Number(restockQty),
+            safety_stock: 5,
+            last_replenished_at: now,
+          });
+
+        if (insertErr) throw insertErr;
+      }
+
+      setIsRestockOpen(false);
+      setRestockStyleCode("");
+      setRestockSku("");
+      setRestockQty(10);
+      fetchInventory();
+    } catch (err) {
+      console.error("Restock failed:", err);
+      alert("Failed to process restock intake.");
+    } finally {
+      setRestockSubmitting(false);
+    }
   };
 
-  const handleReconcileStock = async (targetQty: number) => {
-    if (!lastScannedItem) return;
-    setReconciling(true);
-    setReconcileSuccess(null);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: "binary" });
+        const worksheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[worksheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        if (data.length < 2) {
+          alert("Uploaded file is empty or missing rows.");
+          return;
+        }
+
+        const headers = data[0].map((h: any) => String(h).trim().toLowerCase());
+        const storeIdx = headers.findIndex((h) => h.includes("store") || h.includes("location"));
+        const styleIdx = headers.findIndex((h) => h.includes("style") || h.includes("code"));
+        const skuIdx = headers.findIndex((h) => h.includes("sku"));
+        const qtyIdx = headers.findIndex((h) => h.includes("qty") || h.includes("quantity") || h.includes("stock") || h.includes("count"));
+
+        if (styleIdx === -1 || qtyIdx === -1) {
+          alert("Could not find required columns ('Style Code' and 'Quantity'). Please check template format.");
+          return;
+        }
+
+        const parsedItems: BulkImportItem[] = [];
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          if (!row || row.length === 0) continue;
+
+          const storeVal = storeIdx !== -1 && row[storeIdx] ? String(row[storeIdx]).trim() : bulkDefaultStore;
+          const styleVal = row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
+          const skuVal = skuIdx !== -1 && row[skuIdx] !== undefined && row[skuIdx] !== null ? String(row[skuIdx]).trim() : "";
+          const qtyVal = Number(row[qtyIdx]);
+
+          if (styleVal && !isNaN(qtyVal)) {
+            parsedItems.push({
+              store: storeVal || bulkDefaultStore,
+              style_code: styleVal,
+              sku: skuVal,
+              quantity: qtyVal,
+            });
+          }
+        }
+
+        setBulkPreview(parsedItems);
+        setIsBulkOpen(true);
+      } catch (err) {
+        console.error("Failed to parse file:", err);
+        alert("Failed to read spreadsheet file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleBulkSubmit = async () => {
+    if (bulkPreview.length === 0) return;
+
+    setBulkSubmitting(true);
+    try {
+      const now = new Date().toISOString();
+      const targetStore = bulkDefaultStore;
+
+      const { data: existingStoreRows, error: fetchErr } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", targetStore);
+
+      if (fetchErr) throw fetchErr;
+
+      const existingMap = new Map<string, any>();
+      if (existingStoreRows) {
+        existingStoreRows.forEach((row: any) => {
+          if (row.style_code) existingMap.set(String(row.style_code).trim(), row);
+        });
+      }
+
+      let successCount = 0;
+      let errorMessages: string[] = [];
+
+      for (const item of bulkPreview) {
+        const styleCodeStr = String(item.style_code).trim();
+        const skuStr = item.sku ? String(item.sku).trim() : null;
+
+        let existing = existingMap.get(styleCodeStr);
+        if (!existing && existingStoreRows) {
+          existing = existingStoreRows.find((row: any) => {
+            const rc = String(row.style_code || "").trim();
+            return rc === styleCodeStr || rc.includes(styleCodeStr) || styleCodeStr.includes(rc);
+          });
+        }
+
+        if (existing) {
+          const newInitial = Number(item.quantity);
+          const currentOut = Math.max(0, (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0));
+          const newCurrent = Math.max(0, newInitial - currentOut);
+
+          const { error: updateErr } = await supabase
+            .from("store_inventory")
+            .update({
+              initial_stock: newInitial,
+              current_stock: newCurrent,
+              sku: skuStr || existing.sku,
+              last_replenished_at: now,
+            })
+            .eq("id", existing.id);
+
+          if (updateErr) {
+            errorMessages.push(updateErr.message);
+          } else {
+            successCount++;
+          }
+        } else {
+          const { error: insertErr } = await supabase
+            .from("store_inventory")
+            .insert({
+              store: targetStore,
+              style_code: styleCodeStr,
+              sku: skuStr,
+              initial_stock: Number(item.quantity),
+              current_stock: Number(item.quantity),
+              safety_stock: 5,
+              last_replenished_at: now,
+            });
+
+          if (insertErr) {
+            if (insertErr.code === "23505") {
+              const { data: refetchRow } = await supabase
+                .from("store_inventory")
+                .select("*")
+                .eq("store", targetStore)
+                .eq("style_code", styleCodeStr)
+                .maybeSingle();
+
+              if (refetchRow) {
+                const newInitial = Number(item.quantity);
+                const currentOut = Math.max(0, (Number(refetchRow.initial_stock) || 0) - (Number(refetchRow.current_stock) || 0));
+                const newCurrent = Math.max(0, newInitial - currentOut);
+                const { error: retryErr } = await supabase
+                  .from("store_inventory")
+                  .update({
+                    initial_stock: newInitial,
+                    current_stock: newCurrent,
+                    sku: skuStr || refetchRow.sku,
+                    last_replenished_at: now,
+                  })
+                  .eq("id", refetchRow.id);
+
+                if (!retryErr) {
+                  successCount++;
+                  continue;
+                }
+              }
+            }
+            errorMessages.push(insertErr.message);
+          } else {
+            successCount++;
+          }
+        }
+      }
+
+      setIsBulkOpen(false);
+      setBulkPreview([]);
+      fetchInventory();
+      
+      if (errorMessages.length > 0) {
+        alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.`);
+      } else {
+        alert(`Bulk delivery committed! Successfully processed ${successCount} items to ${targetStore}.`);
+      }
+    } catch (err: any) {
+      console.error("Bulk upload failed:", err);
+      alert(`Bulk upload error: ${err?.message || "An error occurred"}`);
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
+  const handleManualSaleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManualItem || manualQty <= 0) return;
+
+    const nowTs = Date.now();
+    if (manualSubmitting || nowTs - lastSubmittedTime < 3000) {
+      return;
+    }
+
+    setManualSubmitting(true);
+    setManualErrorMsg("");
+    setManualSuccessMsg("");
 
     try {
-      const cleanStyle = lastScannedItem.styleCode?.trim() || "";
-      const cleanSku = lastScannedItem.sku !== "-" ? lastScannedItem.sku?.trim() : "";
-
-      const updatePayload = {
-        current_stock: targetQty,
-        last_replenished_at: new Date().toISOString(),
-      };
-
-      if (!isOnline) {
-        queueOfflineTask({
-          type: "inventory_reconcile",
-          payload: { store: selectedStore, styleCode: cleanStyle, updateData: updatePayload }
-        });
-        setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
-        setReconcileSuccess(`Stock updated locally (Offline) to ${targetQty} pcs!`);
-        setReconciling(false);
+      if (selectedManualItem.current_stock < manualQty) {
+        setManualErrorMsg(`Insufficient stock! Available balance is ${selectedManualItem.current_stock} pcs.`);
+        setManualSubmitting(false);
         return;
       }
 
-      let invQuery = supabase
+      const styleCodeStr = String(selectedManualItem.style_code).trim();
+      const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
+
+      let masterProd: any = productsMaster.find(
+        (p: any) => {
+          const mc = String(p.style_code || "").trim();
+          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
+        }
+      );
+
+      const p = masterProd || {};
+
+      const finalStyleName = p.style_name || selectedManualItem.style_name || styleCodeStr;
+      const finalDescription = p.description || selectedManualItem.description || finalStyleName;
+      const finalColor = p.color || (selectedManualItem.color !== "Default" ? selectedManualItem.color : "-");
+      const finalSize = p.size || (selectedManualItem.size !== "Free Size" ? selectedManualItem.size : "-");
+      const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
+
+      const newCurrentStock = selectedManualItem.current_stock - manualQty;
+      const newTotalSold = (selectedManualItem.total_out || 0) + manualQty;
+      const unitPrice = cleanNumericPrice(manualPrice) || selectedMasterPrice;
+      const totalRev = unitPrice * manualQty;
+      const saleTimestamp = manualDate ? new Date(manualDate).toISOString() : new Date().toISOString();
+
+      const { error: invErr } = await supabase
         .from("store_inventory")
-        .select("id")
-        .eq("store", selectedStore);
+        .update({ 
+          current_stock: newCurrentStock,
+          total_sold: newTotalSold
+        })
+        .eq("id", selectedManualItem.id);
 
-      if (cleanStyle) {
-        invQuery = invQuery.eq("style_code", cleanStyle);
-      } else if (cleanSku) {
-        invQuery = invQuery.eq("sku", cleanSku);
-      }
+      if (invErr) throw invErr;
 
-      const { data: invData } = await invQuery.maybeSingle();
+      const { error: logErr } = await supabase
+        .from("scanned_logs")
+        .insert({
+          store: manualStore,
+          transaction_mode: "sales",
+          style_code: styleCodeStr,
+          sku: skuStr || p.sku || "-",
+          style_name: finalStyleName,
+          description: finalDescription,
+          color: finalColor,
+          size: finalSize,
+          department: finalDept,
+          price: unitPrice,
+          quantity: manualQty,
+          revenue: totalRev,
+          scanned_at: saleTimestamp,
+        });
 
-      if (invData) {
-        const { error } = await supabase
-          .from("store_inventory")
-          .update(updatePayload)
-          .eq("id", invData.id);
+      if (logErr) throw logErr;
 
-        if (error) throw error;
-      } else {
-        await supabase.from("store_inventory").insert([
-          {
-            store: selectedStore,
-            style_code: cleanStyle,
-            sku: cleanSku || null,
-            initial_stock: targetQty,
-            current_stock: targetQty,
-            safety_stock: 5,
-            last_replenished_at: new Date().toISOString(),
-          },
-        ]);
-      }
+      setLastSubmittedTime(Date.now());
+      setManualSuccessMsg(`Successfully encoded sale for ${manualQty} pcs of [${styleCodeStr}]!`);
+      setSelectedManualItem(null);
+      setManualQty(1);
+      setManualPrice("");
+      fetchInventory();
 
-      setStockAlert((prev) => prev ? { ...prev, remainingStock: targetQty } : null);
-      setReconcileSuccess(`Stock updated to ${targetQty} pcs!`);
+      setTimeout(() => {
+        setIsManualModalOpen(false);
+        setManualSuccessMsg("");
+      }, 1500);
     } catch (err: any) {
-      alert("Failed to update stock: " + (err?.message || "Error occurred"));
+      console.error("Manual sale failed:", err);
+      setManualErrorMsg(err.message || "Failed to encode manual sale.");
     } finally {
-      setReconciling(false);
+      setManualSubmitting(false);
     }
   };
 
-  const handleScan = async (scannedBarcode: string) => {
-    setIsPaused(true);
-    setLoading(true);
-    setErrorMessage(null);
-    setStockAlert(null);
-    setReconcileSuccess(null);
+  const handleHeaderSort = (key: ColumnKey) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortKey(null);
+        setSortDirection("asc");
+      }
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  };
 
-    const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
-
-    let data: any = null;
-
-    if (isOnline) {
-      const res1 = await supabase
-        .from("products")
-        .select("*")
-        .eq("barcode", cleanCode)
-        .maybeSingle();
-      data = res1.data;
-
-      if (!data) {
-        const res2 = await supabase
-          .from("products")
-          .select("*")
-          .ilike("style_code", cleanCode)
-          .maybeSingle();
-        data = res2.data;
+  const processedItems = useMemo(() => {
+    const filtered = items.filter((item) => {
+      if (selectedStore !== "All Stores" && item.store.toLowerCase().trim() !== selectedStore.toLowerCase().trim()) {
+        return false;
       }
 
-      if (!data) {
-        const res3 = await supabase
-          .from("products")
-          .select("*")
-          .ilike("sku", cleanCode)
-          .maybeSingle();
-        data = res3.data;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        item.style_code?.toLowerCase().includes(q) ||
+        (item.style_name && item.style_name.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
+        (item.sku && item.sku.toLowerCase().includes(q)) ||
+        item.store.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (filterStockStatus === "LOW") {
+        return item.current_stock > 0 && item.current_stock <= item.safety_stock;
       }
-    }
+      if (filterStockStatus === "OUT") {
+        return item.current_stock <= 0;
+      }
 
-    if (!data) {
-      setLoading(false);
-      triggerScanFeedback("error");
-      setManualCode(cleanCode);
-      setManualForm((prev) => ({
-        ...prev,
-        styleCode: cleanCode,
-        sku: cleanCode,
-        styleName: `Item ${cleanCode}`,
-      }));
-      setErrorMessage(`Code "${cleanCode}" not found or offline.`);
-      return;
-    }
-
-    triggerScanFeedback("success");
-
-    const fetchedProduct: ProductDetails = {
-      styleCode: data.style_code || cleanCode,
-      sku: data.sku || "-",
-      styleName: data.style_name || "Unassigned Item",
-      description: data.description || "N/A",
-      color: data.color || "-",
-      category: data.category || "-",
-      department: data.department || "-",
-      size: data.size || "-",
-      price: Number(data.price) || 0,
-      quantity: 1,
-      barcode: data.barcode || cleanCode,
-    };
-
-    setLastScannedItem(fetchedProduct);
-
-    const now = new Date();
-    const formattedTimestamp = now.toLocaleTimeString("en-PH", {
-      timeZone: "Asia/Manila",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+      return true;
     });
 
-    const newSessionItem: SessionScannedProduct = {
-      ...fetchedProduct,
-      id: `${cleanCode}-${Date.now()}`,
-      store: selectedStore,
-      timestamp: formattedTimestamp,
-      mode: transactionMode,
-    };
+    if (!sortKey) return filtered;
 
-    setSessionScans((prev) => [newSessionItem, ...prev]);
+    return [...filtered].sort((a, b) => {
+      let valA: string | number | null;
+      let valB: string | number | null;
 
-    const cleanStyle = fetchedProduct.styleCode?.trim() || "";
-    const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
-
-    if (isOnline) {
-      try {
-        let invQuery = supabase
-          .from("store_inventory")
-          .select("*")
-          .eq("store", selectedStore);
-
-        if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
-        else if (cleanSku) invQuery = invQuery.eq("sku", cleanSku);
-
-        const { data: invData } = await invQuery.maybeSingle();
-
-        if (invData) {
-          if (transactionMode === "sales") {
-            // ATOMIC RPC: Physically impossible for pull_out to be touched or reset
-            await supabase.rpc("record_sale_transaction", {
-              target_store: selectedStore,
-              target_style_code: cleanStyle || cleanSku,
-            });
-          } else if (transactionMode === "pull_out") {
-            const currentStock = Number(invData.current_stock) || 0;
-            const currentPullOut = Number(invData.pull_out) || 0;
-            await supabase
-              .from("store_inventory")
-              .update({
-                current_stock: Math.max(0, currentStock - 1),
-                pull_out: currentPullOut + 1,
-                last_replenished_at: now.toISOString(),
-              })
-              .eq("id", invData.id);
-          } else if (transactionMode === "delivery") {
-            const currentStock = Number(invData.current_stock) || 0;
-            await supabase
-              .from("store_inventory")
-              .update({
-                current_stock: currentStock + 1,
-                last_replenished_at: now.toISOString(),
-              })
-              .eq("id", invData.id);
-          }
-
-          const { data: refreshed } = await supabase
-            .from("store_inventory")
-            .select("current_stock, safety_stock")
-            .eq("id", invData.id)
-            .maybeSingle();
-
-          const remaining = refreshed ? Number(refreshed.current_stock) : 0;
-          const safetyThreshold = Number(invData.safety_stock ?? 5);
-          setStockAlert({
-            type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
-            remainingStock: remaining,
-            safetyStock: safetyThreshold,
-          });
-        } else {
-          await supabase.from("store_inventory").insert([
-            {
-              store: selectedStore,
-              style_code: cleanStyle,
-              sku: cleanSku || null,
-              initial_stock: transactionMode === "delivery" ? 1 : 0,
-              current_stock: transactionMode === "delivery" ? 1 : 0,
-              pull_out: transactionMode === "pull_out" ? 1 : 0,
-              total_sold: transactionMode === "sales" ? 1 : 0,
-              safety_stock: 5,
-              last_replenished_at: now.toISOString(),
-            },
-          ]);
-          setStockAlert({ 
-            type: transactionMode === "delivery" ? "normal" : "out", 
-            remainingStock: transactionMode === "delivery" ? 1 : 0, 
-            safetyStock: 5 
-          });
-        }
-      } catch (err) {
-        console.warn("Stock update error:", err);
+      if (sortKey === "status") {
+        valA = a.current_stock <= 0 ? 0 : a.current_stock <= a.safety_stock ? 1 : 2;
+        valB = b.current_stock <= 0 ? 0 : b.current_stock <= b.safety_stock ? 1 : 2;
+      } else if (sortKey === "last_replenished_at") {
+        valA = a.last_replenished_at ? new Date(a.last_replenished_at).getTime() : 0;
+        valB = b.last_replenished_at ? new Date(b.last_replenished_at).getTime() : 0;
+      } else {
+        const dataKey = sortKey as Exclude<ColumnKey, "status">;
+        valA = a[dataKey] ?? null;
+        valB = b[dataKey] ?? null;
       }
 
-      const logPayload = {
-        store: selectedStore,
-        transaction_mode: transactionMode,
-        style_code: fetchedProduct.styleCode,
-        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-        style_name: fetchedProduct.styleName,
-        description: fetchedProduct.description,
-        color: fetchedProduct.color,
-        category: fetchedProduct.category,
-        department: fetchedProduct.department,
-        size: fetchedProduct.size,
-        price: fetchedProduct.price,
-        quantity: 1,
-        scanned_at: now.toISOString(),
-      };
+      if (typeof valA === "string") {
+        return sortDirection === "asc"
+          ? valA.localeCompare(typeof valB === "string" ? valB : "")
+          : (typeof valB === "string" ? valB : "").localeCompare(valA);
+      }
 
-      await supabase.from("scanned_logs").insert([logPayload]);
-    } else {
-      queueOfflineTask({
-        type: "log",
-        payload: {
-          store: selectedStore,
-          transaction_mode: transactionMode,
-          style_code: fetchedProduct.styleCode,
-          sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-          style_name: fetchedProduct.styleName,
-          description: fetchedProduct.description,
-          color: fetchedProduct.color,
-          category: fetchedProduct.category,
-          department: fetchedProduct.department,
-          size: fetchedProduct.size,
-          price: fetchedProduct.price,
-          quantity: 1,
-          scanned_at: now.toISOString(),
-        }
-      });
-      setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
-    }
+      return sortDirection === "asc"
+        ? (valA ?? 0) - (typeof valB === "number" ? valB : 0)
+        : (typeof valB === "number" ? valB : 0) - (valA ?? 0);
+    });
+  }, [items, selectedStore, searchQuery, filterStockStatus, sortKey, sortDirection]);
 
-    setLoading(false);
+  const alertItems = useMemo(() => {
+    return items.filter((i) => i.current_stock <= i.safety_stock);
+  }, [items]);
 
-    if (continuousMode) {
-      setTimeout(() => {
-        handleScanNext();
-      }, 1500);
-    }
-  };
+  const totalItems = processedItems.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedItems = useMemo(() => {
+    return processedItems.slice(startIndex, startIndex + pageSize);
+  }, [processedItems, startIndex, pageSize]);
 
-  const handleSaveManualProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingManual(true);
+  const stats = useMemo(() => {
+    const totalIn = items.reduce((acc, curr) => acc + curr.initial_stock, 0);
+    const totalOut = items.reduce((acc, curr) => acc + curr.total_out, 0);
+    const totalPulledOut = items.reduce((acc, curr) => acc + curr.total_pulled_out, 0);
+    const totalAvailable = items.reduce((acc, curr) => acc + curr.current_stock, 0);
+    const lowStockCount = items.filter(
+      (i) => i.current_stock > 0 && i.current_stock <= i.safety_stock
+    ).length;
+    const outOfStockCount = items.filter((i) => i.current_stock <= 0).length;
 
-    const newProductPayload = {
-      barcode: manualCode,
-      style_code: manualForm.styleCode || manualCode,
-      sku: manualForm.sku || manualCode,
-      style_name: manualForm.styleName,
-      description: manualForm.description,
-      color: manualForm.color,
-      category: manualForm.category,
-      department: manualForm.department,
-      size: manualForm.size,
-      price: parseFloat(manualForm.price) || 0.0,
-    };
+    return { totalIn, totalOut, totalPulledOut, totalAvailable, lowStockCount, outOfStockCount };
+  }, [items]);
 
-    const { error } = await supabase.from("products").insert([newProductPayload]);
+  const renderCellContent = (colId: ColumnKey, item: StoreInventoryItem) => {
+    const isOut = item.current_stock <= 0;
+    const isLow = item.current_stock > 0 && item.current_stock <= item.safety_stock;
 
-    setSavingManual(false);
-
-    if (error) {
-      alert("Failed to save product: " + error.message);
-      return;
-    }
-
-    setIsManualModalOpen(false);
-    setErrorMessage(null);
-    await handleScan(manualCode);
-  };
-
-  const handleScanNext = () => {
-    setErrorMessage(null);
-    setLastScannedItem(null);
-    setStockAlert(null);
-    setReconcileSuccess(null);
-    setIsPaused(false);
-  };
-
-  const handleRemoveFromSession = (id: string) => {
-    setSessionScans((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const clearCurrentSession = () => {
-    setSessionScans([]);
-  };
-
-  const totalSessionItems = sessionScans.length;
-
-  return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 max-w-2xl mx-auto antialiased">
-      <header className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-                Mobile Terminal
-              </span>
-              <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                isOnline 
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-              }`}>
-                {isOnline ? "🟢 Online" : `🔴 Offline (${offlineQueueCount} queued)`}
-              </span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Barcode / QR Scanner
-            </h1>
-          </div>
-
-          <button
-            onClick={handleOpenScanner}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20 cursor-pointer"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Scan Now</span>
-          </button>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Store Location <span className="text-red-400">*</span>
-              </label>
-              <select
-                value={selectedStore}
-                onChange={(e) => setSelectedStore(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                <option value="" disabled className="text-slate-500">
-                  -- Select Store --
-                </option>
-                {STORES.map((store) => (
-                  <option key={store} value={store} className="text-white font-normal">
-                    {store}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Transaction Mode <span className="text-emerald-400">*</span>
-              </label>
-              <select
-                value={transactionMode}
-                onChange={(e) => setTransactionMode(e.target.value as TransactionMode)}
-                className="w-full bg-slate-950 border border-slate-800 text-amber-400 font-bold rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                <option value="sales" className="text-white font-normal">🛍️ Sales (Checkout)</option>
-                <option value="audit" className="text-white font-normal">📋 Audit (Stock Check)</option>
-                <option value="delivery" className="text-white font-normal">📦 Delivery (Restock In)</option>
-                <option value="pull_out" className="text-white font-normal">🚚 Pull Out (Stock Removal)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-bold text-white flex items-center gap-1.5">
-              ⚡ Continuous Batch Mode
+    switch (colId) {
+      case "store":
+        return <span className="font-medium text-slate-300 text-left block">{item.store}</span>;
+      case "style_code":
+        return (
+          <div className="space-y-1 font-mono text-left">
+            <span className="font-bold text-emerald-400 block text-sm tracking-wide">
+              {item.style_name && item.style_name !== item.style_code ? item.style_name : (item.sku || item.style_code)}
             </span>
-            <p className="text-[11px] text-slate-400">
-              {continuousMode ? "Active: Auto-resumes camera after success" : "Manual: Requires tapping 'Scan Next'"}
-            </p>
+            <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center justify-start gap-1.5">
+              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-white border border-slate-800 font-mono font-bold">Code: {item.style_code}</span>
+              {item.color && item.color !== "Default" && <span className="text-slate-400">• {item.color}</span>}
+              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• Size: {item.size}</span>}
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setContinuousMode(!continuousMode)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer shadow-md ${
-              continuousMode 
-                ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20' 
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-            }`}
-          >
-            {continuousMode ? "ENABLED ON" : "TURN ON"}
-          </button>
-        </div>
-      </header>
-
-      <section className="my-6 flex-1">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Current Session Scans ({transactionMode.toUpperCase()})
-            </h2>
-            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] px-2 py-0.5 rounded-full">
-              {totalSessionItems}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            {totalSessionItems > 0 && (
-              <>
-                <button
-                  onClick={() => setIsSummaryModalOpen(true)}
-                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20 cursor-pointer"
-                >
-                  📊 View Summary
-                </button>
-                <button
-                  onClick={clearCurrentSession}
-                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition cursor-pointer"
-                >
-                  Clear List
-                </button>
-              </>
+        );
+      case "description":
+        return <span className="text-slate-200 font-sans text-left block">{item.description && item.description !== "-" ? item.description : "-"}</span>;
+      case "sku":
+        return <span className="text-blue-400 font-mono text-left block">{item.sku || "-"}</span>;
+      case "status":
+        return (
+          <div className="text-center w-full flex justify-center">
+            {isOut ? (
+              <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                Out of Stock
+              </span>
+            ) : isLow ? (
+              <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                Low Stock
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                In Stock
+              </span>
             )}
           </div>
-        </div>
+        );
+      case "initial_stock":
+        return <span className="font-mono text-slate-200 text-right block">{item.initial_stock}</span>;
+      case "total_out":
+        return (
+          <span className="font-mono font-bold text-emerald-400 text-right block">
+            {item.total_out > 0 ? `${item.total_out}` : "0"}
+          </span>
+        );
+      case "total_pulled_out":
+        return (
+          <span className="font-mono font-bold text-rose-400 text-right block">
+            {item.total_pulled_out > 0 ? `${item.total_pulled_out}` : "0"}
+          </span>
+        );
+      case "current_stock":
+        return (
+          <span
+            className={`font-bold font-mono text-sm text-right block ${
+              isOut ? "text-rose-400" : isLow ? "text-amber-400" : "text-indigo-400"
+            }`}
+          >
+            {item.current_stock}
+          </span>
+        );
+      case "safety_stock":
+        return <span className="text-slate-400 font-mono text-right block">{item.safety_stock}</span>;
+      case "last_replenished_at":
+        return (
+          <span className="text-slate-400 font-mono text-[11px] text-right block">
+            {item.last_replenished_at
+              ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
+              : "N/A"}
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
 
-        {sessionScans.length === 0 ? (
-          <div className="bg-slate-900/40 border border-slate-800/80 border-dashed rounded-3xl p-8 text-center my-auto space-y-2">
-            <p className="text-sm font-bold text-slate-300">No active scans right now</p>
-            <p className="text-xs text-slate-500 max-w-xs mx-auto">
-              Select your store and mode, then tap "Scan Now" to begin scanning.
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6 flex flex-col">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+            <Boxes className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white">Store Inventory Monitoring</h1>
+            <p className="text-xs text-slate-400">
+              Real-time multi-store inventory tracking across sales, deliveries, audits, and pull-outs
             </p>
           </div>
-        ) : (
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {sessionScans.map((item) => (
-              <div
-                key={item.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm"
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-white text-sm leading-tight">{item.styleName}</p>
-                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
-                      item.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
-                      item.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
-                      item.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
-                      'bg-amber-500/20 text-amber-400'
-                    }`}>
-                      {item.mode}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
-                    {item.sku && item.sku !== "-" && (
-                      <span className="font-mono text-blue-400 text-xs font-semibold">SKU: {item.sku}</span>
-                    )}
-                    <span className="font-mono text-amber-400 text-xs font-bold">
-                      ₱{item.price.toFixed(2)}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500">
-                    {item.store} • {item.timestamp}
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <span className="bg-slate-950 text-slate-300 border border-slate-800 font-bold text-xs px-2.5 py-1 rounded-lg">
-                    x{item.quantity}
-                  </span>
-                  <button
-                    onClick={() => handleRemoveFromSession(item.id)}
-                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition cursor-pointer"
-                    title="Remove from current session"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {isSummaryModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">
-                  Confirmation Overview
-                </span>
-                <h2 className="text-lg font-black text-white mt-1">Session Summary</h2>
-              </div>
-              <button
-                onClick={() => setIsSummaryModalOpen(false)}
-                className="text-slate-400 hover:text-white font-bold text-base p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
-              <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
-                <span>Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong></span>
-                <span className="text-amber-400 font-bold uppercase">Mode: {transactionMode}</span>
-              </div>
-
-              {getConsolidatedSummary().map((summaryItem) => (
-                <div key={`${summaryItem.styleCode}-${summaryItem.mode}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
-                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
-                        summaryItem.mode === 'sales' ? 'bg-emerald-500/20 text-emerald-400' :
-                        summaryItem.mode === 'delivery' ? 'bg-blue-500/20 text-blue-400' :
-                        summaryItem.mode === 'pull_out' ? 'bg-rose-500/20 text-rose-400' :
-                        'bg-amber-500/20 text-amber-400'
-                      }`}>
-                        {summaryItem.mode}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
-                      <span className="font-mono text-amber-400 font-bold">₱{summaryItem.price.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono font-black text-xs px-3 py-1 rounded-xl">
-                      {summaryItem.totalQty} pcs
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex space-x-2 pt-2 border-t border-slate-800">
-              <button
-                onClick={handleExportCSV}
-                className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
-              >
-                📥 Export CSV
-              </button>
-              <button
-                onClick={() => setIsSummaryModalOpen(false)}
-                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
-              >
-                Confirm & Close
-              </button>
-            </div>
-          </div>
         </div>
-      )}
 
-      {isStoreModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 text-left">
-            <div className="space-y-1">
-              <h2 className="text-lg font-bold text-white">Select Current Store</h2>
-              <p className="text-xs text-slate-400">Please choose a store before opening camera.</p>
-            </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setIsAlertModalOpen(true)}
+            className="relative flex items-center gap-1.5 bg-rose-600/25 hover:bg-rose-600/35 text-rose-300 border border-rose-500/40 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer"
+          >
+            <Bell className="w-4 h-4 text-rose-400" />
+            <span>Stock Alerts</span>
+            {alertItems.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md animate-pulse">
+                {alertItems.length}
+              </span>
+            )}
+          </button>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store</label>
-              <select
-                value={tempStore}
-                onChange={(e) => setTempStore(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 font-semibold cursor-pointer"
-              >
-                {STORES.map((store) => (
-                  <option key={store} value={store}>
-                    {store}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <button
+            onClick={() => setIsManualModalOpen(true)}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-emerald-900/20"
+          >
+            <ShoppingBag className="w-4 h-4" />
+            <span>Manual Sale</span>
+          </button>
 
-            <div className="flex space-x-2 pt-2">
-              <button
-                onClick={handleConfirmStore}
-                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
-              >
-                Confirm & Open Scanner
-              </button>
-              <button
-                onClick={() => setIsStoreModalOpen(false)}
-                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setIsRestockOpen(true)}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-indigo-900/20"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Single Delivery</span>
+          </button>
+
+          <label className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-sky-900/20">
+            <Upload className="w-4 h-4" />
+            <span>Bulk Upload</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv, .xlsx, .xls"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
         </div>
-      )}
+      </div>
 
-      {scanning && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
-          <div className="relative w-full max-w-md bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
-            <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs px-4">
-              <span className="text-slate-400 font-medium">Store: <strong className="text-emerald-400">{selectedStore}</strong></span>
-              <div className="flex items-center gap-2">
-                {continuousMode && (
-                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold text-[9px]">
-                    Continuous
-                  </span>
-                )}
-                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-2 py-0.5 rounded uppercase text-[10px]">
-                  Mode: {transactionMode}
-                </span>
-              </div>
-            </div>
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Delivered</p>
+          <p className="text-2xl font-black text-white mt-1 font-mono">{stats.totalIn}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sold</p>
+          <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">{stats.totalOut}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Pulled Out</p>
+          <p className="text-2xl font-black text-rose-400 mt-1 font-mono">{stats.totalPulledOut}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Available Stock</p>
+          <p className="text-2xl font-black text-indigo-400 mt-1 font-mono">{stats.totalAvailable}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Low Stock Items</p>
+          <p className="text-2xl font-black text-amber-400 mt-1 font-mono">{stats.lowStockCount}</p>
+        </div>
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-md">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Out of Stock</p>
+          <p className="text-2xl font-black text-rose-500 mt-1 font-mono">{stats.outOfStockCount}</p>
+        </div>
+      </div>
 
-            <div className="relative aspect-square bg-black">
-              <Scanner onScan={handleScan} isPaused={isPaused} />
-
-              {loading && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full border border-slate-800 backdrop-blur-md animate-pulse">
-                  Verifying & Processing ({transactionMode.toUpperCase()})...
-                </div>
-              )}
-
-              {isPaused && (
-                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-5 text-center space-y-3 overflow-y-auto">
-                  {errorMessage ? (
-                    <div className="space-y-3 my-auto">
-                      <div className="w-14 h-14 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
-                        ✕
-                      </div>
-                      <h3 className="text-base font-bold text-white">Item Not Found</h3>
-                      <p className="text-xs text-red-300/80 max-w-xs">{errorMessage}</p>
-
-                      <button
-                        onClick={() => setIsManualModalOpen(true)}
-                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 mt-2 cursor-pointer"
-                      >
-                        + Add Manually & Register
-                      </button>
-                    </div>
-                  ) : (
-                    lastScannedItem && (
-                      <div className="w-full space-y-3 my-auto text-left">
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                            ✓ {transactionMode.toUpperCase()} Processed {continuousMode && "(Auto-resuming...)"}
-                          </span>
-                          <span className="text-xs font-mono text-emerald-400 font-bold">
-                            {lastScannedItem.styleCode}
-                          </span>
-                        </div>
-
-                        {transactionMode === "audit" && stockAlert && (() => {
-                          const systemStock = stockAlert.remainingStock;
-                          const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
-                          const variance = countedStock - systemStock;
-
-                          return (
-                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
-                                  Audit Stock Comparison
-                                </span>
-                                {reconcileSuccess && (
-                                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                                    ✓ {reconcileSuccess}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
-                                  <span className="text-white font-bold text-base">{systemStock}</span>
-                                </div>
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Counted</span>
-                                  <span className="text-emerald-400 font-bold text-base">{countedStock}</span>
-                                </div>
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Variance</span>
-                                  <span className={`font-bold text-base ${
-                                    variance === 0 ? 'text-emerald-400' : variance > 0 ? 'text-amber-400' : 'text-rose-400'
-                                  }`}>
-                                    {variance > 0 ? `+${variance}` : variance}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {variance !== 0 && !reconcileSuccess && (
-                                <button
-                                  type="button"
-                                  disabled={reconciling}
-                                  onClick={() => handleReconcileStock(countedStock)}
-                                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
-                                >
-                                  {reconciling ? "Reconciling..." : `⚡ Reconcile Database to ${countedStock} pcs`}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {transactionMode === "pull_out" && stockAlert && (
-                          <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
-                            <div className="flex items-center gap-2.5">
-                              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold text-sm">
-                                🚚
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold uppercase text-rose-400 tracking-wider">
-                                  Pull Out Stock Status
-                                </p>
-                                <p className="text-slate-300 text-[11px]">
-                                  Deducted 1 unit from inventory
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Remaining Stock</span>
-                              <span className="text-rose-400 font-mono font-black text-base">
-                                {stockAlert.remainingStock} pcs
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "out" && (
-                          <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
-                            <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
-                              ⚠
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-black uppercase text-rose-400 tracking-wider">
-                                Depleted / Out of Stock
-                              </p>
-                              <p className="text-slate-200 text-[11px]">
-                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>!
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "low" && (
-                          <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
-                            <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
-                              ⚠
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-black uppercase text-amber-300 tracking-wider">
-                                Low Stock Alert
-                              </p>
-                              <p className="text-slate-200 text-[11px]">
-                                Only <strong className="text-amber-300 font-bold">{stockAlert.remainingStock} units</strong> left on shelf (Safety Level: {stockAlert.safetyStock} pcs).
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        <div>
-                          <h3 className="text-base font-bold text-white leading-snug">
-                            {lastScannedItem.styleName}
-                          </h3>
-                          {lastScannedItem.description && lastScannedItem.description !== "N/A" && (
-                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                              {lastScannedItem.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              SKU
-                            </span>
-                            <span className="text-blue-400 font-mono font-bold text-sm truncate block">
-                              {lastScannedItem.sku}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Current Stock
-                            </span>
-                            <span className="text-emerald-400 font-mono font-extrabold text-sm truncate block">
-                              {stockAlert ? `${stockAlert.remainingStock} pcs` : "N/A"}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Price
-                            </span>
-                            <span className="text-amber-400 font-mono font-bold text-sm truncate block">
-                              ₱{lastScannedItem.price.toFixed(2)}
-                            </span>
-                          </div>
-
-                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Size / Color
-                            </span>
-                            <span className="text-slate-200 font-semibold truncate block">
-                              {lastScannedItem.size} • {lastScannedItem.color}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
-                    <button
-                      onClick={handleScanNext}
-                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
-                    >
-                      Scan Next
-                    </button>
-                    <button
-                      onClick={() => setScanning(false)}
-                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => setScanning(false)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60 cursor-pointer"
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 flex-1">
+          <div className="relative min-w-[220px]">
+            <select
+              value={selectedStore}
+              onChange={(e) => setSelectedStore(e.target.value)}
+              className="w-full bg-slate-950 text-white border border-slate-700 px-3 py-2.5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
-              Close Camera View
-            </button>
+              {STORES.map((st) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search style code, description, name, SKU..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-4 py-2.5 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+            />
           </div>
         </div>
-      )}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFilterStockStatus("ALL")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "ALL" ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilterStockStatus("LOW")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "LOW" ? 'bg-amber-600 text-slate-950' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+          >
+            Low Stock
+          </button>
+          <button
+            onClick={() => setFilterStockStatus("OUT")}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "OUT" ? 'bg-rose-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+          >
+            Out of Stock
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col flex-1">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-800 sticky top-0 z-20">
+              <tr>
+                {columns.map((col) => (
+                  <th
+                    key={col.id}
+                    onClick={() => col.sortable && handleHeaderSort(col.id)}
+                    className={`px-4 py-3.5 cursor-pointer hover:text-white transition select-none ${col.headerBg || ''} ${
+                      col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
+                    }`}
+                  >
+                    <div className={`flex items-center gap-1.5 ${col.align === "right" ? "justify-end" : col.align === "center" ? "justify-center" : "justify-start"}`}>
+                      <span>{col.label}</span>
+                      {col.sortable && (
+                        <ArrowUpDown className={`w-3 h-3 ${sortKey === col.id ? "text-indigo-400" : "text-slate-600"}`} />
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono">
+              {loading ? (
+                <tr>
+                  <td colSpan={columns.length} className="p-16 text-center text-slate-500">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500 mb-2" />
+                    Loading store inventory data...
+                  </td>
+                </tr>
+              ) : paginatedItems.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="p-16 text-center text-slate-500 italic font-sans">
+                    No inventory records found for the selected store or search filter.
+                  </td>
+                </tr>
+              ) : (
+                paginatedItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                    {columns.map((col) => (
+                      <td
+                        key={col.id}
+                        className={`px-4 py-3.5 ${
+                          col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
+                        }`}
+                      >
+                        {renderCellContent(col.id, item)}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-5 py-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 sticky bottom-0 z-30">
+          <div className="text-xs text-slate-400 font-mono">
+            Showing <span className="font-bold text-white">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
+            <span className="font-bold text-white">{Math.min(startIndex + pageSize, totalItems)}</span> of{" "}
+            <span className="font-bold text-white">{totalItems}</span> entries
+          </div>
+
+          <div className="flex items-center gap-3">
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none cursor-pointer"
+            >
+              <option value={10}>10 rows</option>
+              <option value={25}>25 rows</option>
+              <option value={50}>50 rows</option>
+              <option value={100}>100 rows</option>
+            </select>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-bold text-slate-300 px-3 font-mono">
+                {currentPage} / {totalPages || 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {isManualModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-left">
-            <div>
-              <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                New Product Registration
-              </span>
-              <h2 className="text-lg font-black text-white mt-1">Add Unlisted Barcode</h2>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">Code: {manualCode}</p>
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5 text-emerald-400">
+                <ShoppingBag className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white uppercase">Encode Manual Sale</h3>
+              </div>
+              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveManualProduct} className="space-y-3 text-xs">
+            {manualSuccessMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-3.5 rounded-xl text-xs font-bold">
+                {manualSuccessMsg}
+              </div>
+            )}
+
+            {manualErrorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3.5 rounded-xl text-xs font-bold">
+                {manualErrorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleManualSaleSubmit} className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Product / Style Name <span className="text-red-400">*</span>
-                </label>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Select Store Location</label>
+                <select
+                  value={manualStore}
+                  onChange={(e) => {
+                    setManualStore(e.target.value);
+                    setSelectedManualItem(null);
+                    setManualPrice("");
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
+                >
+                  {STORES.filter(s => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Search Product by Style Code or SKU</label>
                 <input
                   type="text"
-                  required
-                  value={manualForm.styleName}
-                  onChange={(e) => setManualForm({ ...manualForm, styleName: e.target.value })}
-                  placeholder="e.g. Classic Men Boxer Brief"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                  placeholder="Type to filter inventory..."
+                  value={manualSearchQuery}
+                  onChange={(e) => setManualSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white font-mono mb-2"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Style Code
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.styleCode}
-                    onChange={(e) => setManualForm({ ...manualForm, styleCode: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    SKU
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.sku}
-                    onChange={(e) => setManualForm({ ...manualForm, sku: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
+                <div className="max-h-36 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
+                  {items
+                    .filter((i) => i.store.toLowerCase().trim() === manualStore.toLowerCase().trim() && (
+                      i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
+                      (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                      (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                      (i.description && i.description.toLowerCase().includes(manualSearchQuery.toLowerCase()))
+                    ))
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => handleSelectManualProduct(item)}
+                        className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${selectedManualItem?.id === item.id ? 'bg-indigo-600/30 border-l-4 border-indigo-500 text-white' : 'hover:bg-slate-900 text-slate-300'}`}
+                      >
+                        <div>
+                          <span className="font-bold text-emerald-400">{item.description && item.description !== "-" ? item.description : item.style_name || item.style_code}</span>
+                          <span className="text-slate-400 block text-[10px]">Code: {item.style_code} • SKU: {item.sku || '-'}</span>
+                        </div>
+                        <span className="font-bold text-indigo-300">Stock: {item.current_stock}</span>
+                      </div>
+                    ))}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Department
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.department}
-                    onChange={(e) => setManualForm({ ...manualForm, department: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
+              {selectedManualItem && (
+                <div className="bg-slate-950 border border-indigo-500/30 p-3.5 rounded-xl space-y-2 text-xs font-mono">
+                  <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_code}</p>
+                  <p className="text-white text-xs font-sans font-semibold">Description: {selectedManualItem.description || selectedManualItem.style_name || 'N/A'}</p>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300 pt-1">
+                    <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
+                    <div>Catalog Price: <span className="text-emerald-400 font-bold">{selectedMasterPrice > 0 ? `₱${selectedMasterPrice.toFixed(2)}` : 'Not Set'}</span></div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Category
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.category}
-                    onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+              )}
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Color
-                  </label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity Sold</label>
                   <input
-                    type="text"
-                    value={manualForm.color}
-                    onChange={(e) => setManualForm({ ...manualForm, color: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    type="number"
+                    min={1}
+                    value={manualQty}
+                    onChange={(e) => setManualQty(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Size
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.size}
-                    onChange={(e) => setManualForm({ ...manualForm, size: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Price (₱)
-                  </label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Custom Price (₱)</label>
                   <input
                     type="number"
                     step="0.01"
-                    required
-                    value={manualForm.price}
-                    onChange={(e) => setManualForm({ ...manualForm, price: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-amber-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                    placeholder="Enter price..."
+                    value={manualPrice}
+                    onChange={(e) => setManualPrice(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
                   />
                 </div>
               </div>
 
-              <div className="flex space-x-2 pt-3">
-                <button
-                  type="submit"
-                  disabled={savingManual}
-                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
-                >
-                  {savingManual ? "Saving to Database..." : "Save & Process Scan"}
-                </button>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Sale Date & Time</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <input
+                    type="datetime-local"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsManualModalOpen(false)}
-                  className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualSubmitting || !selectedManualItem}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-xl text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {manualSubmitting ? "Processing..." : "Commit Sale"}
                 </button>
               </div>
             </form>
@@ -1262,9 +1227,213 @@ export default function Home() {
         </div>
       )}
 
-      <footer className="text-center py-2 text-[10px] text-slate-600 tracking-wider uppercase">
-        Active Session Log ({transactionMode})
-      </footer>
-    </main>
+      {isRestockOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
+              <button onClick={() => setIsRestockOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRestockSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Store Location</label>
+                <select
+                  value={restockStore}
+                  onChange={(e) => setRestockStore(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
+                >
+                  {STORES.filter(s => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Style Code</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 30765663011"
+                  value={restockStyleCode}
+                  onChange={(e) => setRestockStyleCode(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">SKU (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 566301"
+                  value={restockSku}
+                  onChange={(e) => setRestockSku(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity to Add</label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsRestockOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={restockSubmitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {restockSubmitting ? "Saving..." : "Commit Delivery"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isBulkOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white uppercase">Bulk Delivery Preview</h3>
+                <p className="text-xs text-slate-400">Reviewing {bulkPreview.length} items parsed from spreadsheet</p>
+              </div>
+              <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Target Store Location for Bulk Upload</label>
+              <select
+                value={bulkDefaultStore}
+                onChange={(e) => setBulkDefaultStore(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
+              >
+                {STORES.filter(s => s !== "All Stores").map((st) => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-60">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="px-3 py-2.5">Style Code</th>
+                    <th className="px-3 py-2.5">SKU</th>
+                    <th className="px-3 py-2.5 text-right">Quantity</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {bulkPreview.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-800/40">
+                      <td className="px-3 py-2 text-emerald-400 font-bold">{item.style_code}</td>
+                      <td className="px-3 py-2 text-blue-400">{item.sku || "-"}</td>
+                      <td className="px-3 py-2 text-right font-bold text-white">{item.quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsBulkOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkSubmitting || bulkPreview.length === 0}
+                onClick={handleBulkSubmit}
+                className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-black rounded-xl text-xs cursor-pointer disabled:opacity-50"
+              >
+                {bulkSubmitting ? "Committing..." : `Commit ${bulkPreview.length} Items`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAlertModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Bell className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white uppercase">Low & Out of Stock Alerts ({alertItems.length})</h3>
+              </div>
+              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-96">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="px-3 py-2.5">Store</th>
+                    <th className="px-3 py-2.5">Style / Item</th>
+                    <th className="px-3 py-2.5 text-center">Status</th>
+                    <th className="px-3 py-2.5 text-right">Available</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {alertItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-10 text-center text-slate-500 font-sans italic">All store inventories are above safety stock levels.</td>
+                    </tr>
+                  ) : (
+                    alertItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-800/40">
+                        <td className="px-3 py-2.5 text-slate-300">{item.store}</td>
+                        <td className="px-3 py-2.5 text-emerald-400 font-bold">{item.style_name || item.style_code}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          {item.current_stock <= 0 ? (
+                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Out of Stock</span>
+                          ) : (
+                            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Low Stock</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold text-rose-400">{item.current_stock}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setIsAlertModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

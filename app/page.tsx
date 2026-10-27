@@ -426,34 +426,41 @@ export default function Home() {
         const { data: invData } = await invQuery.maybeSingle();
 
         if (invData) {
-          const currentStock = Number(invData.current_stock) || 0;
-          const currentPullOut = Number(invData.pull_out) || 0;
-          const currentTotalSold = Number(invData.total_sold) || 0;
-
-          // Target payload specifically per transaction mode to NEVER overwrite un-modified columns
-          const updatePayload: Record<string, any> = {};
-
           if (transactionMode === "sales") {
-            updatePayload.current_stock = Math.max(0, currentStock - 1);
-            updatePayload.total_sold = currentTotalSold + 1;
-            // DO NOT include pull_out here so Supabase never touches or resets pull_out
+            // ATOMIC RPC: Physically impossible for pull_out to be touched or reset
+            await supabase.rpc("record_sale_transaction", {
+              target_store: selectedStore,
+              target_style_code: cleanStyle || cleanSku,
+            });
           } else if (transactionMode === "pull_out") {
-            updatePayload.current_stock = Math.max(0, currentStock - 1);
-            updatePayload.pull_out = currentPullOut + 1;
-            updatePayload.last_replenished_at = now.toISOString();
-          } else if (transactionMode === "delivery") {
-            updatePayload.current_stock = currentStock + 1;
-            updatePayload.last_replenished_at = now.toISOString();
-          }
-
-          if (Object.keys(updatePayload).length > 0) {
+            const currentStock = Number(invData.current_stock) || 0;
+            const currentPullOut = Number(invData.pull_out) || 0;
             await supabase
               .from("store_inventory")
-              .update(updatePayload)
+              .update({
+                current_stock: Math.max(0, currentStock - 1),
+                pull_out: currentPullOut + 1,
+                last_replenished_at: now.toISOString(),
+              })
+              .eq("id", invData.id);
+          } else if (transactionMode === "delivery") {
+            const currentStock = Number(invData.current_stock) || 0;
+            await supabase
+              .from("store_inventory")
+              .update({
+                current_stock: currentStock + 1,
+                last_replenished_at: now.toISOString(),
+              })
               .eq("id", invData.id);
           }
 
-          const remaining = updatePayload.current_stock ?? currentStock;
+          const { data: refreshed } = await supabase
+            .from("store_inventory")
+            .select("current_stock, safety_stock")
+            .eq("id", invData.id)
+            .maybeSingle();
+
+          const remaining = refreshed ? Number(refreshed.current_stock) : 0;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
