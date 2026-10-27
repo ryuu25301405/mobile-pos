@@ -464,19 +464,24 @@ export default function Home() {
           const remaining = refreshed ? Number(refreshed.current_stock) : Math.max(0, (Number(invData.current_stock) || 0) - 1);
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           
+          // Calculate session mode count including the newly added item
+          const updatedSessionCount = sessionScans.filter(
+            (s) => s.styleCode === fetchedProduct.styleCode && s.store === selectedStore && s.mode === transactionMode
+          ).length + 1;
+
           let currentActiveCount = remaining;
           if (transactionMode === "sales") {
             currentActiveCount = refreshed?.total_sold !== undefined && refreshed?.total_sold !== null 
               ? Number(refreshed.total_sold) 
-              : (Number(invData.total_sold) || 0) + 1;
+              : updatedSessionCount;
           } else if (transactionMode === "pull_out") {
             currentActiveCount = refreshed?.pull_out !== undefined && refreshed?.pull_out !== null 
               ? Number(refreshed.pull_out) 
-              : (Number(invData.pull_out) || 0) + 1;
+              : updatedSessionCount;
           } else if (transactionMode === "delivery") {
             currentActiveCount = refreshed?.initial_stock !== undefined && refreshed?.initial_stock !== null 
               ? Number(refreshed.initial_stock) 
-              : (Number(invData.initial_stock) || 0) + 1;
+              : updatedSessionCount;
           }
 
           setStockAlert({
