@@ -421,7 +421,7 @@ export default function Home() {
       try {
         let invQuery = supabase
           .from("store_inventory")
-          .select("id, current_stock, safety_stock, pull_out")
+          .select("id, current_stock, safety_stock, pull_out, total_sold")
           .eq("store", selectedStore);
 
         if (cleanStyle) invQuery = invQuery.eq("style_code", cleanStyle);
@@ -432,14 +432,17 @@ export default function Home() {
         if (invData) {
           const newCurrentStock = Math.max(0, Number(invData.current_stock) - 1);
           const currentPullOut = Number(invData.pull_out) || 0;
-          const newPullOut = transactionMode === "pull_out" ? currentPullOut + 1 : currentPullOut;
+          const currentTotalSold = Number(invData.total_sold) || 0;
 
           const updatePayload: any = {
             current_stock: newCurrentStock,
           };
+
           if (transactionMode === "pull_out") {
-            updatePayload.pull_out = newPullOut;
+            updatePayload.pull_out = currentPullOut + 1;
             updatePayload.last_replenished_at = now.toISOString();
+          } else if (transactionMode === "sales") {
+            updatePayload.total_sold = currentTotalSold + 1;
           }
 
           await supabase
@@ -454,7 +457,8 @@ export default function Home() {
             remainingStock: remaining,
             safetyStock: safetyThreshold,
           });
-        } else if (transactionMode === "pull_out") {
+        } else {
+          // If no row exists yet for this store/item, insert a new record
           await supabase.from("store_inventory").insert([
             {
               store: selectedStore,
@@ -462,7 +466,8 @@ export default function Home() {
               sku: cleanSku || null,
               initial_stock: 0,
               current_stock: 0,
-              pull_out: 1,
+              pull_out: transactionMode === "pull_out" ? 1 : 0,
+              total_sold: transactionMode === "sales" ? 1 : 0,
               safety_stock: 5,
               last_replenished_at: now.toISOString(),
             },
