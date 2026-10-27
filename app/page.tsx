@@ -50,6 +50,7 @@ interface StockAlertInfo {
   type: "out" | "low" | "normal";
   remainingStock: number;
   safetyStock: number;
+  activeCount?: number;
 }
 
 export default function Home() {
@@ -427,7 +428,6 @@ export default function Home() {
 
         if (invData) {
           if (transactionMode === "sales") {
-            // ATOMIC ID-BASED RPC: Physically targets only this exact row ID
             await supabase.rpc("record_sale_transaction_by_id", {
               target_id: invData.id,
             });
@@ -444,9 +444,11 @@ export default function Home() {
               .eq("id", invData.id);
           } else if (transactionMode === "delivery") {
             const currentStock = Number(invData.current_stock) || 0;
+            const currentInitial = Number(invData.initial_stock) || 0;
             await supabase
               .from("store_inventory")
               .update({
+                initial_stock: currentInitial + 1,
                 current_stock: currentStock + 1,
                 last_replenished_at: now.toISOString(),
               })
@@ -455,16 +457,23 @@ export default function Home() {
 
           const { data: refreshed } = await supabase
             .from("store_inventory")
-            .select("current_stock, safety_stock, pull_out, total_sold")
+            .select("current_stock, safety_stock, pull_out, total_sold, initial_stock")
             .eq("id", invData.id)
             .maybeSingle();
 
           const remaining = refreshed ? Number(refreshed.current_stock) : 0;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
+          
+          let currentActiveCount = remaining;
+          if (transactionMode === "sales") currentActiveCount = Number(refreshed?.total_sold || 0);
+          if (transactionMode === "pull_out") currentActiveCount = Number(refreshed?.pull_out || 0);
+          if (transactionMode === "delivery") currentActiveCount = Number(refreshed?.initial_stock || 0);
+
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
             remainingStock: remaining,
             safetyStock: safetyThreshold,
+            activeCount: currentActiveCount,
           });
         } else {
           await supabase.from("store_inventory").insert([
@@ -483,7 +492,8 @@ export default function Home() {
           setStockAlert({ 
             type: transactionMode === "delivery" ? "normal" : "out", 
             remainingStock: transactionMode === "delivery" ? 1 : 0, 
-            safetyStock: 5 
+            safetyStock: 5,
+            activeCount: 1,
           });
         }
       } catch (err) {
@@ -526,7 +536,7 @@ export default function Home() {
           scanned_at: now.toISOString(),
         }
       });
-      setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
+      setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5, activeCount: 1 });
     }
 
     setLoading(false);
@@ -1001,47 +1011,63 @@ export default function Home() {
                                   Pull Out Stock Status
                                 </p>
                                 <p className="text-slate-300 text-[11px]">
-                                  Deducted 1 unit from inventory
+                                  Total Pulled Out: <strong className="text-rose-400 font-bold">{stockAlert.activeCount} pcs</strong>
                                 </p>
                               </div>
                             </div>
                             <div className="text-right">
-                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Remaining Stock</span>
-                              <span className="text-rose-400 font-mono font-black text-base">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
+                              <span className="text-indigo-400 font-mono font-black text-base">
                                 {stockAlert.remainingStock} pcs
                               </span>
                             </div>
                           </div>
                         )}
 
-                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "out" && (
-                          <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
-                            <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-black text-sm">
-                              ⚠
+                        {transactionMode === "sales" && stockAlert && (
+                          <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl font-bold text-sm">
+                                🛍️
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider">
+                                  Sales Checkout Status
+                                </p>
+                                <p className="text-slate-300 text-[11px]">
+                                  Total Sold: <strong className="text-emerald-400 font-bold">{stockAlert.activeCount} pcs</strong>
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-[11px] font-black uppercase text-rose-400 tracking-wider">
-                                Depleted / Out of Stock
-                              </p>
-                              <p className="text-slate-200 text-[11px]">
-                                Available stock is now <strong className="text-rose-400 font-bold">{stockAlert.remainingStock} pcs</strong>!
-                              </p>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
+                              <span className="text-indigo-400 font-mono font-black text-base">
+                                {stockAlert.remainingStock} pcs
+                              </span>
                             </div>
                           </div>
                         )}
 
-                        {transactionMode !== "audit" && transactionMode !== "pull_out" && stockAlert && stockAlert.type === "low" && (
-                          <div className="p-3 bg-amber-950/80 border border-amber-500 rounded-2xl flex items-center gap-3 text-xs shadow-lg shadow-amber-950/50">
-                            <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl font-black text-sm">
-                              ⚠
+                        {transactionMode === "delivery" && stockAlert && (
+                          <div className="p-3 bg-slate-900 border border-blue-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-blue-500/20 text-blue-400 rounded-xl font-bold text-sm">
+                                📦
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase text-blue-400 tracking-wider">
+                                  Delivery Intake Status
+                                </p>
+                                <p className="text-slate-300 text-[11px]">
+                                  Total Delivered: <strong className="text-blue-400 font-bold">{stockAlert.activeCount} pcs</strong>
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-[11px] font-black uppercase text-amber-300 tracking-wider">
-                                Low Stock Alert
-                              </p>
-                              <p className="text-slate-200 text-[11px]">
-                                Only <strong className="text-amber-300 font-bold">{stockAlert.remainingStock} units</strong> left on shelf (Safety Level: {stockAlert.safetyStock} pcs).
-                              </p>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
+                              <span className="text-indigo-400 font-mono font-black text-base">
+                                {stockAlert.remainingStock} pcs
+                              </span>
                             </div>
                           </div>
                         )}
