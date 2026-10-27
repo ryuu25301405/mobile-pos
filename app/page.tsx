@@ -322,7 +322,7 @@ export default function Home() {
     }
   };
 
-  // Handle scan with dynamic behavior based on Transaction Mode
+  // Handle scan with dynamic behavior and universal logging for all transaction modes
   const handleScan = async (scannedBarcode: string) => {
     setIsPaused(true);
     setLoading(true);
@@ -416,7 +416,24 @@ export default function Home() {
     const cleanStyle = fetchedProduct.styleCode?.trim() || "";
     const cleanSku = fetchedProduct.sku !== "-" ? fetchedProduct.sku?.trim() : "";
 
-    // Inventory handling for Sales and Pull Out modes
+    // Standardized log payload containing transaction_mode for all modules to query
+    const baseLogPayload = {
+      store: selectedStore,
+      transaction_mode: transactionMode, // Saves the exact transaction mode identifier
+      style_code: fetchedProduct.styleCode,
+      sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+      style_name: fetchedProduct.styleName,
+      description: fetchedProduct.description,
+      color: fetchedProduct.color,
+      category: fetchedProduct.category,
+      department: fetchedProduct.department,
+      size: fetchedProduct.size,
+      price: fetchedProduct.price,
+      quantity: 1,
+      scanned_at: now.toISOString(),
+    };
+
+    // 1. Sales or Pull Out: Deduct stock and log transaction
     if ((transactionMode === "sales" || transactionMode === "pull_out") && isOnline) {
       try {
         let invQuery = supabase
@@ -448,27 +465,14 @@ export default function Home() {
         console.warn("Stock deduction error:", err);
       }
 
-      const logPayload = {
-        store: selectedStore,
-        style_code: fetchedProduct.styleCode,
-        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
-        style_name: fetchedProduct.styleName,
-        description: fetchedProduct.description,
-        color: fetchedProduct.color,
-        category: fetchedProduct.category,
-        department: fetchedProduct.department,
-        size: fetchedProduct.size,
-        price: fetchedProduct.price,
-        quantity: 1,
-        scanned_at: now.toISOString(),
-      };
-
       if (isOnline) {
-        await supabase.from("scanned_logs").insert([logPayload]);
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
       } else {
-        queueOfflineTask({ type: "log", payload: logPayload });
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
       }
-    } else if (transactionMode === "delivery" && isOnline) {
+    } 
+    // 2. Delivery: Restock in and log transaction
+    else if (transactionMode === "delivery" && isOnline) {
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -505,7 +509,15 @@ export default function Home() {
       } catch (err) {
         console.warn("Delivery update error:", err);
       }
-    } else if (transactionMode === "audit" && isOnline) {
+
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
+      }
+    } 
+    // 3. Audit: Stock check and log transaction
+    else if (transactionMode === "audit" && isOnline) {
       try {
         let invQuery = supabase
           .from("store_inventory")
@@ -531,8 +543,15 @@ export default function Home() {
       } catch (err) {
         console.warn("Audit stock query error:", err);
       }
+
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([baseLogPayload]);
+      } else {
+        queueOfflineTask({ type: "log", payload: baseLogPayload });
+      }
     } else if (!isOnline) {
       setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
+      queueOfflineTask({ type: "log", payload: baseLogPayload });
     }
 
     setLoading(false);
