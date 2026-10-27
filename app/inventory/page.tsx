@@ -210,45 +210,9 @@ export default function InventoryMonitoringPage() {
 
       const prodRes = await supabase.from("products").select("*");
       if (prodRes.error) throw prodRes.error;
+
       const prodData = (prodRes.data as any[]) || [];
       setProductsMaster(prodData);
-
-      // Fetch scanned logs to dynamically compute actual sales & pull-outs
-      let allLogsData: any[] = [];
-      let logPage = 0;
-      let fetchMoreLogs = true;
-      while (fetchMoreLogs) {
-        const { data: logChunk, error: logErr } = await supabase
-          .from("scanned_logs")
-          .select("store, style_code, transaction_mode, quantity")
-          .range(logPage * 1000, (logPage + 1) * 1000 - 1);
-
-        if (logErr) throw logErr;
-        if (logChunk && logChunk.length > 0) {
-          allLogsData = [...allLogsData, ...logChunk];
-          if (logChunk.length < 1000) fetchMoreLogs = false;
-          logPage++;
-        } else {
-          fetchMoreLogs = false;
-        }
-      }
-
-      const soldMap = new Map<string, number>();
-      const pullOutMap = new Map<string, number>();
-
-      allLogsData.forEach((log: any) => {
-        const storeKey = log.store ? log.store.trim().toLowerCase() : "";
-        const styleKey = log.style_code ? String(log.style_code).trim().toLowerCase() : "";
-        const compositeKey = `${storeKey}|${styleKey}`;
-        const qty = Number(log.quantity) || 1;
-        const mode = (log.transaction_mode || "").toLowerCase().trim();
-
-        if (mode === "sales" || mode === "sale") {
-          soldMap.set(compositeKey, (soldMap.get(compositeKey) || 0) + qty);
-        } else if (mode === "pull_out" || mode === "pullout") {
-          pullOutMap.set(compositeKey, (pullOutMap.get(compositeKey) || 0) + qty);
-        }
-      });
 
       const prodMap = new Map<string, any>();
       prodData.forEach((p) => {
@@ -275,14 +239,13 @@ export default function InventoryMonitoringPage() {
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "";
           const skuStr = row.sku ? String(row.sku).trim() : "";
           
-          const storeLookup = storeName.toLowerCase();
-          const styleLookup = styleCodeStr.toLowerCase();
-          const compositeKey = `${storeLookup}|${styleLookup}`;
+          const lookupKey1 = styleCodeStr.toLowerCase();
+          const lookupKey2 = skuStr.toLowerCase();
+          const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          const matchedProd = prodMap.get(styleLookup) || prodMap.get(skuStr.toLowerCase()) || {};
-
-          const computedTotalSold = soldMap.get(compositeKey) || (row.total_sold !== null && row.total_sold !== undefined ? Number(row.total_sold) : 0);
-          const computedPullOut = pullOutMap.get(compositeKey) || (row.pull_out !== null && row.pull_out !== undefined ? Number(row.pull_out) : 0);
+          // NULL-SAFE MAPPING: Robust coercion to prevent frontend display zeroing
+          const rawTotalSold = row.total_sold !== null && row.total_sold !== undefined ? Number(row.total_sold) : 0;
+          const rawPullOut = row.pull_out !== null && row.pull_out !== undefined ? Number(row.pull_out) : 0;
 
           return {
             id: String(row.id),
@@ -293,8 +256,8 @@ export default function InventoryMonitoringPage() {
             current_stock: Number(row.current_stock) || 0,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: computedTotalSold,
-            total_pulled_out: computedPullOut,
+            total_out: rawTotalSold,
+            total_pulled_out: rawPullOut,
             price: cleanNumericPrice(row.price) || matchedProd.price || 0,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: row.description || matchedProd.description || styleCodeStr,
