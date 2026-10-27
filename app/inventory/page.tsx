@@ -243,7 +243,6 @@ export default function InventoryMonitoringPage() {
           const lookupKey2 = skuStr.toLowerCase();
           const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          // Direct database column mapping
           const totalSoldVal = Number(row.total_sold) || 0;
           const totalPulledOutVal = Number(row.pull_out) || 0;
 
@@ -256,8 +255,8 @@ export default function InventoryMonitoringPage() {
             current_stock: Number(row.current_stock) || 0,
             safety_stock: row.safety_stock ?? 5,
             last_replenished_at: row.last_replenished_at,
-            total_out: totalSoldVal,         // Reads directly from total_sold
-            total_pulled_out: totalPulledOutVal, // Reads directly from pull_out
+            total_out: totalSoldVal,
+            total_pulled_out: totalPulledOutVal,
             price: cleanNumericPrice(row.price) || matchedProd.price || 0,
             style_name: row.style_name || matchedProd.style_name || styleCodeStr,
             description: row.description || matchedProd.description || styleCodeStr,
@@ -622,11 +621,13 @@ export default function InventoryMonitoringPage() {
       const totalRev = unitPrice * manualQty;
       const saleTimestamp = manualDate ? new Date(manualDate).toISOString() : new Date().toISOString();
 
+      // EXPLICITLY preserve pull_out so it never resets to 0 during manual sales
       const { error: invErr } = await supabase
         .from("store_inventory")
         .update({ 
           current_stock: newCurrentStock,
-          total_sold: newTotalSold
+          total_sold: newTotalSold,
+          pull_out: selectedManualItem.total_pulled_out
         })
         .eq("id", selectedManualItem.id);
 
