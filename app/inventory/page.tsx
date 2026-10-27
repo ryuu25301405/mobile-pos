@@ -268,7 +268,7 @@ export default function InventoryMonitoringPage() {
           const metricKey = `${storeName.toLowerCase()}|${styleCodeStr.toLowerCase()}`;
           const metrics = storeStyleMetrics[metricKey] || { pulledOut: 0 };
 
-          // Directly read total_sold from the column we added to store_inventory
+          // Directly read total_sold from the database column
           const totalSoldVal = Number(row.total_sold) || 0;
           const totalPulledOutVal = Number(row.pull_out) || metrics.pulledOut || 0;
 
@@ -1108,7 +1108,7 @@ export default function InventoryMonitoringPage() {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="bg-slate-900 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none"
+              className="bg-slate-900 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none cursor-pointer"
             >
               <option value={10}>10 rows</option>
               <option value={25}>25 rows</option>
@@ -1150,7 +1150,7 @@ export default function InventoryMonitoringPage() {
                 <ShoppingBag className="w-5 h-5" />
                 <h3 className="text-base font-bold text-white uppercase">Encode Manual Sale</h3>
               </div>
-              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1177,7 +1177,7 @@ export default function InventoryMonitoringPage() {
                     setSelectedManualItem(null);
                     setManualPrice("");
                   }}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
                 >
                   {STORES.filter(s => s !== "All Stores").map((st) => (
                     <option key={st} value={st}>{st}</option>
@@ -1261,7 +1261,7 @@ export default function InventoryMonitoringPage() {
                     type="datetime-local"
                     value={manualDate}
                     onChange={(e) => setManualDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-950 border border-slate-700 text-xs pl-10 pr-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
                   />
                 </div>
               </div>
@@ -1293,7 +1293,7 @@ export default function InventoryMonitoringPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
-              <button onClick={() => setIsRestockOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsRestockOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1304,7 +1304,7 @@ export default function InventoryMonitoringPage() {
                 <select
                   value={restockStore}
                   onChange={(e) => setRestockStore(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
                 >
                   {STORES.filter(s => s !== "All Stores").map((st) => (
                     <option key={st} value={st}>{st}</option>
@@ -1377,7 +1377,7 @@ export default function InventoryMonitoringPage() {
                 <h3 className="text-base font-bold text-white uppercase">Bulk Delivery Preview</h3>
                 <p className="text-xs text-slate-400">Reviewing {bulkPreview.length} items parsed from spreadsheet</p>
               </div>
-              <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1387,7 +1387,7 @@ export default function InventoryMonitoringPage() {
               <select
                 value={bulkDefaultStore}
                 onChange={(e) => setBulkDefaultStore(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold"
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
               >
                 {STORES.filter(s => s !== "All Stores").map((st) => (
                   <option key={st} value={st}>{st}</option>
@@ -1446,7 +1446,7 @@ export default function InventoryMonitoringPage() {
                 <Bell className="w-5 h-5" />
                 <h3 className="text-base font-bold text-white uppercase">Low & Out of Stock Alerts ({alertItems.length})</h3>
               </div>
-              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>

@@ -438,7 +438,7 @@ export default function Home() {
 
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
-            updatePayload.total_sold = currentTotalSold + 1;
+            updatePayload.total_sold = currentTotalSold + 1; // Properly increments total_sold
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
@@ -604,7 +604,7 @@ export default function Home() {
 
           <button
             onClick={handleOpenScanner}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20"
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center space-x-2 transition active:scale-95 shadow-lg shadow-emerald-500/20 cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -698,13 +698,13 @@ export default function Home() {
               <>
                 <button
                   onClick={() => setIsSummaryModalOpen(true)}
-                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20"
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20 cursor-pointer"
                 >
                   📊 View Summary
                 </button>
                 <button
                   onClick={clearCurrentSession}
-                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition"
+                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition cursor-pointer"
                 >
                   Clear List
                 </button>
@@ -759,7 +759,7 @@ export default function Home() {
                   </span>
                   <button
                     onClick={() => handleRemoveFromSession(item.id)}
-                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition"
+                    className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition cursor-pointer"
                     title="Remove from current session"
                   >
                     ✕
@@ -784,7 +784,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => setIsSummaryModalOpen(false)}
-                className="text-slate-400 hover:text-white font-bold text-base p-1"
+                className="text-slate-400 hover:text-white font-bold text-base p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -827,13 +827,13 @@ export default function Home() {
             <div className="flex space-x-2 pt-2 border-t border-slate-800">
               <button
                 onClick={handleExportCSV}
-                className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20"
+                className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
               >
                 📥 Export CSV
               </button>
               <button
                 onClick={() => setIsSummaryModalOpen(false)}
-                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
               >
                 Confirm & Close
               </button>
@@ -869,13 +869,13 @@ export default function Home() {
             <div className="flex space-x-2 pt-2">
               <button
                 onClick={handleConfirmStore}
-                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
               >
                 Confirm & Open Scanner
               </button>
               <button
                 onClick={() => setIsStoreModalOpen(false)}
-                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
               >
                 Cancel
               </button>
@@ -924,7 +924,7 @@ export default function Home() {
 
                       <button
                         onClick={() => setIsManualModalOpen(true)}
-                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 mt-2"
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 mt-2 cursor-pointer"
                       >
                         + Add Manually & Register
                       </button>
@@ -1108,13 +1108,13 @@ export default function Home() {
                   <div className="flex space-x-2 w-full pt-2 border-t border-slate-800">
                     <button
                       onClick={handleScanNext}
-                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                      className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
                     >
                       Scan Next
                     </button>
                     <button
                       onClick={() => setScanning(false)}
-                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                      className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
                     >
                       Done
                     </button>
@@ -1125,7 +1125,7 @@ export default function Home() {
 
             <button
               onClick={() => setScanning(false)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60"
+              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs border-t border-slate-700/60 cursor-pointer"
             >
               Close Camera View
             </button>
@@ -1252,14 +1252,14 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={savingManual}
-                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
                 >
                   {savingManual ? "Saving to Database..." : "Save & Process Scan"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsManualModalOpen(false)}
-                  className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white"
+                  className="py-3 px-4 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:text-white cursor-pointer"
                 >
                   Cancel
                 </button>
