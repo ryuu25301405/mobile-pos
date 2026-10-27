@@ -450,6 +450,7 @@ export default function Home() {
 
       const logPayload = {
         store: selectedStore,
+        transaction_mode: transactionMode, // <--- Added transaction_mode here
         style_code: fetchedProduct.styleCode,
         sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
         style_name: fetchedProduct.styleName,
@@ -505,6 +506,25 @@ export default function Home() {
       } catch (err) {
         console.warn("Delivery update error:", err);
       }
+
+      const logPayload = {
+        store: selectedStore,
+        transaction_mode: transactionMode, // <--- Also include for delivery logs if recorded
+        style_code: fetchedProduct.styleCode,
+        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+        style_name: fetchedProduct.styleName,
+        description: fetchedProduct.description,
+        color: fetchedProduct.color,
+        category: fetchedProduct.category,
+        department: fetchedProduct.department,
+        size: fetchedProduct.size,
+        price: fetchedProduct.price,
+        quantity: 1,
+        scanned_at: now.toISOString(),
+      };
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([logPayload]);
+      }
     } else if (transactionMode === "audit" && isOnline) {
       try {
         let invQuery = supabase
@@ -530,6 +550,25 @@ export default function Home() {
         }
       } catch (err) {
         console.warn("Audit stock query error:", err);
+      }
+
+      const logPayload = {
+        store: selectedStore,
+        transaction_mode: transactionMode, // <--- Also include for audit logs
+        style_code: fetchedProduct.styleCode,
+        sku: fetchedProduct.sku !== "-" ? fetchedProduct.sku : null,
+        style_name: fetchedProduct.styleName,
+        description: fetchedProduct.description,
+        color: fetchedProduct.color,
+        category: fetchedProduct.category,
+        department: fetchedProduct.department,
+        size: fetchedProduct.size,
+        price: fetchedProduct.price,
+        quantity: 1,
+        scanned_at: now.toISOString(),
+      };
+      if (isOnline) {
+        await supabase.from("scanned_logs").insert([logPayload]);
       }
     } else if (!isOnline) {
       setStockAlert({ type: "normal", remainingStock: 0, safetyStock: 5 });
