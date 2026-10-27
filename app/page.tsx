@@ -332,7 +332,6 @@ export default function Home() {
     const cleanCode = scannedBarcode.trim().replace(/[\r\n]+/g, "");
 
     let data: any = null;
-    let error: any = null;
 
     if (isOnline) {
       const res1 = await supabase
@@ -341,7 +340,6 @@ export default function Home() {
         .eq("barcode", cleanCode)
         .maybeSingle();
       data = res1.data;
-      error = res1.error;
 
       if (!data) {
         const res2 = await supabase
@@ -432,17 +430,13 @@ export default function Home() {
           const currentPullOut = Number(invData.pull_out) || 0;
           const currentTotalSold = Number(invData.total_sold) || 0;
 
-          // Explicitly preserve pull_out and total_sold together in every update
-          const updatePayload: Record<string, any> = {
-            current_stock: currentStock,
-            pull_out: currentPullOut,
-            total_sold: currentTotalSold,
-          };
+          // Target payload specifically per transaction mode to NEVER overwrite un-modified columns
+          const updatePayload: Record<string, any> = {};
 
           if (transactionMode === "sales") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.total_sold = currentTotalSold + 1;
-            updatePayload.pull_out = currentPullOut; // Force-keep pull_out during sales
+            // DO NOT include pull_out here so Supabase never touches or resets pull_out
           } else if (transactionMode === "pull_out") {
             updatePayload.current_stock = Math.max(0, currentStock - 1);
             updatePayload.pull_out = currentPullOut + 1;
@@ -452,12 +446,14 @@ export default function Home() {
             updatePayload.last_replenished_at = now.toISOString();
           }
 
-          await supabase
-            .from("store_inventory")
-            .update(updatePayload)
-            .eq("id", invData.id);
+          if (Object.keys(updatePayload).length > 0) {
+            await supabase
+              .from("store_inventory")
+              .update(updatePayload)
+              .eq("id", invData.id);
+          }
 
-          const remaining = updatePayload.current_stock;
+          const remaining = updatePayload.current_stock ?? currentStock;
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
