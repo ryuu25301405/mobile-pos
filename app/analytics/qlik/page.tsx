@@ -15,13 +15,10 @@ import {
   TrendingUp,
   DollarSign,
   ShoppingBag,
-  ChevronRight,
   Package,
   Search,
   Calendar,
   Download,
-  ArrowUpRight,
-  ArrowDownRight,
   ChevronDown,
   Bookmark,
   Trash2,
@@ -53,7 +50,8 @@ import {
   FileSpreadsheet,
   FileText,
   Tag,
-  History
+  History,
+  FileCheck
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -257,6 +255,7 @@ export default function QlikViewAnalyticsPage() {
   });
 
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isPdfReportModalOpen, setIsPdfReportModalOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -953,14 +952,19 @@ export default function QlikViewAnalyticsPage() {
     logUserActivity("EXPORT_CSV", "Exported sales analytics to CSV format");
   };
 
-  const handlePrintExecutivePDF = () => {
+  const openPdfReportModal = () => {
     setIsExportMenuOpen(false);
+    setIsPdfReportModalOpen(true);
+    logUserActivity("OPEN_PDF_MODAL", "Opened Executive PDF Report preview modal");
+  };
+
+  const handlePrintPdfReport = () => {
     window.print();
-    logUserActivity("PRINT_REPORT", "Triggered executive PDF print report");
+    logUserActivity("PRINT_PDF_REPORT", "Triggered native browser print for Executive PDF report");
   };
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans print:bg-white print:text-black select-none">
+    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none">
       
       {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden select-none">
@@ -1020,6 +1024,15 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* GENERATE MANAGER PDF REPORT BUTTON */}
+          <button
+            onClick={openPdfReportModal}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer shadow-lg shadow-emerald-500/10 border border-emerald-400/30"
+          >
+            <FileCheck className="w-4 h-4" />
+            <span>Generate Executive PDF</span>
+          </button>
+
           {/* QUICK EXPORT DROPDOWN MENU */}
           <div className="relative" ref={exportMenuRef}>
             <button
@@ -1027,12 +1040,19 @@ export default function QlikViewAnalyticsPage() {
               className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
             >
               <Download className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Export Reports</span>
+              <span>Export Data</span>
               <ChevronDown className="w-3 h-3 text-indigo-400 ml-0.5" />
             </button>
 
             {isExportMenuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                <button
+                  onClick={openPdfReportModal}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition cursor-pointer text-left"
+                >
+                  <FileCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Executive PDF Report</span>
+                </button>
                 <button
                   onClick={handleExportExcel}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 transition cursor-pointer text-left"
@@ -1046,14 +1066,6 @@ export default function QlikViewAnalyticsPage() {
                 >
                   <FileText className="w-4 h-4 text-blue-400" />
                   <span>Export CSV</span>
-                </button>
-                <div className="border-t border-slate-800 my-1"></div>
-                <button
-                  onClick={handlePrintExecutivePDF}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 transition cursor-pointer text-left"
-                >
-                  <Printer className="w-4 h-4 text-purple-400" />
-                  <span>Print Report (PDF)</span>
                 </button>
               </div>
             )}
@@ -1133,7 +1145,6 @@ export default function QlikViewAnalyticsPage() {
             <span>{isSidebarOpen ? "Hide Filter Sidebar" : "Show Filter Sidebar"}</span>
           </button>
 
-          {/* QUICK DATE RANGE PRESETS CHIP BAR */}
           <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 select-none">
             <CalendarDays className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
             <button onClick={() => applyDatePreset("today")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">Today</button>
@@ -1142,7 +1153,6 @@ export default function QlikViewAnalyticsPage() {
             <button onClick={() => applyDatePreset("month")} className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition cursor-pointer">This Month</button>
           </div>
 
-          {/* CUSTOM DATE INPUT PICKERS */}
           <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs select-none">
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <input
@@ -1169,7 +1179,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-2 select-none">
-          {/* TABLE ROW DENSITY TOGGLE */}
           <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
             <button
               onClick={() => setTableDensity("comfortable")}
@@ -1268,7 +1277,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* MAIN LAYOUT WITH AUDIT LOG TAB SUPPORT */}
+      {/* MAIN LAYOUT AREA */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start select-none">
         
         {/* STICKY SIDEBAR FILTER PANE */}
@@ -1376,7 +1385,7 @@ export default function QlikViewAnalyticsPage() {
           </div>
         )}
 
-        {/* MAIN WORKSPACE AREA WITH AUDIT LOG TAB */}
+        {/* MAIN WORKSPACE AREA */}
         <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9 select-none" : "lg:col-span-12 select-none"}>
 
           {productViewMode === "audit_logs" ? (
@@ -1701,7 +1710,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none select-none">
+          <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 select-none">
             
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden select-none">
               <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
@@ -2121,6 +2130,153 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
+      {/* EXECUTIVE PDF REPORT MODAL PREVIEW */}
+      {isPdfReportModalOpen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto select-none print:p-0 print:static print:bg-white">
+          <div className="bg-[#0E1526] border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none">
+            
+            {/* Modal Header Controls */}
+            <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0 print:hidden">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">Managerial Analytics Report (PDF Preview)</h3>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrintPdfReport}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/10"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print / Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setIsPdfReportModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* PRINT-CALIBRATED REPORT CANVAS */}
+            <div className="p-6 overflow-y-auto flex justify-center bg-slate-950/80 print:p-0 print:bg-white">
+              <div id="executive-pdf-report" className="bg-white text-slate-900 p-8 rounded-lg shadow-2xl w-full max-w-[210mm] min-h-[297mm] text-xs font-sans space-y-6 print:shadow-none print:p-0 print:w-full">
+                
+                {/* Document Masthead */}
+                <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">Executive Summary</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Confidential</span>
+                    </div>
+                    <h1 className="text-xl font-black text-white uppercase tracking-tight">Retail Performance Brief</h1>
+                    <p className="text-[11px] text-slate-300 font-mono">Real-time associative metrics compiled from active terminal stores</p>
+                  </div>
+                  <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
+                    <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
+                    <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
+                    <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
+                  </div>
+                </div>
+
+                {/* KPI Ribbon Strip */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Filtered Revenue</span>
+                    <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">{metricsA.shareOfTotal.toFixed(1)}% universe share</span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Volume</span>
+                    <strong className="text-base font-black text-slate-900 block mt-1">{metricsA.units.toLocaleString()} pcs</strong>
+                    <span className="text-[10px] text-indigo-600 font-bold block mt-0.5">scanned movement</span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Average Unit Retail</span>
+                    <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">avg selling price</span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Stock Out Risk</span>
+                    <strong className="text-base font-black text-rose-600 block mt-1">
+                      {filteredProducts.filter(p => p.stockStatus === 'CRITICAL' || p.stockStatus === 'WARNING').length} SKUs
+                    </strong>
+                    <span className="text-[10px] text-rose-600 font-bold block mt-0.5">reorder required</span>
+                  </div>
+                </div>
+
+                {/* Pareto Category Distribution Chart */}
+                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2">
+                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">ABC Pareto Classification Concentration</h3>
+                  <div className="w-full bg-slate-200 h-6 rounded-xl overflow-hidden flex font-bold text-[10px] text-white text-center leading-6">
+                    <div className="bg-emerald-600" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'A').length ? 80 : 0}%` }}>Class A (80% Earnings)</div>
+                    <div className="bg-indigo-600" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'B').length ? 15 : 0}%` }}>B (15%)</div>
+                    <div className="bg-amber-500" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'C').length ? 5 : 0}%` }}>C (5%)</div>
+                  </div>
+                  <p className="text-[10px] text-slate-600 italic">
+                    Class A SKUs deliver 80% of revenue. Ensure priority replenishment for top Class A variants to prevent lost sales.
+                  </p>
+                </div>
+
+                {/* Top SKUs Performance Table */}
+                <div className="space-y-2">
+                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Top Performing SKU Breakdown</h3>
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[10px] text-slate-700">
+                        <th className="p-2">Style Code & Name</th>
+                        <th className="p-2">Variant</th>
+                        <th className="p-2 text-center">Class</th>
+                        <th className="p-2 text-right">Price</th>
+                        <th className="p-2 text-right">Units Sold</th>
+                        <th className="p-2 text-right">Revenue</th>
+                        <th className="p-2 text-right">Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-mono">
+                      {filteredProducts.slice(0, 8).map((prod) => (
+                        <tr key={prod.key}>
+                          <td className="p-2 font-sans font-bold text-slate-900">{prod.styleName !== '-' ? prod.styleName : prod.styleCode}</td>
+                          <td className="p-2 text-slate-600 font-sans">{prod.color} ({prod.size})</td>
+                          <td className="p-2 text-center font-bold">
+                            <span className={`px-1.5 py-0.5 rounded ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
+                          </td>
+                          <td className="p-2 text-right">₱{prod.price.toFixed(2)}</td>
+                          <td className="p-2 text-right font-bold text-slate-900">{prod.units} pcs</td>
+                          <td className="p-2 text-right font-bold text-emerald-700">₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
+                          <td className={`p-2 text-right font-bold ${prod.currentStock <= prod.safetyStock ? 'text-rose-600' : 'text-slate-800'}`}>{prod.currentStock} pcs</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Strategic Management Recommendations */}
+                <div className="bg-slate-100 border border-slate-300 p-4 rounded-2xl space-y-2">
+                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Executive Management Action Items</h3>
+                  <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-700 font-medium">
+                    <li><strong>Stock Transfer Action:</strong> Shift safety stock from slower branches to high-velocity locations for items nearing threshold.</li>
+                    <li><strong>Class A Focus:</strong> Reorder Class A items immediately to protect the primary revenue stream.</li>
+                    <li><strong>SLOB Clearance:</strong> Initiate promotional discounting for Dead Stock variants with days of supply exceeding 120 days.</li>
+                  </ul>
+                </div>
+
+                {/* Footer Signoff */}
+                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                  <span>Report Generated via Apex Retail POS Qlik Analytics Engine</span>
+                  <span>Approved By: Retail Operations Manager</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BRANCH DETAILS MODAL */}
       {selectedBranchDetail && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
           <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col select-none ${
@@ -2234,6 +2390,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
+      {/* INSPECT PRODUCT MODAL */}
       {inspectedProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
           <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left select-none">
@@ -2297,6 +2454,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
+      {/* BOOKMARKS MODAL */}
       {isBookmarkModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
           <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left select-none">
