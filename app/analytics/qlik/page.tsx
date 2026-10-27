@@ -61,6 +61,7 @@ export const dynamic = "force-dynamic";
 interface SalesRecord {
   id: string;
   store: string;
+  transaction_mode: string;
   style_code: string;
   sku: string;
   style_name: string;
@@ -114,7 +115,7 @@ interface AuditLogRecord {
   created_at: string;
 }
 
-type DimensionKey = "store" | "department" | "category" | "color" | "size" | "style_code" | "style_name";
+type DimensionKey = "store" | "transaction_mode" | "department" | "category" | "color" | "size" | "style_code" | "style_name";
 type MeasureKey = "revenue" | "units" | "aur" | "transactions";
 
 interface DimensionConfig {
@@ -137,6 +138,7 @@ const MEASURES: MeasureConfig[] = [
 
 const CYCLIC_DIMENSIONS: DimensionConfig[] = [
   { key: "store", label: "Store Location" },
+  { key: "transaction_mode", label: "Transaction Mode" },
   { key: "department", label: "Department" },
   { key: "category", label: "Category" },
   { key: "color", label: "Color" },
@@ -147,6 +149,7 @@ const CYCLIC_DIMENSIONS: DimensionConfig[] = [
 
 interface StateSelection {
   stores: string[];
+  transactionModes: string[];
   departments: string[];
   categories: string[];
   colors: string[];
@@ -165,6 +168,7 @@ interface BookmarkPreset {
 
 const EMPTY_SELECTIONS: StateSelection = {
   stores: [],
+  transactionModes: [],
   departments: [],
   categories: [],
   colors: [],
@@ -294,7 +298,6 @@ export default function QlikViewAnalyticsPage() {
 
   const [inspectedProduct, setInspectedProduct] = useState<ProductSummaryItem | null>(null);
 
-  // CHUNKED FETCHING TO BYPASS SUPABASE 1000-ROW LIMIT COMPLETELY
   const fetchData = useCallback(async () => {
     setLoading(true);
 
@@ -306,7 +309,7 @@ export default function QlikViewAnalyticsPage() {
     while (fetchMoreLogs) {
       const { data: chunk, error } = await supabase
         .from("scanned_logs")
-        .select("id, store, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at")
+        .select("id, store, transaction_mode, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at")
         .order("scanned_at", { ascending: false })
         .range(logPage * pageSize, (logPage + 1) * pageSize - 1);
 
@@ -352,11 +355,12 @@ export default function QlikViewAnalyticsPage() {
     if (allLogs.length > 0) {
       const parsed: SalesRecord[] = allLogs.map((row: any) => {
         const qty = Number(row.quantity) || 1;
-        const pr = parseFloat(row.price) || 0; // Fixed: parseFloat retains full decimals instead of stripping them
+        const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         return {
           id: String(row.id),
           store: row.store ? row.store.trim() : "Unassigned Store",
+          transaction_mode: row.transaction_mode || "sales",
           style_code: row.style_code || "Unknown Style",
           sku: row.sku || "-",
           style_name: row.style_name && row.style_name !== "-" ? row.style_name.trim() : "Unassigned Item",
@@ -476,6 +480,7 @@ export default function QlikViewAnalyticsPage() {
   const universe = useMemo(() => {
     return {
       stores: Array.from(new Set(dateFilteredData.map((d) => d.store))).sort(),
+      transactionModes: Array.from(new Set(dateFilteredData.map((d) => d.transaction_mode))).sort(),
       departments: Array.from(new Set(dateFilteredData.map((d) => d.department))).sort(),
       categories: Array.from(new Set(dateFilteredData.map((d) => d.category))).sort(),
       colors: Array.from(new Set(dateFilteredData.map((d) => d.color))).sort(),
@@ -491,6 +496,7 @@ export default function QlikViewAnalyticsPage() {
     (selection: StateSelection) => {
       return dateFilteredData.filter((row) => {
         return (selection.stores.length === 0 || selection.stores.includes(row.store)) &&
+               (selection.transactionModes.length === 0 || selection.transactionModes.includes(row.transaction_mode)) &&
                (selection.departments.length === 0 || selection.departments.includes(row.department)) &&
                (selection.categories.length === 0 || selection.categories.includes(row.category)) &&
                (selection.colors.length === 0 || selection.colors.includes(row.color)) &&
@@ -505,22 +511,23 @@ export default function QlikViewAnalyticsPage() {
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
 
   const { possibleValues, fieldFrequencies } = useMemo(() => {
-    const calcPossibleAndFreq = (targetField: "store" | "department" | "category" | "color" | "size" | "style_name") => {
+    const calcPossibleAndFreq = (targetField: keyof SalesRecord) => {
       const subset = dateFilteredData.filter((row) => {
         const mStore = targetField === "store" || stateA.stores.length === 0 || stateA.stores.includes(row.store);
+        const mMode = targetField === "transaction_mode" || stateA.transactionModes.length === 0 || stateA.transactionModes.includes(row.transaction_mode);
         const mDept = targetField === "department" || stateA.departments.length === 0 || stateA.departments.includes(row.department);
         const mCat = targetField === "category" || stateA.categories.length === 0 || stateA.categories.includes(row.category);
         const mColor = targetField === "color" || stateA.colors.length === 0 || stateA.colors.includes(row.color);
         const mSize = targetField === "size" || stateA.sizes.length === 0 || stateA.sizes.includes(row.size);
         const mStyle = stateA.styles.length === 0 || stateA.styles.includes(row.style_code);
         const mStyleName = targetField === "style_name" || stateA.styleNames.length === 0 || stateA.styleNames.includes(row.style_name);
-        return mStore && mDept && mCat && mColor && mSize && mStyle && mStyleName;
+        return mStore && mMode && mDept && mCat && mColor && mSize && mStyle && mStyleName;
       });
 
       const possibleSet = new Set<string>();
       const freqMap: Record<string, number> = {};
       subset.forEach((row) => {
-        const val = row[targetField]; 
+        const val = String(row[targetField]); 
         possibleSet.add(val);
         freqMap[val] = (freqMap[val] || 0) + row.quantity;
       });
@@ -530,6 +537,7 @@ export default function QlikViewAnalyticsPage() {
     return {
       possibleValues: {
         stores: calcPossibleAndFreq("store").possibleSet,
+        transactionModes: calcPossibleAndFreq("transaction_mode").possibleSet,
         departments: calcPossibleAndFreq("department").possibleSet,
         categories: calcPossibleAndFreq("category").possibleSet,
         colors: calcPossibleAndFreq("color").possibleSet,
@@ -538,6 +546,7 @@ export default function QlikViewAnalyticsPage() {
       },
       fieldFrequencies: {
         stores: calcPossibleAndFreq("store").freqMap,
+        transactionModes: calcPossibleAndFreq("transaction_mode").freqMap,
         departments: calcPossibleAndFreq("department").freqMap,
         categories: calcPossibleAndFreq("category").freqMap,
         colors: calcPossibleAndFreq("color").freqMap,
@@ -547,10 +556,11 @@ export default function QlikViewAnalyticsPage() {
     };
   }, [dateFilteredData, stateA]);
 
-  const toggleSelection = (field: "store" | "department" | "category" | "color" | "size" | "style_code" | "style_name", value: string) => {
+  const toggleSelection = (field: DimensionKey, value: string) => {
     setStateA((prev) => {
-      const fieldKeyMap: Record<string, keyof StateSelection> = { 
+      const fieldKeyMap: Record<DimensionKey, keyof StateSelection> = { 
         store: "stores", 
+        transaction_mode: "transactionModes",
         department: "departments", 
         category: "categories", 
         color: "colors", 
@@ -1180,7 +1190,7 @@ export default function QlikViewAnalyticsPage() {
           <button onClick={() => setIsBookmarkModalOpen(true)} className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
             <Bookmark className="w-3.5 h-3.5" /><span>Presets</span>
           </button>
-          {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
+          {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
             <button onClick={clearCurrentStateSelections} className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs">
               <RotateCcw className="w-3.5 h-3.5" /><span>Reset</span>
             </button>
@@ -1189,7 +1199,7 @@ export default function QlikViewAnalyticsPage() {
       </div>
 
       {/* ACTIVE FACETS PILL TRAY */}
-      {(stateA.stores.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
+      {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
         <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden select-none">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold mr-1">
             <Tag className="w-3.5 h-3.5 text-emerald-400" />
@@ -1200,6 +1210,13 @@ export default function QlikViewAnalyticsPage() {
             <span key={`store-${val}`} className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
               <span>Store: {val}</span>
               <button onClick={() => toggleSelection("store", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+
+          {stateA.transactionModes.map((val) => (
+            <span key={`mode-${val}`} className="inline-flex items-center gap-1.5 bg-sky-500/10 text-sky-300 border border-sky-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
+              <span>Mode: {val}</span>
+              <button onClick={() => toggleSelection("transaction_mode", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
             </span>
           ))}
 
@@ -1270,8 +1287,9 @@ export default function QlikViewAnalyticsPage() {
             {/* Dimension Tabs */}
             <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
               {CYCLIC_DIMENSIONS.map((dim) => {
-                const fieldKeyMap: Record<string, keyof StateSelection> = { 
+                const fieldKeyMap: Record<DimensionKey, keyof StateSelection> = { 
                   store: "stores", 
+                  transaction_mode: "transactionModes",
                   department: "departments", 
                   category: "categories", 
                   color: "colors", 
@@ -1318,6 +1336,7 @@ export default function QlikViewAnalyticsPage() {
               {(() => {
                 const fieldMap: Record<DimensionKey, { items: string[]; sel: string[]; poss: Set<string>; freq: Record<string, number> }> = {
                   store: { items: universe.stores, sel: stateA.stores, poss: possibleValues.stores, freq: fieldFrequencies.stores },
+                  transaction_mode: { items: universe.transactionModes, sel: stateA.transactionModes, poss: possibleValues.transactionModes, freq: fieldFrequencies.transactionModes },
                   department: { items: universe.departments, sel: stateA.departments, poss: possibleValues.departments, freq: fieldFrequencies.departments },
                   category: { items: universe.categories, sel: stateA.categories, poss: possibleValues.categories, freq: fieldFrequencies.categories },
                   color: { items: universe.colors, sel: stateA.colors, poss: possibleValues.colors, freq: fieldFrequencies.colors },
@@ -1360,7 +1379,6 @@ export default function QlikViewAnalyticsPage() {
         {/* MAIN WORKSPACE AREA WITH AUDIT LOG TAB */}
         <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9 select-none" : "lg:col-span-12 select-none"}>
 
-          {/* CONDITIONAL RENDERING: AUDIT LOGS VIEW */}
           {productViewMode === "audit_logs" ? (
             <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4 select-none">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -1486,7 +1504,6 @@ export default function QlikViewAnalyticsPage() {
                 ))}
               </div>
 
-              {/* UNIFIED CONTAINER WITH FIXED HEADER & SCROLLABLE BODY */}
               <div className="relative overflow-hidden border border-slate-800 rounded-2xl h-[560px] flex flex-col">
                 <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
                   <table className="w-full text-left text-xs border-collapse">
@@ -1633,7 +1650,6 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               </div>
 
-              {/* Master Catalog Pagination Footer */}
               <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 rounded-2xl">
                 <div className="flex items-center gap-3">
                   <span>
@@ -1685,10 +1701,8 @@ export default function QlikViewAnalyticsPage() {
             </div>
           ) : (
 
-          /* FULLY EXPANDED SIDE-BY-SIDE WORKSPACE WITH SKELETONS & STICKY FOOTER */
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:bg-white print:border-none print:shadow-none select-none">
             
-            {/* Workspace Controls */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden select-none">
               <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
                 <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
@@ -1700,10 +1714,8 @@ export default function QlikViewAnalyticsPage() {
               </div>
             </div>
 
-            {/* EXPANDED SIDE-BY-SIDE GRID WITH UNIFIED HEIGHT */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1 select-none">
               
-              {/* LEFT PANEL: CHART STAGE */}
               {expandedPanel !== "table" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 select-none">
@@ -1821,7 +1833,6 @@ export default function QlikViewAnalyticsPage() {
                 </div>
               )}
 
-              {/* RIGHT PANEL: PRODUCT CATALOG WITH SKELETON LOADERS */}
               {expandedPanel !== "graph" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "table" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 select-none">
@@ -1840,7 +1851,6 @@ export default function QlikViewAnalyticsPage() {
                     </div>
                   </div>
 
-                  {/* FIXED CONTAINER WITH STICKY FOOTER TOTALS */}
                   <div className="relative flex-1 overflow-hidden flex flex-col select-none">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
                       
@@ -2089,7 +2099,6 @@ export default function QlikViewAnalyticsPage() {
                       )}
                     </div>
 
-                    {/* STICKY FOOTER SUMMARY ROW FOR CONSOLIDATED VIEW */}
                     {productViewMode === "consolidated" && filteredProducts.length > 0 && (
                       <div className="bg-slate-900 border-t-2 border-emerald-500/40 px-5 py-3 flex items-center justify-between text-xs font-mono font-bold text-white shrink-0 shadow-lg select-none">
                         <div className="flex items-center gap-2 select-none">
@@ -2112,7 +2121,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* ENHANCED BRANCH DEEP-DIVE MODAL WITH EXPANDED VIEW TOGGLE */}
       {selectedBranchDetail && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
           <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col select-none ${
@@ -2226,7 +2234,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* INSPECTION MODAL */}
       {inspectedProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
           <div className="bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 text-left select-none">
@@ -2290,7 +2297,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
       )}
 
-      {/* BOOKMARKS MANAGER MODAL */}
       {isBookmarkModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden select-none">
           <div className="bg-[#0E1526] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 text-left select-none">
