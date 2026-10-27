@@ -461,13 +461,23 @@ export default function Home() {
             .eq("id", invData.id)
             .maybeSingle();
 
-          const remaining = refreshed ? Number(refreshed.current_stock) : 0;
+          const remaining = refreshed ? Number(refreshed.current_stock) : Math.max(0, (Number(invData.current_stock) || 0) - 1);
           const safetyThreshold = Number(invData.safety_stock ?? 5);
           
           let currentActiveCount = remaining;
-          if (transactionMode === "sales") currentActiveCount = Number(refreshed?.total_sold || 0);
-          if (transactionMode === "pull_out") currentActiveCount = Number(refreshed?.pull_out || 0);
-          if (transactionMode === "delivery") currentActiveCount = Number(refreshed?.initial_stock || 0);
+          if (transactionMode === "sales") {
+            currentActiveCount = refreshed?.total_sold !== undefined && refreshed?.total_sold !== null 
+              ? Number(refreshed.total_sold) 
+              : (Number(invData.total_sold) || 0) + 1;
+          } else if (transactionMode === "pull_out") {
+            currentActiveCount = refreshed?.pull_out !== undefined && refreshed?.pull_out !== null 
+              ? Number(refreshed.pull_out) 
+              : (Number(invData.pull_out) || 0) + 1;
+          } else if (transactionMode === "delivery") {
+            currentActiveCount = refreshed?.initial_stock !== undefined && refreshed?.initial_stock !== null 
+              ? Number(refreshed.initial_stock) 
+              : (Number(invData.initial_stock) || 0) + 1;
+          }
 
           setStockAlert({
             type: remaining <= 0 ? "out" : remaining <= safetyThreshold ? "low" : "normal",
