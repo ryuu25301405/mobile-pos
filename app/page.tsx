@@ -184,12 +184,6 @@ export default function Home() {
       setIsStoreModalOpen(true);
       return;
     }
-    // Optional alert if delivery mode is chosen but DR No is blank
-    if (transactionMode === "delivery" && !deliveryDrNo.trim()) {
-      const proceed = window.confirm("You are in Delivery mode but haven't entered a DR No. Proceed anyway?");
-      if (!proceed) return;
-    }
-
     setScanning(true);
     setIsPaused(false);
     setErrorMessage(null);
@@ -663,7 +657,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* --- PROMINENT DR NO. INPUT FIELD (Appears right on the main screen when Delivery mode is chosen) --- */}
+          {/* DR No. input field for Delivery mode */}
           {transactionMode === "delivery" && (
             <div className="space-y-1.5 pt-1 animate-fadeIn bg-blue-950/20 p-3.5 rounded-xl border border-blue-500/30">
               <label className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
@@ -676,12 +670,8 @@ export default function Home() {
                 onChange={(e) => setDeliveryDrNo(e.target.value)}
                 className="w-full bg-slate-950 border border-blue-500/50 text-sm px-4 py-3 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-blue-400 shadow-inner"
               />
-              <p className="text-[10px] text-slate-400 italic">
-                *This DR No. will be attached to all scanned delivery items in this batch.
-              </p>
             </div>
           )}
-          {/* --------------------------------------------------------------------------------------------------- */}
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
@@ -979,6 +969,59 @@ export default function Home() {
                           </span>
                         </div>
 
+                        {/* --- RESTORED AUDIT / RECONCILE COMPARISON BLOCK --- */}
+                        {transactionMode === "audit" && stockAlert && (() => {
+                          const systemStock = stockAlert.remainingStock;
+                          const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
+                          const variance = countedStock - systemStock;
+
+                          return (
+                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
+                                  Audit Stock Comparison
+                                </span>
+                                {reconcileSuccess && (
+                                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                    ✓ {reconcileSuccess}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
+                                  <span className="text-white font-bold text-base">{systemStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Counted</span>
+                                  <span className="text-emerald-400 font-bold text-base">{countedStock}</span>
+                                </div>
+                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Variance</span>
+                                  <span className={`font-bold text-base ${
+                                    variance === 0 ? 'text-emerald-400' : variance > 0 ? 'text-amber-400' : 'text-rose-400'
+                                  }`}>
+                                    {variance > 0 ? `+${variance}` : variance}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {variance !== 0 && !reconcileSuccess && (
+                                <button
+                                  type="button"
+                                  disabled={reconciling}
+                                  onClick={() => handleReconcileStock(countedStock)}
+                                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                                >
+                                  {reconciling ? "Reconciling..." : `⚡ Reconcile Database to ${countedStock} pcs`}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {/* -------------------------------------------------- */}
+
                         {transactionMode === "delivery" && stockAlert && (
                           <div className="p-3 bg-slate-900 border border-blue-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
                             <div className="flex items-center gap-2.5">
@@ -1154,7 +1197,7 @@ export default function Home() {
                     type="text"
                     value={manualForm.category}
                     onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1179,7 +1222,7 @@ export default function Home() {
                     type="text"
                     value={manualForm.size}
                     onChange={(e) => setManualForm({ ...manualForm, size: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
