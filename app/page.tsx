@@ -104,7 +104,6 @@ export default function Home() {
   const [lastScannedItem, setLastScannedItem] = useState<ProductDetails | null>(null);
   const [stockAlert, setStockAlert] = useState<StockAlertInfo | null>(null);
 
-  // Monitor Network Connectivity & Sync Queue
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -160,7 +159,6 @@ export default function Home() {
 
       localStorage.removeItem("pos_offline_queue");
       setOfflineQueueCount(0);
-      console.log("Successfully synced offline queue to Supabase!");
     } catch (err) {
       console.error("Failed to sync offline queue:", err);
     } finally {
@@ -186,6 +184,12 @@ export default function Home() {
       setIsStoreModalOpen(true);
       return;
     }
+    // Optional alert if delivery mode is chosen but DR No is blank
+    if (transactionMode === "delivery" && !deliveryDrNo.trim()) {
+      const proceed = window.confirm("You are in Delivery mode but haven't entered a DR No. Proceed anyway?");
+      if (!proceed) return;
+    }
+
     setScanning(true);
     setIsPaused(false);
     setErrorMessage(null);
@@ -501,7 +505,7 @@ export default function Home() {
         size: fetchedProduct.size,
         price: fetchedProduct.price,
         quantity: 1,
-        dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null, // <-- Saved to DB log
+        dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null,
         scanned_at: now.toISOString(),
       };
 
@@ -659,22 +663,25 @@ export default function Home() {
             </div>
           </div>
 
-          {/* --- DR NO. INPUT FIELD (Appears automatically for Delivery mode) --- */}
+          {/* --- PROMINENT DR NO. INPUT FIELD (Appears right on the main screen when Delivery mode is chosen) --- */}
           {transactionMode === "delivery" && (
-            <div className="space-y-1.5 pt-1 animate-fadeIn">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5" /> DR No. (Delivery Receipt Reference) <span className="text-red-400">*</span>
+            <div className="space-y-1.5 pt-1 animate-fadeIn bg-blue-950/20 p-3.5 rounded-xl border border-blue-500/30">
+              <label className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-blue-400" /> DR No. (Delivery Receipt Reference) <span className="text-rose-400">*</span>
               </label>
               <input
                 type="text"
-                placeholder="e.g. DR-2026-00489"
+                placeholder="Enter DR No. here before scanning..."
                 value={deliveryDrNo}
                 onChange={(e) => setDeliveryDrNo(e.target.value)}
-                className="w-full bg-slate-950 border border-blue-500/40 text-xs px-3.5 py-3 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500"
+                className="w-full bg-slate-950 border border-blue-500/50 text-sm px-4 py-3 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-blue-400 shadow-inner"
               />
+              <p className="text-[10px] text-slate-400 italic">
+                *This DR No. will be attached to all scanned delivery items in this batch.
+              </p>
             </div>
           )}
-          {/* ------------------------------------------------------------------- */}
+          {/* --------------------------------------------------------------------------------------------------- */}
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
@@ -758,7 +765,7 @@ export default function Home() {
                       {item.mode}
                     </span>
                     {item.drNumber && (
-                      <span className="text-[9px] bg-slate-800 text-blue-300 px-1.5 py-0.5 rounded font-mono">
+                      <span className="text-[9px] bg-blue-500/10 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono font-bold">
                         DR: {item.drNumber}
                       </span>
                     )}
@@ -818,6 +825,12 @@ export default function Home() {
                 <span>Store: <strong className="text-emerald-400">{selectedStore || "Not Set"}</strong></span>
                 <span className="text-amber-400 font-bold uppercase">Mode: {transactionMode}</span>
               </div>
+              {deliveryDrNo && transactionMode === "delivery" && (
+                <div className="text-xs text-blue-300 bg-blue-950/40 p-2.5 rounded-xl border border-blue-500/30 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  <span>Active DR No: <strong className="font-mono">{deliveryDrNo}</strong></span>
+                </div>
+              )}
 
               {getConsolidatedSummary().map((summaryItem) => (
                 <div key={`${summaryItem.styleCode}-${summaryItem.mode}-${summaryItem.drNumber || ''}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
@@ -833,7 +846,7 @@ export default function Home() {
                         {summaryItem.mode}
                       </span>
                       {summaryItem.drNumber && (
-                        <span className="text-[8px] bg-slate-800 text-blue-300 px-1.5 py-0.5 rounded font-mono">
+                        <span className="text-[8px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-mono">
                           DR: {summaryItem.drNumber}
                         </span>
                       )}
@@ -974,7 +987,7 @@ export default function Home() {
                               </div>
                               <div>
                                 <p className="text-[10px] font-bold uppercase text-blue-400 tracking-wider">
-                                  Delivery Intake Status {deliveryDrNo && `(DR: ${deliveryDrNo})`}
+                                  Delivery Intake {deliveryDrNo ? `(DR: ${deliveryDrNo})` : ''}
                                 </p>
                                 <p className="text-slate-300 text-[11px]">
                                   Total Delivered: <strong className="text-blue-400 font-bold">{stockAlert.activeCount} pcs</strong>
@@ -1141,7 +1154,7 @@ export default function Home() {
                     type="text"
                     value={manualForm.category}
                     onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1190,7 +1203,7 @@ export default function Home() {
                   disabled={savingManual}
                   className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
                 >
-                  {savingManual ? "Saving to Database..." : "Save & Process Scan"}
+                  {savingManual ? "Saving to Database..." : "Save & Process Scan Batch"}
                 </button>
                 <button
                   type="button"
