@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { triggerScanFeedback } from "@/lib/feedback";
-import { FileText } from "lucide-react";
+import { FileText, Undo2, Truck } from "lucide-react";
 
 const Scanner = dynamicImport(() => import("@/components/Scanner"), {
   ssr: false,
@@ -46,6 +46,7 @@ interface SessionScannedProduct extends ProductDetails {
   timestamp: string;
   mode: TransactionMode;
   drNumber?: string;
+  pullOutNumber?: string;
 }
 
 interface StockAlertInfo {
@@ -68,13 +69,15 @@ export default function Home() {
   const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
   const [continuousMode, setContinuousMode] = useState<boolean>(false);
 
-  // Delivery Receipt (DR No.) State
+  // Reference Number States
   const [deliveryDrNo, setDeliveryDrNo] = useState<string>("");
+  const [pullOutNo, setPullOutNo] = useState<string>(""); // <-- Added Pull-Out No. State
 
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState<boolean>(false);
 
   // Reconcile state
   const [reconciling, setReconciling] = useState(false);
@@ -209,9 +212,9 @@ export default function Home() {
   };
 
   const getConsolidatedSummary = () => {
-    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string; drNumber?: string }>();
+    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string; drNumber?: string; pullOutNumber?: string }>();
     for (const item of sessionScans) {
-      const key = `${item.styleCode}-${item.mode}-${item.drNumber || ''}`;
+      const key = `${item.styleCode}-${item.mode}-${item.drNumber || ''}-${item.pullOutNumber || ''}`;
       if (map.has(key)) {
         map.get(key)!.totalQty += item.quantity;
       } else {
@@ -223,6 +226,7 @@ export default function Home() {
           totalQty: item.quantity,
           mode: item.mode,
           drNumber: item.drNumber,
+          pullOutNumber: item.pullOutNumber,
         });
       }
     }
@@ -234,13 +238,14 @@ export default function Home() {
     if (summary.length === 0) return;
 
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Store,Transaction Mode,DR No.,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
+    csvContent += "Store,Transaction Mode,DR No.,Pull-Out No.,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
 
     summary.forEach((item) => {
       const row = [
         `"${selectedStore}"`,
         `"${item.mode.toUpperCase()}"`,
         `"${item.drNumber || '-'}"`,
+        `"${item.pullOutNumber || '-'}"`,
         `"${item.styleCode}"`,
         `"${item.sku || '-'}"`,
         `"${item.styleName.replace(/"/g, '""')}"`,
@@ -258,6 +263,77 @@ export default function Home() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleUndoLastScan = async () => {
+    if (sessionScans.length === 0 || undoing) return;
+
+    const lastItem = sessionScans[0];
+    setUndoing(true);
+
+    try {
+      if (isOnline) {
+        const { data: invData, error: invFetchErr } = await supabase
+          .from("store_inventory")
+          .select("*")
+          .eq("store", lastItem.store)
+          .eq("style_code", lastItem.styleCode)
+          .maybeSingle();
+
+        if (invFetchErr) throw invFetchErr;
+
+        if (invData) {
+          let newCurrentStock = invData.current_stock;
+          let newTotalSold = invData.total_sold || 0;
+          let newInitialStock = invData.initial_stock || 0;
+          let newPullOut = invData.pull_out || 0;
+
+          if (lastItem.mode === "sales") {
+            newCurrentStock += lastItem.quantity;
+            newTotalSold = Math.max(0, newTotalSold - lastItem.quantity);
+          } else if (lastItem.mode === "delivery") {
+            newCurrentStock = Math.max(0, newCurrentStock - lastItem.quantity);
+            newInitialStock = Math.max(0, newInitialStock - lastItem.quantity);
+          } else if (lastItem.mode === "pull_out") {
+            newCurrentStock += lastItem.quantity;
+            newPullOut = Math.max(0, newPullOut - lastItem.quantity);
+          }
+
+          const { error: updateErr } = await supabase
+            .from("store_inventory")
+            .update({
+              current_stock: newCurrentStock,
+              total_sold: newTotalSold,
+              initial_stock: newInitialStock,
+              pull_out: newPullOut,
+            })
+            .eq("id", invData.id);
+
+          if (updateErr) throw updateErr;
+        }
+
+        const { error: deleteLogErr } = await supabase
+          .from("scanned_logs")
+          .delete()
+          .eq("store", lastItem.store)
+          .eq("style_code", lastItem.styleCode)
+          .eq("transaction_mode", lastItem.mode)
+          .order("scanned_at", { ascending: false })
+          .limit(1);
+
+        if (deleteLogErr) {
+          console.warn("Could not delete log row directly:", deleteLogErr);
+        }
+      }
+
+      setSessionScans((prev) => prev.slice(1));
+      triggerScanFeedback("success");
+    } catch (err: any) {
+      console.error("Undo failed:", err);
+      alert("Failed to undo scan: " + (err?.message || "Unknown error"));
+    } finally {
+      setUndoing(false);
+    }
   };
 
   const handleReconcileStock = async (targetQty: number) => {
@@ -413,6 +489,7 @@ export default function Home() {
       timestamp: formattedTimestamp,
       mode: transactionMode,
       drNumber: transactionMode === "delivery" ? (deliveryDrNo.trim() || undefined) : undefined,
+      pullOutNumber: transactionMode === "pull_out" ? (pullOutNo.trim() || undefined) : undefined,
     };
 
     setSessionScans((prev) => [newSessionItem, ...prev]);
@@ -500,6 +577,7 @@ export default function Home() {
         price: fetchedProduct.price,
         quantity: 1,
         dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null,
+        pull_out_number: transactionMode === "pull_out" ? (pullOutNo.trim() || null) : null, // <-- Saved to DB log
         scanned_at: now.toISOString(),
       };
 
@@ -521,6 +599,7 @@ export default function Home() {
           price: fetchedProduct.price,
           quantity: 1,
           dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null,
+          pull_out_number: transactionMode === "pull_out" ? (pullOutNo.trim() || null) : null,
           scanned_at: now.toISOString(),
         }
       });
@@ -672,6 +751,22 @@ export default function Home() {
               />
             </div>
           )}
+
+          {/* Pull-Out No. input field for Pull Out mode */}
+          {transactionMode === "pull_out" && (
+            <div className="space-y-1.5 pt-1 animate-fadeIn bg-rose-950/20 p-3.5 rounded-xl border border-rose-500/30">
+              <label className="text-[11px] font-extrabold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-rose-400" /> Pull-Out Slip No. (Return Reference) <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Enter Pull-Out slip no. here..."
+                value={pullOutNo}
+                onChange={(e) => setPullOutNo(e.target.value)}
+                className="w-full bg-slate-950 border border-rose-500/50 text-sm px-4 py-3 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-rose-400 shadow-inner"
+              />
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
@@ -709,20 +804,30 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             {totalSessionItems > 0 && (
               <>
+                <button
+                  onClick={handleUndoLastScan}
+                  disabled={undoing}
+                  className="text-[10px] bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold px-3 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Undo last recorded scan"
+                >
+                  <Undo2 className="w-3 h-3" />
+                  <span>{undoing ? "Undoing..." : "Undo Last"}</span>
+                </button>
+
                 <button
                   onClick={() => setIsSummaryModalOpen(true)}
                   className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition shadow-md shadow-indigo-600/20 cursor-pointer"
                 >
-                  📊 View Summary
+                  📊 Summary
                 </button>
                 <button
                   onClick={clearCurrentSession}
                   className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition cursor-pointer"
                 >
-                  Clear List
+                  Clear
                 </button>
               </>
             )}
@@ -738,10 +843,12 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {sessionScans.map((item) => (
+            {sessionScans.map((item, index) => (
               <div
                 key={item.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-sm"
+                className={`bg-slate-900 border rounded-2xl p-3.5 flex items-center justify-between shadow-sm ${
+                  index === 0 ? 'border-indigo-500/50 bg-indigo-950/10' : 'border-slate-800'
+                }`}
               >
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
@@ -757,6 +864,11 @@ export default function Home() {
                     {item.drNumber && (
                       <span className="text-[9px] bg-blue-500/10 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono font-bold">
                         DR: {item.drNumber}
+                      </span>
+                    )}
+                    {item.pullOutNumber && (
+                      <span className="text-[9px] bg-rose-500/10 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded font-mono font-bold">
+                        PO: {item.pullOutNumber}
                       </span>
                     )}
                   </div>
@@ -781,7 +893,7 @@ export default function Home() {
                   <button
                     onClick={() => handleRemoveFromSession(item.id)}
                     className="text-slate-600 hover:text-red-400 text-xs font-bold p-1 transition cursor-pointer"
-                    title="Remove from current session"
+                    title="Remove from session list"
                   >
                     ✕
                   </button>
@@ -821,9 +933,15 @@ export default function Home() {
                   <span>Active DR No: <strong className="font-mono">{deliveryDrNo}</strong></span>
                 </div>
               )}
+              {pullOutNo && transactionMode === "pull_out" && (
+                <div className="text-xs text-rose-300 bg-rose-950/40 p-2.5 rounded-xl border border-rose-500/30 flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-rose-400" />
+                  <span>Active Pull-Out No: <strong className="font-mono">{pullOutNo}</strong></span>
+                </div>
+              )}
 
               {getConsolidatedSummary().map((summaryItem) => (
-                <div key={`${summaryItem.styleCode}-${summaryItem.mode}-${summaryItem.drNumber || ''}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                <div key={`${summaryItem.styleCode}-${summaryItem.mode}-${summaryItem.drNumber || ''}-${summaryItem.pullOutNumber || ''}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
@@ -835,11 +953,6 @@ export default function Home() {
                       }`}>
                         {summaryItem.mode}
                       </span>
-                      {summaryItem.drNumber && (
-                        <span className="text-[8px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-mono">
-                          DR: {summaryItem.drNumber}
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
@@ -969,7 +1082,6 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {/* --- RESTORED AUDIT / RECONCILE COMPARISON BLOCK --- */}
                         {transactionMode === "audit" && stockAlert && (() => {
                           const systemStock = stockAlert.remainingStock;
                           const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
@@ -1020,7 +1132,6 @@ export default function Home() {
                             </div>
                           );
                         })()}
-                        {/* -------------------------------------------------- */}
 
                         {transactionMode === "delivery" && stockAlert && (
                           <div className="p-3 bg-slate-900 border border-blue-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
@@ -1034,6 +1145,30 @@ export default function Home() {
                                 </p>
                                 <p className="text-slate-300 text-[11px]">
                                   Total Delivered: <strong className="text-blue-400 font-bold">{stockAlert.activeCount} pcs</strong>
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
+                              <span className="text-indigo-400 font-mono font-black text-base">
+                                {stockAlert.remainingStock} pcs
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {transactionMode === "pull_out" && stockAlert && (
+                          <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold text-sm">
+                                🚚
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase text-rose-400 tracking-wider">
+                                  Pull-Out {pullOutNo ? `(PO: ${pullOutNo})` : ''}
+                                </p>
+                                <p className="text-slate-300 text-[11px]">
+                                  Total Pulled Out: <strong className="text-rose-400 font-bold">{stockAlert.activeCount} pcs</strong>
                                 </p>
                               </div>
                             </div>
