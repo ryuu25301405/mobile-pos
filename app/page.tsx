@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import dynamicImport from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { triggerScanFeedback } from "@/lib/feedback";
+import { FileText } from "lucide-react";
 
 const Scanner = dynamicImport(() => import("@/components/Scanner"), {
   ssr: false,
@@ -44,6 +45,7 @@ interface SessionScannedProduct extends ProductDetails {
   store: string;
   timestamp: string;
   mode: TransactionMode;
+  drNumber?: string;
 }
 
 interface StockAlertInfo {
@@ -65,6 +67,9 @@ export default function Home() {
   // Transaction Mode & Continuous Batch Scan State
   const [transactionMode, setTransactionMode] = useState<TransactionMode>("sales");
   const [continuousMode, setContinuousMode] = useState<boolean>(false);
+
+  // Delivery Receipt (DR No.) State
+  const [deliveryDrNo, setDeliveryDrNo] = useState<string>("");
 
   const [scanning, setScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -206,9 +211,9 @@ export default function Home() {
   };
 
   const getConsolidatedSummary = () => {
-    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string }>();
+    const map = new Map<string, { styleName: string; styleCode: string; sku?: string; price: number; totalQty: number; mode: string; drNumber?: string }>();
     for (const item of sessionScans) {
-      const key = `${item.styleCode}-${item.mode}`;
+      const key = `${item.styleCode}-${item.mode}-${item.drNumber || ''}`;
       if (map.has(key)) {
         map.get(key)!.totalQty += item.quantity;
       } else {
@@ -219,6 +224,7 @@ export default function Home() {
           price: item.price,
           totalQty: item.quantity,
           mode: item.mode,
+          drNumber: item.drNumber,
         });
       }
     }
@@ -230,12 +236,13 @@ export default function Home() {
     if (summary.length === 0) return;
 
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Store,Transaction Mode,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
+    csvContent += "Store,Transaction Mode,DR No.,Style Code,SKU,Style Name,Price (PHP),Total Scanned Quantity\n";
 
     summary.forEach((item) => {
       const row = [
         `"${selectedStore}"`,
         `"${item.mode.toUpperCase()}"`,
+        `"${item.drNumber || '-'}"`,
         `"${item.styleCode}"`,
         `"${item.sku || '-'}"`,
         `"${item.styleName.replace(/"/g, '""')}"`,
@@ -407,6 +414,7 @@ export default function Home() {
       store: selectedStore,
       timestamp: formattedTimestamp,
       mode: transactionMode,
+      drNumber: transactionMode === "delivery" ? (deliveryDrNo.trim() || undefined) : undefined,
     };
 
     setSessionScans((prev) => [newSessionItem, ...prev]);
@@ -427,7 +435,6 @@ export default function Home() {
         const { data: invData } = await invQuery.maybeSingle();
 
         if (invData) {
-          // ATOMIC DATABASE RPC CALLS: Prevents column clearing race conditions
           if (transactionMode === "sales") {
             await supabase.rpc("record_sale_transaction_by_id", { target_id: invData.id });
           } else if (transactionMode === "pull_out") {
@@ -494,6 +501,7 @@ export default function Home() {
         size: fetchedProduct.size,
         price: fetchedProduct.price,
         quantity: 1,
+        dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null, // <-- Saved to DB log
         scanned_at: now.toISOString(),
       };
 
@@ -514,6 +522,7 @@ export default function Home() {
           size: fetchedProduct.size,
           price: fetchedProduct.price,
           quantity: 1,
+          dr_number: transactionMode === "delivery" ? (deliveryDrNo.trim() || null) : null,
           scanned_at: now.toISOString(),
         }
       });
@@ -649,6 +658,23 @@ export default function Home() {
               </select>
             </div>
           </div>
+
+          {/* --- DR NO. INPUT FIELD (Appears automatically for Delivery mode) --- */}
+          {transactionMode === "delivery" && (
+            <div className="space-y-1.5 pt-1 animate-fadeIn">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5" /> DR No. (Delivery Receipt Reference) <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. DR-2026-00489"
+                value={deliveryDrNo}
+                onChange={(e) => setDeliveryDrNo(e.target.value)}
+                className="w-full bg-slate-950 border border-blue-500/40 text-xs px-3.5 py-3 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          )}
+          {/* ------------------------------------------------------------------- */}
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
@@ -731,6 +757,11 @@ export default function Home() {
                     }`}>
                       {item.mode}
                     </span>
+                    {item.drNumber && (
+                      <span className="text-[9px] bg-slate-800 text-blue-300 px-1.5 py-0.5 rounded font-mono">
+                        DR: {item.drNumber}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-emerald-400 text-xs font-bold">{item.styleCode}</span>
@@ -789,7 +820,7 @@ export default function Home() {
               </div>
 
               {getConsolidatedSummary().map((summaryItem) => (
-                <div key={`${summaryItem.styleCode}-${summaryItem.mode}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                <div key={`${summaryItem.styleCode}-${summaryItem.mode}-${summaryItem.drNumber || ''}`} className="bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <p className="font-bold text-white text-sm">{summaryItem.styleName}</p>
@@ -801,6 +832,11 @@ export default function Home() {
                       }`}>
                         {summaryItem.mode}
                       </span>
+                      {summaryItem.drNumber && (
+                        <span className="text-[8px] bg-slate-800 text-blue-300 px-1.5 py-0.5 rounded font-mono">
+                          DR: {summaryItem.drNumber}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       <span className="font-mono text-emerald-400 font-bold">{summaryItem.styleCode}</span>
@@ -930,105 +966,6 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {transactionMode === "audit" && stockAlert && (() => {
-                          const systemStock = stockAlert.remainingStock;
-                          const countedStock = getSessionCountForStyle(lastScannedItem.styleCode);
-                          const variance = countedStock - systemStock;
-
-                          return (
-                            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
-                                  Audit Stock Comparison
-                                </span>
-                                {reconcileSuccess && (
-                                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                                    ✓ {reconcileSuccess}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">System</span>
-                                  <span className="text-white font-bold text-base">{systemStock}</span>
-                                </div>
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Counted</span>
-                                  <span className="text-emerald-400 font-bold text-base">{countedStock}</span>
-                                </div>
-                                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Variance</span>
-                                  <span className={`font-bold text-base ${
-                                    variance === 0 ? 'text-emerald-400' : variance > 0 ? 'text-amber-400' : 'text-rose-400'
-                                  }`}>
-                                    {variance > 0 ? `+${variance}` : variance}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {variance !== 0 && !reconcileSuccess && (
-                                <button
-                                  type="button"
-                                  disabled={reconciling}
-                                  onClick={() => handleReconcileStock(countedStock)}
-                                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
-                                >
-                                  {reconciling ? "Reconciling..." : `⚡ Reconcile Database to ${countedStock} pcs`}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {transactionMode === "pull_out" && stockAlert && (
-                          <div className="p-3 bg-slate-900 border border-rose-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
-                            <div className="flex items-center gap-2.5">
-                              <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold text-sm">
-                                🚚
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold uppercase text-rose-400 tracking-wider">
-                                  Pull Out Stock Status
-                                </p>
-                                <p className="text-slate-300 text-[11px]">
-                                  Total Pulled Out: <strong className="text-rose-400 font-bold">{stockAlert.activeCount} pcs</strong>
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
-                              <span className="text-indigo-400 font-mono font-black text-base">
-                                {stockAlert.remainingStock} pcs
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {transactionMode === "sales" && stockAlert && (
-                          <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
-                            <div className="flex items-center gap-2.5">
-                              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl font-bold text-sm">
-                                🛍️
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider">
-                                  Sales Checkout Status
-                                </p>
-                                <p className="text-slate-300 text-[11px]">
-                                  Total Sold: <strong className="text-emerald-400 font-bold">{stockAlert.activeCount} pcs</strong>
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[9px] text-slate-400 uppercase font-bold block">Available Stock</span>
-                              <span className="text-indigo-400 font-mono font-black text-base">
-                                {stockAlert.remainingStock} pcs
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
                         {transactionMode === "delivery" && stockAlert && (
                           <div className="p-3 bg-slate-900 border border-blue-500/40 rounded-2xl flex items-center justify-between text-xs shadow-lg">
                             <div className="flex items-center gap-2.5">
@@ -1037,7 +974,7 @@ export default function Home() {
                               </div>
                               <div>
                                 <p className="text-[10px] font-bold uppercase text-blue-400 tracking-wider">
-                                  Delivery Intake Status
+                                  Delivery Intake Status {deliveryDrNo && `(DR: ${deliveryDrNo})`}
                                 </p>
                                 <p className="text-slate-300 text-[11px]">
                                   Total Delivered: <strong className="text-blue-400 font-bold">{stockAlert.activeCount} pcs</strong>
