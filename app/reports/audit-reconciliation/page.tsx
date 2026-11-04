@@ -31,13 +31,15 @@ interface ReconciliationItem {
   size: string;
   liveStock: number;
   auditScannedQty: number;
-  variance: number; // auditScannedQty - liveStock
+  variance: number;
   status: "matched" | "shortage" | "overage";
 }
 
+const normalizeKey = (store: string, code: string) => `${store.trim().toLowerCase()}|${code.trim().toLowerCase()}`;
+
 export default function AuditReconciliationPage() {
   const [loading, setLoading] = useState(true);
-  const [selectedStore, setSelectedStore] = useState("Metro Gaisano Makati");
+  const [selectedStore, setSelectedStore] = useState("Landmark Trinoma");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "matched" | "variance">("all");
   const [items, setItems] = useState<ReconciliationItem[]>([]);
@@ -52,7 +54,7 @@ export default function AuditReconciliationPage() {
     }
     const { data: invData, error: invError } = await invQuery;
 
-    // 2. Fetch audit logs (transaction_mode = 'audit') for the selected store from scanview logs
+    // 2. Fetch audit logs (transaction_mode = 'audit') for the selected store
     let auditQuery = supabase
       .from("scanned_logs")
       .select("*")
@@ -69,44 +71,66 @@ export default function AuditReconciliationPage() {
       return;
     }
 
-    // Aggregate audit quantities grouped by store and style_code from scanview logs
-    const auditMap = new Map<string, number>();
-    (auditData || []).forEach((log: any) => {
-      const storeName = log.store ? log.store.trim() : "Unassigned Store";
-      const styleCodeVal = log.style_code ? String(log.style_code).trim() : "N/A";
-      const key = `${storeName}|${styleCodeVal}`;
-      const currentQty = auditMap.get(key) || 0;
-      auditMap.set(key, currentQty + (Number(log.quantity) || 1));
-    });
-
-    // Map live store inventory and match against audit scan quantities
-    const reconciliationMap: ReconciliationItem[] = (invData || []).map((inv: any) => {
+    // Build a map of all store inventory items
+    const inventoryMap = new Map<string, any>();
+    (invData || []).forEach((inv: any) => {
       const store = inv.store ? inv.store.trim() : "Unassigned Store";
       const styleCode = inv.style_code ? String(inv.style_code).trim() : "N/A";
-      const key = `${store}|${styleCode}`;
-      
-      const liveStock = Number(inv.current_stock ?? inv.quantity) || 0;
-      const auditScannedQty = auditMap.get(key) || 0;
+      const key = normalizeKey(store, styleCode);
+      inventoryMap.set(key, inv);
+    });
+
+    // Build a map of all audit scan quantities from ScanView
+    const auditMap = new Map<string, { qty: number; record: any }>();
+    (auditData || []).forEach((log: any) => {
+      const store = log.store ? log.store.trim() : "Unassigned Store";
+      const styleCode = log.style_code ? String(log.style_code).trim() : "N/A";
+      const key = normalizeKey(store, styleCode);
+      const current = auditMap.get(key) || { qty: 0, record: log };
+      auditMap.set(key, {
+        qty: current.qty + (Number(log.quantity) || 1),
+        record: log,
+      });
+    });
+
+    // Combine both sets of keys so NO item is left behind (even if it's only in inventory or only in audit logs)
+    const allKeys = new Set([...inventoryMap.keys(), ...auditMap.keys()]);
+    const reconciliationMap: ReconciliationItem[] = [];
+
+    allKeys.forEach((key) => {
+      const inv = inventoryMap.get(key);
+      const audit = auditMap.get(key);
+
+      const store = inv?.store || audit?.record?.store || selectedStore;
+      const styleCode = inv?.style_code || audit?.record?.style_code || "N/A";
+      const sku = inv?.sku || audit?.record?.sku || "-";
+      const styleName = inv?.style_name || audit?.record?.style_name || styleCode;
+      const category = inv?.category || audit?.record?.category || "-";
+      const color = inv?.color || audit?.record?.color || "-";
+      const size = inv?.size || audit?.record?.size || "-";
+
+      const liveStock = Number(inv?.current_stock ?? inv?.quantity) || 0;
+      const auditScannedQty = audit ? audit.qty : 0;
       const variance = auditScannedQty - liveStock;
 
       let status: "matched" | "shortage" | "overage" = "matched";
       if (variance < 0) status = "shortage";
       else if (variance > 0) status = "overage";
 
-      return {
-        id: inv.id ? String(inv.id) : `${styleCode}-${Math.random()}`,
+      reconciliationMap.push({
+        id: inv?.id || audit?.record?.id || `${styleCode}-${Math.random()}`,
         store,
         styleCode,
-        sku: inv.sku || "-",
-        styleName: inv.style_name || styleCode,
-        category: inv.category || "-",
-        color: inv.color || "-",
-        size: inv.size || "-",
+        sku,
+        styleName,
+        category,
+        color,
+        size,
         liveStock,
         auditScannedQty,
         variance,
         status,
-      };
+      });
     });
 
     setItems(reconciliationMap);
@@ -119,7 +143,7 @@ export default function AuditReconciliationPage() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         item.styleCode.toLowerCase().includes(q) ||
         item.sku.toLowerCase().includes(q) ||
