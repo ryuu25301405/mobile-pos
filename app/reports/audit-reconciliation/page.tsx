@@ -52,7 +52,7 @@ export default function AuditReconciliationPage() {
     }
     const { data: invData, error: invError } = await invQuery;
 
-    // 2. Fetch audit logs (transaction_mode = 'audit') for the selected store
+    // 2. Fetch audit logs (transaction_mode = 'audit') for the selected store from scanview logs
     let auditQuery = supabase
       .from("scanned_logs")
       .select("*")
@@ -69,7 +69,7 @@ export default function AuditReconciliationPage() {
       return;
     }
 
-    // Aggregate audit quantities grouped by store and style_code
+    // Aggregate audit quantities grouped by store and style_code from scanview logs
     const auditMap = new Map<string, number>();
     (auditData || []).forEach((log: any) => {
       const storeName = log.store ? log.store.trim() : "Unassigned Store";
@@ -79,7 +79,7 @@ export default function AuditReconciliationPage() {
       auditMap.set(key, currentQty + (Number(log.quantity) || 1));
     });
 
-    // Map live inventory and match against audit logs
+    // Map live store inventory and match against audit scan quantities
     const reconciliationMap: ReconciliationItem[] = (invData || []).map((inv: any) => {
       const store = inv.store ? inv.store.trim() : "Unassigned Store";
       const styleCode = inv.style_code ? String(inv.style_code).trim() : "N/A";
@@ -161,7 +161,7 @@ export default function AuditReconciliationPage() {
             </span>
           </div>
           <h1 className="text-2xl font-black text-white mt-1">
-            Inventory vs. Audit Scan Reconciliation
+            Store Inventory vs. ScanView Audit Reconciliation
           </h1>
         </div>
 
@@ -268,12 +268,12 @@ export default function AuditReconciliationPage() {
         {loading ? (
           <div className="p-12 text-center space-y-3">
             <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs text-slate-400">Comparing live inventory with audit logs...</p>
+            <p className="text-xs text-slate-400">Comparing store inventory with ScanView audit logs...</p>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center space-y-2">
             <p className="text-sm font-bold text-white">No inventory items found for this store or filter.</p>
-            <p className="text-xs text-slate-500">Ensure audit mode scans have been submitted for this location.</p>
+            <p className="text-xs text-slate-500">Ensure audit mode scans have been submitted for this location in ScanView.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -284,10 +284,10 @@ export default function AuditReconciliationPage() {
                   <th className="py-3 px-4">Style Code / SKU</th>
                   <th className="py-3 px-4">Product Name</th>
                   <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4 text-center">Live Stock Qty</th>
-                  <th className="py-3 px-4 text-center">Audit Scanned Qty</th>
+                  <th className="py-3 px-4 text-center">Live Store Inventory Qty</th>
+                  <th className="py-3 px-4 text-center">ScanView Audit Qty</th>
                   <th className="py-3 px-4 text-center">Variance</th>
-                  <th className="py-3 px-4 text-center">Reconciliation Status</th>
+                  <th className="py-3 px-4 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -320,7 +320,7 @@ export default function AuditReconciliationPage() {
                       </span>
                     </td>
                     <td className={`py-3 px-4 text-center font-mono font-black ${
-                      item.variance === 0 ? "text-slate-400" : item.variance > 0 ? "text-amber-400" : "text-rose-400"
+                      item.variance === 0 ? "text-emerald-400" : item.variance > 0 ? "text-amber-400" : "text-rose-400"
                     }`}>
                       {item.variance > 0 ? `+${item.variance}` : item.variance} pcs
                     </td>
