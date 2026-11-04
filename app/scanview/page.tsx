@@ -169,7 +169,7 @@ export default function ScanViewPage() {
     }
   };
 
-  // Fetch live store inventory stock for the clicked audit item comparison
+  // Fetch live store inventory stock matching either style_code or sku flexibly
   const handleOpenCompareModal = async (item: GroupedProduct) => {
     setComparingItem(item);
     setIsComparingLoading(true);
@@ -180,12 +180,11 @@ export default function ScanViewPage() {
         .from("store_inventory")
         .select("current_stock, quantity")
         .eq("store", item.store)
-        .eq("style_code", item.styleCode)
-        .maybeSingle();
+        .or(`style_code.eq.${item.styleCode},sku.eq.${item.sku},style_code.eq.${item.sku},sku.eq.${item.styleCode}`);
 
-      if (!error && data) {
-        const stock = Number(data.current_stock ?? data.quantity) || 0;
-        setLiveOnesStock(stock);
+      if (!error && data && data.length > 0) {
+        const totalStock = data.reduce((acc, curr) => acc + (Number(curr.current_stock ?? curr.quantity) || 0), 0);
+        setLiveOnesStock(totalStock);
       } else {
         setLiveOnesStock(0);
       }
@@ -235,7 +234,6 @@ export default function ScanViewPage() {
 
       if (!matchesSearch) return false;
 
-      // Filter by transaction mode tab if selected
       if (selectedModeFilter !== "all" && item.transaction_mode !== selectedModeFilter) {
         return false;
       }
