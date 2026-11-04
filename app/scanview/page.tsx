@@ -169,30 +169,32 @@ export default function ScanViewPage() {
     }
   };
 
-  // Improved flexible live store inventory stock lookup
+  // Flexible live store inventory stock lookup handling style codes, SKUs, and descriptions
   const handleOpenCompareModal = async (item: GroupedProduct) => {
     setComparingItem(item);
     setIsComparingLoading(true);
     setLiveOnesStock(null);
 
     try {
-      // Fetch store inventory for this store and check style_code or sku match
       const { data, error } = await supabase
         .from("store_inventory")
-        .select("style_code, sku, current_stock, quantity, available_stock")
+        .select("*")
         .eq("store", item.store);
 
       if (!error && data && data.length > 0) {
-        // Find matching item by comparing styleCode or sku flexibly (including substring/loose matching)
+        const cleanTargetStyle = String(item.styleCode || "").trim().toLowerCase();
+        const cleanTargetSku = String(item.sku || "").trim().toLowerCase();
+
         const matched = data.find((row) => {
-          const rowStyle = String(row.style_code || "").trim();
-          const rowSku = String(row.sku || "").trim();
-          const itemStyle = String(item.styleCode || "").trim();
-          const itemSku = String(item.sku || "").trim();
+          const rowStyle = String(row.style_code || "").trim().toLowerCase();
+          const rowSku = String(row.sku || "").trim().toLowerCase();
+          const rowDesc = String(row.description || "").trim().toLowerCase();
 
           return (
-            (rowStyle && (rowStyle === itemStyle || rowStyle === itemSku || itemStyle.includes(rowStyle) || rowStyle.includes(itemStyle))) ||
-            (rowSku && (rowSku === itemSku || rowSku === itemStyle || itemSku.includes(rowSku) || rowSku.includes(itemSku)))
+            (cleanTargetStyle && (rowStyle.includes(cleanTargetStyle) || cleanTargetStyle.includes(rowStyle))) ||
+            (cleanTargetSku && (rowSku.includes(cleanTargetSku) || cleanTargetSku.includes(rowSku))) ||
+            (cleanTargetStyle && rowDesc.includes(cleanTargetStyle)) ||
+            (cleanTargetSku && rowDesc.includes(cleanTargetSku))
           );
         });
 
