@@ -69,21 +69,23 @@ export default function AuditReconciliationPage() {
       return;
     }
 
-    // Aggregate audit quantities grouped by store and style_code/sku
+    // Aggregate audit quantities grouped by store and style_code
     const auditMap = new Map<string, number>();
     (auditData || []).forEach((log: any) => {
-      const key = `${log.store}|${log.style_code}`;
+      const storeName = log.store ? log.store.trim() : "Unassigned Store";
+      const styleCodeVal = log.style_code ? String(log.style_code).trim() : "N/A";
+      const key = `${storeName}|${styleCodeVal}`;
       const currentQty = auditMap.get(key) || 0;
       auditMap.set(key, currentQty + (Number(log.quantity) || 1));
     });
 
     // Map live inventory and match against audit logs
     const reconciliationMap: ReconciliationItem[] = (invData || []).map((inv: any) => {
-      const store = inv.store || "Unassigned Store";
-      const styleCode = inv.style_code || "N/A";
+      const store = inv.store ? inv.store.trim() : "Unassigned Store";
+      const styleCode = inv.style_code ? String(inv.style_code).trim() : "N/A";
       const key = `${store}|${styleCode}`;
       
-      const liveStock = Number(inv.quantity) || 0;
+      const liveStock = Number(inv.current_stock ?? inv.quantity) || 0;
       const auditScannedQty = auditMap.get(key) || 0;
       const variance = auditScannedQty - liveStock;
 
@@ -96,7 +98,7 @@ export default function AuditReconciliationPage() {
         store,
         styleCode,
         sku: inv.sku || "-",
-        styleName: inv.style_name || "Unassigned Item",
+        styleName: inv.style_name || styleCode,
         category: inv.category || "-",
         color: inv.color || "-",
         size: inv.size || "-",
@@ -308,10 +310,14 @@ export default function AuditReconciliationPage() {
                       {item.category}
                     </td>
                     <td className="py-3 px-4 text-center font-bold font-mono text-slate-300">
-                      {item.liveStock} pcs
+                      <span className="bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                        {item.liveStock} pcs
+                      </span>
                     </td>
                     <td className="py-3 px-4 text-center font-bold font-mono text-indigo-400">
-                      {item.auditScannedQty} pcs
+                      <span className="bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20">
+                        {item.auditScannedQty} pcs
+                      </span>
                     </td>
                     <td className={`py-3 px-4 text-center font-mono font-black ${
                       item.variance === 0 ? "text-slate-400" : item.variance > 0 ? "text-amber-400" : "text-rose-400"
@@ -321,7 +327,7 @@ export default function AuditReconciliationPage() {
                     <td className="py-3 px-4 text-center">
                       {item.status === "matched" && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Matched
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Matched ({item.liveStock} = {item.auditScannedQty})
                         </span>
                       )}
                       {item.status === "shortage" && (
