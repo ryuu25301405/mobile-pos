@@ -757,28 +757,31 @@ export default function ScanViewPage() {
                     <td className="py-3 px-4 text-right font-mono text-slate-400 text-[11px]">
                       {item.timestamp}
                     </td>
-                    <td className="py-3 px-4 text-center space-x-2">
-                      {/* Compare button for Audit rows */}
-                      {item.transaction_mode === 'audit' && (
-                        <button
-                          onClick={() => handleOpenCompareModal(item)}
-                          className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
-                          title="Compare ScanView audit quantity with live store on-hand inventory"
-                        >
-                          <ArrowRightLeft className="h-3 w-3" />
-                          <span>Compare</span>
-                        </button>
-                      )}
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center space-x-2">
+                        {item.transaction_mode === 'audit' ? (
+                          <button
+                            onClick={() => handleOpenCompareModal(item)}
+                            className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
+                            title="Compare ScanView audit quantity with live store on-hand inventory"
+                          >
+                            <ArrowRightLeft className="h-3 w-3" />
+                            <span>Compare</span>
+                          </button>
+                        ) : (
+                          <span className="inline-block w-[72px]"></span> // Balanced empty spacer to align action column padding
+                        )}
 
-                      <button
-                        onClick={() => handleRemoveItem(item)}
-                        className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800 cursor-pointer inline-block"
-                        title="Delete Item"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                        <button
+                          onClick={() => handleRemoveItem(item)}
+                          className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800 cursor-pointer inline-block"
+                          title="Delete Item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
