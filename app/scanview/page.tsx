@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
-import { Boxes } from "lucide-react";
+import { Boxes, X, CheckCircle2, AlertTriangle, ArrowRightLeft } from "lucide-react";
 
 export const dynamic = 'force-dynamic';
 
@@ -19,14 +19,6 @@ const STORES = [
   "Landmark Makati",
   "Landmark Nuvali",
   "Landmark Trinoma",
-];
-
-const TRANSACTION_MODES = [
-  "All Modes",
-  "sales",
-  "audit",
-  "delivery",
-  "pull_out",
 ];
 
 interface RawLogItem {
@@ -59,7 +51,7 @@ export default function ScanViewPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
-  const [selectedModeFilter, setSelectedModeFilter] = useState("All Modes"); // <-- Added transaction mode filter state
+  const [selectedModeFilter, setSelectedModeFilter] = useState("all");
 
   // Date Filter States
   const [startDate, setStartDate] = useState<string>("");
@@ -75,6 +67,11 @@ export default function ScanViewPage() {
 
   const [isExportOpen, setIsExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+
+  // Compare Modal States
+  const [comparingItem, setComparingItem] = useState<GroupedProduct | null>(null);
+  const [liveOnesStock, setLiveOnesStock] = useState<number | null>(null);
+  const [isComparingLoading, setIsComparingLoading] = useState(false);
 
   const formatTimestamp = (isoString?: string) => {
     if (!isoString) return "N/A";
@@ -102,11 +99,6 @@ export default function ScanViewPage() {
 
       if (selectedStoreFilter !== "All Stores") {
         query = query.eq("store", selectedStoreFilter);
-      }
-
-      // If user selected a specific transaction mode from the filter, apply it at the database query level
-      if (selectedModeFilter !== "All Modes") {
-        query = query.eq("transaction_mode", selectedModeFilter);
       }
 
       const { data, error } = await query;
@@ -143,7 +135,7 @@ export default function ScanViewPage() {
 
     setRawLogs(logs);
     setLoading(false);
-  }, [selectedStoreFilter, selectedModeFilter]);
+  }, [selectedStoreFilter]);
 
   useEffect(() => {
     fetchScannedLogs();
@@ -174,6 +166,34 @@ export default function ScanViewPage() {
         .delete()
         .eq("store", itemToRemove.store)
         .eq("style_code", itemToRemove.styleCode);
+    }
+  };
+
+  // Fetch live store inventory stock for the clicked audit item comparison
+  const handleOpenCompareModal = async (item: GroupedProduct) => {
+    setComparingItem(item);
+    setIsComparingLoading(true);
+    setLiveOnesStock(null);
+
+    try {
+      const { data, error } = await supabase
+        .from("store_inventory")
+        .select("current_stock, quantity")
+        .eq("store", item.store)
+        .eq("style_code", item.styleCode)
+        .maybeSingle();
+
+      if (!error && data) {
+        const stock = Number(data.current_stock ?? data.quantity) || 0;
+        setLiveOnesStock(stock);
+      } else {
+        setLiveOnesStock(0);
+      }
+    } catch (err) {
+      console.error("Error fetching live inventory stock:", err);
+      setLiveOnesStock(0);
+    } finally {
+      setIsComparingLoading(false);
     }
   };
 
@@ -215,6 +235,11 @@ export default function ScanViewPage() {
 
       if (!matchesSearch) return false;
 
+      // Filter by transaction mode tab if selected
+      if (selectedModeFilter !== "all" && item.transaction_mode !== selectedModeFilter) {
+        return false;
+      }
+
       if (startDate || endDate) {
         if (!item.rawTimestamp) return false;
 
@@ -236,7 +261,7 @@ export default function ScanViewPage() {
 
       return true;
     });
-  }, [rawLogs, searchQuery, startDate, endDate]);
+  }, [rawLogs, searchQuery, selectedModeFilter, startDate, endDate]);
 
   const metrics = useMemo(() => {
     const totalUnits = filteredRawLogs.reduce((acc, log) => acc + log.quantity, 0);
@@ -360,9 +385,8 @@ export default function ScanViewPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
-    const modeLabel = selectedModeFilter === "All Modes" ? "All_Modes" : selectedModeFilter;
     const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}_${modeLabel}${dateRangeLabel}.${format}`;
+    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -509,22 +533,46 @@ export default function ScanViewPage() {
         </div>
       </section>
 
-      {/* Desktop Horizontal Control Bar (Updated with Transaction Mode Dropdown) */}
+      {/* Transaction Mode Quick Filter Tabs */}
+      <section className="flex items-center space-x-2 overflow-x-auto pb-1">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Filter Mode:</span>
+        {[
+          { id: "all", label: "All Modes" },
+          { id: "sales", label: "🛍️ Sales" },
+          { id: "audit", label: "📋 Audit (Compare Enabled)" },
+          { id: "delivery", label: "📦 Delivery" },
+          { id: "pull_out", label: "🚚 Pull Out" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSelectedModeFilter(tab.id)}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+              selectedModeFilter === tab.id
+                ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-md shadow-amber-500/10"
+                : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </section>
+
+      {/* Desktop Horizontal Control Bar */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
+        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             type="text"
-            placeholder="Search code, SKU, product..."
+            placeholder="Search code, SKU, product, mode..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
           />
         </div>
 
-        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={selectedStoreFilter}
             onChange={(e) => setSelectedStoreFilter(e.target.value)}
@@ -533,21 +581,6 @@ export default function ScanViewPage() {
             {STORES.map((store) => (
               <option key={store} value={store} className="bg-slate-900 text-white font-normal">
                 {store}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Transaction Mode Filter Dropdown */}
-        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
-          <select
-            value={selectedModeFilter}
-            onChange={(e) => setSelectedModeFilter(e.target.value)}
-            className="w-full bg-transparent text-xs font-bold text-amber-400 focus:outline-none cursor-pointer capitalize"
-          >
-            {TRANSACTION_MODES.map((mode) => (
-              <option key={mode} value={mode} className="bg-slate-900 text-white font-normal capitalize">
-                {mode === "All Modes" ? "All Modes" : mode.replace("_", " ")}
               </option>
             ))}
           </select>
@@ -625,7 +658,7 @@ export default function ScanViewPage() {
         ) : processedItems.length === 0 ? (
           <div className="p-12 text-center space-y-2">
             <p className="text-sm font-bold text-white">No entries match your search filters.</p>
-            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, transaction mode, or search keywords.</p>
+            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -642,7 +675,7 @@ export default function ScanViewPage() {
                   <th className="py-3 px-4 text-right">Price</th>
                   <th className="py-3 px-4 text-center">Quantity</th>
                   <th className="py-3 px-4 text-right">Last Scanned</th>
-                  <th className="py-3 px-4 text-center w-12">Action</th>
+                  <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -707,10 +740,22 @@ export default function ScanViewPage() {
                     <td className="py-3 px-4 text-right font-mono text-slate-400 text-[11px]">
                       {item.timestamp}
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-3 px-4 text-center space-x-2">
+                      {/* Compare button for Audit rows */}
+                      {item.transaction_mode === 'audit' && (
+                        <button
+                          onClick={() => handleOpenCompareModal(item)}
+                          className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
+                          title="Compare ScanView audit quantity with live store on-hand inventory"
+                        >
+                          <ArrowRightLeft className="h-3 w-3" />
+                          <span>Compare</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => handleRemoveItem(item)}
-                        className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800 cursor-pointer"
+                        className="text-slate-500 hover:text-red-400 transition p-1 rounded-md hover:bg-slate-800 cursor-pointer inline-block"
                         title="Delete Item"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -772,6 +817,99 @@ export default function ScanViewPage() {
           </div>
         )}
       </section>
+
+      {/* COMPARISON MODAL */}
+      {comparingItem && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                  Audit Comparison
+                </span>
+                <h3 className="text-lg font-black text-white mt-1">{comparingItem.styleName}</h3>
+              </div>
+              <button
+                onClick={() => setComparingItem(null)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 font-mono text-xs text-slate-300 bg-slate-950 p-3.5 rounded-2xl border border-slate-800/80">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Store:</span>
+                <span className="text-emerald-400 font-bold">{comparingItem.store}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Style Code / SKU:</span>
+                <span className="text-white font-bold">{comparingItem.styleCode} ({comparingItem.sku})</span>
+              </div>
+            </div>
+
+            {isComparingLoading ? (
+              <div className="py-10 text-center space-y-2">
+                <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-slate-400">Fetching live on-hand quantity from store inventory...</p>
+              </div>
+            ) : (
+              (() => {
+                const auditQty = comparingItem.quantity;
+                const onHandQty = liveOnesStock ?? 0;
+                const variance = auditQty - onHandQty;
+                const isMatched = variance === 0;
+
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ScanView Audit Qty</p>
+                        <p className="text-2xl font-black text-indigo-400">{auditQty} <span className="text-xs">pcs</span></p>
+                      </div>
+
+                      <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live On-Hand Qty</p>
+                        <p className="text-2xl font-black text-emerald-400">{onHandQty} <span className="text-xs">pcs</span></p>
+                      </div>
+                    </div>
+
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                      isMatched 
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
+                        : variance > 0 
+                        ? "bg-amber-500/10 border-amber-500/30 text-amber-300" 
+                        : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                    }`}>
+                      <div className="flex items-center space-x-2.5">
+                        {isMatched ? <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" /> : <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />}
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider">Variance Result</p>
+                          <p className="text-[11px] opacity-80">
+                            {isMatched ? "Audit perfectly matches live store on-hand stock." : "Discrepancy detected between audit and on-hand inventory."}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-base font-black font-mono">
+                        {variance > 0 ? `+${variance}` : variance} pcs
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setComparingItem(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Close Comparison
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
