@@ -169,22 +169,39 @@ export default function ScanViewPage() {
     }
   };
 
-  // Fetch live store inventory stock matching either style_code or sku flexibly
+  // Improved flexible live store inventory stock lookup
   const handleOpenCompareModal = async (item: GroupedProduct) => {
     setComparingItem(item);
     setIsComparingLoading(true);
     setLiveOnesStock(null);
 
     try {
+      // Fetch store inventory for this store and check style_code or sku match
       const { data, error } = await supabase
         .from("store_inventory")
-        .select("current_stock, quantity")
-        .eq("store", item.store)
-        .or(`style_code.eq.${item.styleCode},sku.eq.${item.sku},style_code.eq.${item.sku},sku.eq.${item.styleCode}`);
+        .select("style_code, sku, current_stock, quantity, available_stock")
+        .eq("store", item.store);
 
       if (!error && data && data.length > 0) {
-        const totalStock = data.reduce((acc, curr) => acc + (Number(curr.current_stock ?? curr.quantity) || 0), 0);
-        setLiveOnesStock(totalStock);
+        // Find matching item by comparing styleCode or sku flexibly (including substring/loose matching)
+        const matched = data.find((row) => {
+          const rowStyle = String(row.style_code || "").trim();
+          const rowSku = String(row.sku || "").trim();
+          const itemStyle = String(item.styleCode || "").trim();
+          const itemSku = String(item.sku || "").trim();
+
+          return (
+            (rowStyle && (rowStyle === itemStyle || rowStyle === itemSku || itemStyle.includes(rowStyle) || rowStyle.includes(itemStyle))) ||
+            (rowSku && (rowSku === itemSku || rowSku === itemStyle || itemSku.includes(rowSku) || rowSku.includes(itemSku)))
+          );
+        });
+
+        if (matched) {
+          const stock = Number(matched.available_stock ?? matched.current_stock ?? matched.quantity) || 0;
+          setLiveOnesStock(stock);
+        } else {
+          setLiveOnesStock(0);
+        }
       } else {
         setLiveOnesStock(0);
       }
