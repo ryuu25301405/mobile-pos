@@ -21,6 +21,14 @@ const STORES = [
   "Landmark Trinoma",
 ];
 
+const TRANSACTION_MODES = [
+  "All Modes",
+  "sales",
+  "audit",
+  "delivery",
+  "pull_out",
+];
+
 interface RawLogItem {
   id: string;
   store: string;
@@ -51,6 +59,7 @@ export default function ScanViewPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStoreFilter, setSelectedStoreFilter] = useState("All Stores");
+  const [selectedModeFilter, setSelectedModeFilter] = useState("All Modes"); // <-- Added transaction mode filter state
 
   // Date Filter States
   const [startDate, setStartDate] = useState<string>("");
@@ -95,6 +104,11 @@ export default function ScanViewPage() {
         query = query.eq("store", selectedStoreFilter);
       }
 
+      // If user selected a specific transaction mode from the filter, apply it at the database query level
+      if (selectedModeFilter !== "All Modes") {
+        query = query.eq("transaction_mode", selectedModeFilter);
+      }
+
       const { data, error } = await query;
 
       if (error || !data || data.length === 0) {
@@ -129,7 +143,7 @@ export default function ScanViewPage() {
 
     setRawLogs(logs);
     setLoading(false);
-  }, [selectedStoreFilter]);
+  }, [selectedStoreFilter, selectedModeFilter]);
 
   useEffect(() => {
     fetchScannedLogs();
@@ -147,7 +161,7 @@ export default function ScanViewPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStoreFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
+  }, [searchQuery, selectedStoreFilter, selectedModeFilter, startDate, endDate, groupBy, sortBy, itemsPerPage]);
 
   const handleRemoveItem = async (itemToRemove: GroupedProduct) => {
     setRawLogs((prev) => prev.filter((item) => item.id !== itemToRemove.id));
@@ -346,8 +360,9 @@ export default function ScanViewPage() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Scanned Logs");
 
     const storeLabel = selectedStoreFilter === "All Stores" ? "All_Stores" : selectedStoreFilter.replace(/\s+/g, "_");
+    const modeLabel = selectedModeFilter === "All Modes" ? "All_Modes" : selectedModeFilter;
     const dateRangeLabel = startDate && endDate ? `_${startDate}_to_${endDate}` : "";
-    const fileName = `Scanned_Logs_${storeLabel}${dateRangeLabel}.${format}`;
+    const fileName = `Scanned_Logs_${storeLabel}_${modeLabel}${dateRangeLabel}.${format}`;
 
     if (format === "csv") {
       XLSX.writeFile(workbook, fileName, { bookType: "csv" });
@@ -494,22 +509,22 @@ export default function ScanViewPage() {
         </div>
       </section>
 
-      {/* Desktop Horizontal Control Bar */}
+      {/* Desktop Horizontal Control Bar (Updated with Transaction Mode Dropdown) */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid grid-cols-12 gap-3 items-center sticky top-2 z-40 shadow-xl backdrop-blur-md">
-        <div className="col-span-4 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
+        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             type="text"
-            placeholder="Search code, SKU, product, mode..."
+            placeholder="Search code, SKU, product..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
           />
         </div>
 
-        <div className="col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
           <select
             value={selectedStoreFilter}
             onChange={(e) => setSelectedStoreFilter(e.target.value)}
@@ -518,6 +533,21 @@ export default function ScanViewPage() {
             {STORES.map((store) => (
               <option key={store} value={store} className="bg-slate-900 text-white font-normal">
                 {store}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Transaction Mode Filter Dropdown */}
+        <div className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center">
+          <select
+            value={selectedModeFilter}
+            onChange={(e) => setSelectedModeFilter(e.target.value)}
+            className="w-full bg-transparent text-xs font-bold text-amber-400 focus:outline-none cursor-pointer capitalize"
+          >
+            {TRANSACTION_MODES.map((mode) => (
+              <option key={mode} value={mode} className="bg-slate-900 text-white font-normal capitalize">
+                {mode === "All Modes" ? "All Modes" : mode.replace("_", " ")}
               </option>
             ))}
           </select>
@@ -595,7 +625,7 @@ export default function ScanViewPage() {
         ) : processedItems.length === 0 ? (
           <div className="p-12 text-center space-y-2">
             <p className="text-sm font-bold text-white">No entries match your search filters.</p>
-            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, or search keywords.</p>
+            <p className="text-xs text-slate-500">Try adjusting your date range, store filter, transaction mode, or search keywords.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
