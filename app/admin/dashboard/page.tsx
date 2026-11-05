@@ -17,7 +17,8 @@ import {
   SlidersHorizontal,
   Boxes,
   Store,
-  Sparkles
+  Sparkles,
+  History
 } from "lucide-react";
 
 export const dynamic = 'force-dynamic';
@@ -59,14 +60,27 @@ interface InventoryItem {
   available_stock: number;
 }
 
+interface StockHistoryItem {
+  id: string;
+  store: string;
+  style_code: string;
+  sku: string;
+  style_name: string;
+  old_stock: number;
+  new_stock: number;
+  changed_by: string;
+  created_at: string;
+}
+
 export default function AdminDashboardPage() {
-  const [activeTab, setActiveTab] = useState<"products" | "inventory">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "inventory" | "history">("products");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStore, setSelectedStore] = useState("All Stores");
 
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
+  const [stockHistoryList, setStockHistoryList] = useState<StockHistoryItem[]>([]);
 
   // Pagination States for Products
   const [currentProdPage, setCurrentProdPage] = useState<number>(1);
@@ -75,6 +89,10 @@ export default function AdminDashboardPage() {
   // Pagination States for Inventory
   const [currentInvPage, setCurrentInvPage] = useState<number>(1);
   const [invItemsPerPage, setInvItemsPerPage] = useState<number>(10);
+
+  // Pagination States for History
+  const [currentHistPage, setCurrentHistPage] = useState<number>(1);
+  const [histItemsPerPage, setHistItemsPerPage] = useState<number>(10);
 
   // Notifications
   const [successMsg, setSuccessMsg] = useState("");
@@ -164,6 +182,17 @@ export default function AdminDashboardPage() {
         }
       }
       setInventoryList(allInventory);
+
+      // 3. Fetch Stock History audit logs
+      const { data: histData, error: histError } = await supabase
+        .from("stock_history")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (!histError) {
+        setStockHistoryList(histData || []);
+      }
     } catch (err: any) {
       console.error("Error fetching admin data:", err);
       setErrorMsg("Failed to load dashboard records.");
@@ -179,7 +208,8 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     setCurrentProdPage(1);
     setCurrentInvPage(1);
-  }, [searchQuery, selectedStore, activeTab, prodItemsPerPage, invItemsPerPage]);
+    setCurrentHistPage(1);
+  }, [searchQuery, selectedStore, activeTab, prodItemsPerPage, invItemsPerPage, histItemsPerPage]);
 
   // Derive unique dropdown options from existing products table data
   const availableCategories = useMemo(() => {
@@ -316,7 +346,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // --- LIVE INVENTORY STOCK UPDATE HANDLERS ---
+  // --- LIVE INVENTORY STOCK UPDATE HANDLER WITH HISTORY LOGGING ---
   const handleOpenStockEdit = (item: InventoryItem) => {
     setEditingStockItem(item);
     setNewStockValue(String(item.current_stock ?? item.quantity ?? 0));
@@ -332,8 +362,11 @@ export default function AdminDashboardPage() {
       return;
     }
 
+    const oldStock = Number(editingStockItem.available_stock ?? editingStockItem.current_stock ?? editingStockItem.quantity) || 0;
+
     try {
-      const { error } = await supabase
+      // 1. Update store_inventory table
+      const { error: updateError } = await supabase
         .from("store_inventory")
         .update({
           current_stock: parsedStock,
@@ -342,8 +375,31 @@ export default function AdminDashboardPage() {
         })
         .eq("id", editingStockItem.id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
+      // 2. Insert into stock_history table
+      const timestamp = new Date().toISOString();
+      const { data: histData, error: historyError } = await supabase.from("stock_history").insert([
+        {
+          inventory_id: editingStockItem.id,
+          store: editingStockItem.store,
+          style_code: editingStockItem.style_code,
+          sku: editingStockItem.sku,
+          style_name: editingStockItem.style_name || "Unassigned Item",
+          old_stock: oldStock,
+          new_stock: parsedStock,
+          changed_by: "Admin",
+          created_at: timestamp,
+        }
+      ]).select();
+
+      if (historyError) {
+        console.error("Failed to record stock history:", historyError.message);
+      } else if (histData && histData.length > 0) {
+        setStockHistoryList((prev) => [histData[0], ...prev]);
+      }
+
+      // Update local state
       setInventoryList((prev) =>
         prev.map((item) =>
           item.id === editingStockItem.id
@@ -353,7 +409,7 @@ export default function AdminDashboardPage() {
       );
 
       setEditingStockItem(null);
-      setSuccessMsg("Live on-hand inventory stock updated successfully!");
+      setSuccessMsg("Live stock updated & recorded in audit history log!");
       setTimeout(() => setSuccessMsg(""), 3000);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to update live inventory stock.");
@@ -402,6 +458,26 @@ export default function AdminDashboardPage() {
     return filteredInventory.slice(invStartIndex, invEndIndex);
   }, [filteredInventory, invStartIndex, invEndIndex]);
 
+  // Filtered & Paginated History
+  const filteredHistory = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return stockHistoryList.filter(
+      (h) =>
+        String(h.style_name || "").toLowerCase().includes(q) ||
+        String(h.style_code || "").toLowerCase().includes(q) ||
+        String(h.sku || "").toLowerCase().includes(q) ||
+        String(h.store || "").toLowerCase().includes(q) ||
+        String(h.changed_by || "").toLowerCase().includes(q)
+    );
+  }, [stockHistoryList, searchQuery]);
+
+  const totalHistPages = Math.ceil(filteredHistory.length / histItemsPerPage) || 1;
+  const histStartIndex = (currentHistPage - 1) * histItemsPerPage;
+  const histEndIndex = Math.min(histStartIndex + histItemsPerPage, filteredHistory.length);
+  const paginatedHistory = useMemo(() => {
+    return filteredHistory.slice(histStartIndex, histEndIndex);
+  }, [filteredHistory, histStartIndex, histEndIndex]);
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 max-w-[1600px] mx-auto antialiased space-y-5 sm:space-y-6 selection:bg-indigo-500 selection:text-white">
       {/* Executive Glass Header Bar */}
@@ -419,7 +495,7 @@ export default function AdminDashboardPage() {
               <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/30 px-2.5 sm:px-3 py-0.5 rounded-full inline-flex items-center gap-1">
                 <Sparkles className="h-3 w-3 text-indigo-400" /> Administrative Hub
               </span>
-              <span className="text-[11px] sm:text-xs text-slate-500 font-mono font-medium">v2.4</span>
+              <span className="text-[11px] sm:text-xs text-slate-500 font-mono font-medium">v2.5</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">Product Catalog & Inventory Center</h1>
           </div>
@@ -548,6 +624,18 @@ export default function AdminDashboardPage() {
             <SlidersHorizontal className="h-4 w-4 shrink-0" />
             <span>Live Stock Adjuster</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
+              activeTab === "history"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-600/20 border-emerald-400/60 font-extrabold"
+                : "bg-slate-950/60 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800/60"
+            }`}
+          >
+            <History className="h-4 w-4 shrink-0" />
+            <span>Stock History Audit Log</span>
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 w-full lg:w-auto">
@@ -555,7 +643,7 @@ export default function AdminDashboardPage() {
             <Search className="h-4 w-4 text-slate-500 shrink-0" />
             <input
               type="text"
-              placeholder={activeTab === "products" ? "Search product, style, SKU..." : "Search store, style, SKU..."}
+              placeholder={activeTab === "products" ? "Search product, style, SKU..." : activeTab === "inventory" ? "Search store, style, SKU..." : "Search audit history logs..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
@@ -825,6 +913,129 @@ export default function AdminDashboardPage() {
                   <button
                     onClick={() => setCurrentInvPage((prev) => Math.min(prev + 1, totalInvPages))}
                     disabled={currentInvPage === totalInvPages}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* TAB 3: STOCK HISTORY AUDIT LOG TABLE */}
+      {activeTab === "history" && (
+        <section className="bg-slate-900/80 border-2 border-slate-800 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
+          {loading ? (
+            <div className="p-16 text-center space-y-3">
+              <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
+              <p className="text-xs text-slate-400 font-medium">Fetching stock history audit logs...</p>
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="p-16 text-center space-y-2">
+              <p className="text-sm font-bold text-white">No stock history audit records found.</p>
+              <p className="text-xs text-slate-500">Stock updates will automatically log changes here.</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[850px]">
+                  <thead>
+                    <tr className="bg-slate-950 border-b-2 border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      <th className="py-4 px-5">Timestamp</th>
+                      <th className="py-4 px-5">Store Outlet</th>
+                      <th className="py-4 px-5">Style Code / SKU</th>
+                      <th className="py-4 px-5">Product Name</th>
+                      <th className="py-4 px-5 text-center">Stock Change</th>
+                      <th className="py-4 px-5">Changed By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 text-xs">
+                    {paginatedHistory.map((hist, index) => {
+                      const diff = hist.new_stock - hist.old_stock;
+                      return (
+                        <tr
+                          key={hist.id}
+                          className={`hover:bg-emerald-500/5 transition ${index % 2 === 0 ? "bg-slate-900/30" : "bg-slate-900/80"}`}
+                        >
+                          <td className="py-3.5 px-5 font-mono text-slate-400 text-[11px]">
+                            {new Date(hist.created_at).toLocaleString("en-PH", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                          <td className="py-3.5 px-5 font-bold text-emerald-400">
+                            {hist.store}
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <div className="font-mono font-bold text-slate-200">{hist.style_code}</div>
+                            <div className="font-mono text-[10px] text-blue-400">{hist.sku}</div>
+                          </td>
+                          <td className="py-3.5 px-5 font-bold text-white max-w-xs truncate">
+                            {hist.style_name}
+                          </td>
+                          <td className="py-3.5 px-5 text-center font-mono font-bold">
+                            <span className="bg-slate-950 border border-slate-800 px-3 py-1 rounded-xl inline-flex items-center gap-2">
+                              <span className="text-slate-400">{hist.old_stock}</span>
+                              <span className="text-slate-600">→</span>
+                              <span className="text-emerald-400">{hist.new_stock}</span>
+                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${diff >= 0 ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>
+                                {diff >= 0 ? `+${diff}` : diff}
+                              </span>
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-indigo-300 font-semibold">
+                            {hist.changed_by}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Bar */}
+              <div className="bg-slate-950 border-t-2 border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
+                  <span className="text-xs text-slate-400 font-medium">
+                    Showing <span className="text-white font-bold">{histStartIndex + 1}</span> to{" "}
+                    <span className="text-white font-bold">{histEndIndex}</span> of{" "}
+                    <span className="text-white font-bold">{filteredHistory.length}</span> audit logs
+                  </span>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-slate-500 font-medium">Per page:</span>
+                    <select
+                      value={histItemsPerPage}
+                      onChange={(e) => setHistItemsPerPage(Number(e.target.value))}
+                      className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-xl px-2.5 py-1 focus:outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentHistPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentHistPage === 1}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-slate-400 font-mono px-2">
+                    Page {currentHistPage} of {totalHistPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentHistPage((prev) => Math.min(prev + 1, totalHistPages))}
+                    disabled={currentHistPage === totalHistPages}
                     className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer"
                   >
                     Next
