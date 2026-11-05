@@ -403,20 +403,20 @@ export default function AdminDashboardPage() {
   }, [filteredInventory, invStartIndex, invEndIndex]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 max-w-[1600px] mx-auto antialiased space-y-4 sm:space-y-6 selection:bg-indigo-500 selection:text-white">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 max-w-[1600px] mx-auto antialiased space-y-5 sm:space-y-6 selection:bg-indigo-500 selection:text-white">
       {/* Executive Glass Header Bar */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-4 sm:p-5 rounded-3xl shadow-2xl">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 backdrop-blur-xl border-2 border-slate-800 p-4 sm:p-5 rounded-3xl shadow-2xl">
         <div className="flex items-center space-x-3 sm:space-x-4">
           <Link
             href="/inventory"
-            className="bg-slate-950 hover:bg-slate-800 text-slate-300 p-2.5 sm:p-3 rounded-2xl border border-slate-800 transition cursor-pointer flex items-center justify-center shadow-inner group shrink-0"
+            className="bg-slate-950 hover:bg-slate-800 text-slate-300 p-2.5 sm:p-3 rounded-2xl border border-slate-700 transition cursor-pointer flex items-center justify-center shadow-inner group shrink-0"
             title="Back to Inventory"
           >
             <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
           </Link>
           <div>
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 sm:px-3 py-0.5 rounded-full inline-flex items-center gap-1">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/30 px-2.5 sm:px-3 py-0.5 rounded-full inline-flex items-center gap-1">
                 <Sparkles className="h-3 w-3 text-indigo-400" /> Administrative Hub
               </span>
               <span className="text-[11px] sm:text-xs text-slate-500 font-mono font-medium">v2.4</span>
@@ -438,27 +438,39 @@ export default function AdminDashboardPage() {
 
       {/* Notifications */}
       {successMsg && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-emerald-500/10 border-2 border-emerald-500/40 text-emerald-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
           <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
           <p className="text-xs font-bold">{successMsg}</p>
         </div>
       )}
       {errorMsg && (
-        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-rose-500/10 border-2 border-rose-500/40 text-rose-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
           <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
           <p className="text-xs font-bold">{errorMsg}</p>
         </div>
       )}
 
+      {/* SECTION DIVIDER 1: HEADER TO KPI METRICS */}
+      <div className="relative py-1">
+        <div className="absolute inset-0 flex items-center" aria-hidden="true">
+          <div className="w-full border-t-2 border-slate-800/90" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-slate-950 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-800 rounded-full">
+            Key Metrics Overview
+          </span>
+        </div>
+      </div>
+
       {/* Modern KPI Cards Grid */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border-2 border-slate-800 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Catalog Master Items</p>
               <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{totalCatalogProducts.toLocaleString()} <span className="text-xs font-sans text-indigo-400 font-bold">styles</span></p>
             </div>
-            <div className="p-2.5 sm:p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 shadow-inner">
+            <div className="p-2.5 sm:p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl text-indigo-400 shadow-inner">
               <Package className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
@@ -467,13 +479,13 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border-2 border-slate-800 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Store On-Hand Total Volume</p>
               <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{totalStockUnits.toLocaleString()} <span className="text-xs font-sans text-emerald-400 font-bold">units</span></p>
             </div>
-            <div className="p-2.5 sm:p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 shadow-inner">
+            <div className="p-2.5 sm:p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-400 shadow-inner">
               <Boxes className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
@@ -482,13 +494,13 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border-2 border-slate-800 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Active Regional Outlets</p>
               <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{STORES.length - 1} <span className="text-xs font-sans text-amber-400 font-bold">branches</span></p>
             </div>
-            <div className="p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 shadow-inner">
+            <div className="p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400 shadow-inner">
               <Store className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
@@ -498,14 +510,26 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
+      {/* SECTION DIVIDER 2: KPI METRICS TO CONTROLS & TABLES */}
+      <div className="relative py-1">
+        <div className="absolute inset-0 flex items-center" aria-hidden="true">
+          <div className="w-full border-t-2 border-indigo-500/30" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-slate-950 px-3 text-[10px] font-black uppercase tracking-widest text-indigo-400 border border-indigo-500/40 rounded-full">
+            Data Control & Operations
+          </span>
+        </div>
+      </div>
+
       {/* Control Navigation & Filter Bar */}
-      <section className="bg-slate-900/90 backdrop-blur-md border border-slate-800/80 rounded-3xl p-3 flex flex-col lg:flex-row gap-3 items-stretch lg:items-center sticky top-2 sm:top-4 z-30 shadow-2xl">
+      <section className="bg-slate-900/90 backdrop-blur-md border-2 border-slate-800 rounded-3xl p-3 flex flex-col lg:flex-row gap-3 items-stretch lg:items-center sticky top-2 sm:top-4 z-30 shadow-2xl">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           <button
             onClick={() => setActiveTab("products")}
             className={`py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
               activeTab === "products"
-                ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-600/20 border-indigo-400/40"
+                ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-600/20 border-indigo-400/60"
                 : "bg-slate-950/60 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800/60"
             }`}
           >
@@ -517,7 +541,7 @@ export default function AdminDashboardPage() {
             onClick={() => setActiveTab("inventory")}
             className={`py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
               activeTab === "inventory"
-                ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/20 border-amber-400/40 font-extrabold"
+                ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/20 border-amber-400/60 font-extrabold"
                 : "bg-slate-950/60 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800/60"
             }`}
           >
@@ -527,7 +551,7 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 w-full lg:w-auto">
-          <div className="bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 flex items-center space-x-2 w-full lg:w-72">
+          <div className="bg-slate-950 border-2 border-slate-800 rounded-2xl px-3.5 py-2.5 flex items-center space-x-2 w-full lg:w-72">
             <Search className="h-4 w-4 text-slate-500 shrink-0" />
             <input
               type="text"
@@ -539,7 +563,7 @@ export default function AdminDashboardPage() {
           </div>
 
           {activeTab === "inventory" && (
-            <div className="bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2 flex items-center w-full lg:w-64">
+            <div className="bg-slate-950 border-2 border-slate-800 rounded-2xl px-3.5 py-2 flex items-center w-full lg:w-64">
               <select
                 value={selectedStore}
                 onChange={(e) => setSelectedStore(e.target.value)}
@@ -558,7 +582,7 @@ export default function AdminDashboardPage() {
 
       {/* TAB 1: PRODUCTS CATALOG CRUD TABLE */}
       {activeTab === "products" && (
-        <section className="bg-slate-900/80 border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
+        <section className="bg-slate-900/80 border-2 border-slate-800 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
           {loading ? (
             <div className="p-16 text-center space-y-3">
               <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -574,7 +598,7 @@ export default function AdminDashboardPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead>
-                    <tr className="bg-slate-950/90 border-b border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <tr className="bg-slate-950 border-b-2 border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="py-4 px-5">Style Code</th>
                       <th className="py-4 px-5">SKU</th>
                       <th className="py-4 px-5">Product Name</th>
@@ -587,7 +611,7 @@ export default function AdminDashboardPage() {
                       <th className="py-4 px-5 text-center">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50 text-xs">
+                  <tbody className="divide-y divide-slate-800/80 text-xs">
                     {paginatedProducts.map((product, index) => (
                       <tr
                         key={product.id}
@@ -647,7 +671,7 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Pagination Bar */}
-              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="bg-slate-950 border-t-2 border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
                   <span className="text-xs text-slate-400 font-medium">
                     Showing <span className="text-white font-bold">{prodStartIndex + 1}</span> to{" "}
@@ -697,7 +721,7 @@ export default function AdminDashboardPage() {
 
       {/* TAB 2: LIVE INVENTORY STOCK ADJUSTER TABLE */}
       {activeTab === "inventory" && (
-        <section className="bg-slate-900/80 border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
+        <section className="bg-slate-900/80 border-2 border-slate-800 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
           {loading ? (
             <div className="p-16 text-center space-y-3">
               <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -713,7 +737,7 @@ export default function AdminDashboardPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[700px]">
                   <thead>
-                    <tr className="bg-slate-950/90 border-b border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <tr className="bg-slate-950 border-b-2 border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="py-4 px-5">Store Location</th>
                       <th className="py-4 px-5">Style Code</th>
                       <th className="py-4 px-5">SKU</th>
@@ -722,7 +746,7 @@ export default function AdminDashboardPage() {
                       <th className="py-4 px-5 text-center">Quick Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50 text-xs">
+                  <tbody className="divide-y divide-slate-800/80 text-xs">
                     {paginatedInventory.map((item, index) => {
                       const stockQty = Number(item.available_stock ?? item.current_stock ?? item.quantity) || 0;
                       return (
@@ -764,7 +788,7 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Pagination Bar */}
-              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="bg-slate-950 border-t-2 border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
                   <span className="text-xs text-slate-400 font-medium">
                     Showing <span className="text-white font-bold">{invStartIndex + 1}</span> to{" "}
@@ -815,8 +839,8 @@ export default function AdminDashboardPage() {
       {/* CREATE PRODUCT MODAL */}
       {isCreatingProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <form onSubmit={handleCreateProductSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <form onSubmit={handleCreateProductSubmit} className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
+            <div className="flex items-center justify-between border-b-2 border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-0.5 rounded-full">
                   Catalog Creator
@@ -958,7 +982,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t-2 border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsCreatingProduct(false)}
@@ -986,8 +1010,8 @@ export default function AdminDashboardPage() {
       {/* EDIT PRODUCT MODAL */}
       {editingProduct && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <form onSubmit={handleSaveProductEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <form onSubmit={handleSaveProductEdit} className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
+            <div className="flex items-center justify-between border-b-2 border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-0.5 rounded-full">
                   Catalog Editor
@@ -1116,7 +1140,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t-2 border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingProduct(null)}
@@ -1139,8 +1163,8 @@ export default function AdminDashboardPage() {
       {/* UPDATE LIVE STOCK MODAL */}
       {editingStockItem && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <form onSubmit={handleSaveStockEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <form onSubmit={handleSaveStockEdit} className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
+            <div className="flex items-center justify-between border-b-2 border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-0.5 rounded-full">
                   Stock Adjuster
@@ -1185,7 +1209,7 @@ export default function AdminDashboardPage() {
               />
             </div>
 
-            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t-2 border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingStockItem(null)}
