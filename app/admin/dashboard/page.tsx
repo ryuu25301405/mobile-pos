@@ -77,6 +77,21 @@ export default function AdminDashboardPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Create Product Modal State
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [newProductForm, setNewProductForm] = useState({
+    style_code: "",
+    sku: "",
+    style_name: "",
+    description: "",
+    category: "",
+    department: "",
+    color: "",
+    size: "",
+    price: "",
+  });
+  const [isCreatingLoading, setIsCreatingLoading] = useState(false);
+
   // Edit Product Modal State
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
 
@@ -117,11 +132,63 @@ export default function AdminDashboardPage() {
     fetchData();
   }, [fetchData]);
 
-  // Reset pagination on search or tab change
   useEffect(() => {
     setCurrentProdPage(1);
     setCurrentInvPage(1);
   }, [searchQuery, selectedStore, activeTab, prodItemsPerPage, invItemsPerPage]);
+
+  // --- PRODUCT CREATE HANDLER ---
+  const handleCreateProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingLoading(true);
+    setErrorMsg("");
+
+    try {
+      if (!newProductForm.style_code || !newProductForm.style_name || !newProductForm.sku || !newProductForm.price) {
+        throw new Error("Please fill in all required fields (Style Code, Style Name, SKU, and Price).");
+      }
+
+      const { data, error } = await supabase.from("products").insert([
+        {
+          style_code: newProductForm.style_code.trim(),
+          style_name: newProductForm.style_name.trim(),
+          description: newProductForm.description.trim(),
+          color: newProductForm.color.trim() || "-",
+          category: newProductForm.category.trim() || "-",
+          department: newProductForm.department.trim() || "-",
+          size: newProductForm.size.trim() || "-",
+          sku: newProductForm.sku.trim(),
+          price: parseFloat(newProductForm.price) || 0,
+          created_at: new Date().toISOString(),
+        },
+      ]).select();
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setProducts((prev) => [data[0], ...prev]);
+      }
+
+      setIsCreatingProduct(false);
+      setNewProductForm({
+        style_code: "",
+        sku: "",
+        style_name: "",
+        description: "",
+        category: "",
+        department: "",
+        color: "",
+        size: "",
+        price: "",
+      });
+      setSuccessMsg("Product successfully created and saved!");
+      setTimeout(() => setSuccessMsg(""), 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to create product.");
+    } finally {
+      setIsCreatingLoading(false);
+    }
+  };
 
   // --- PRODUCT CRUD HANDLERS ---
   const handleDeleteProduct = async (id: string, name: string) => {
@@ -281,13 +348,13 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex items-center space-x-3">
-          <Link
-            href="/products/new"
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10"
+          <button
+            onClick={() => setIsCreatingProduct(true)}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-500/10 cursor-pointer"
           >
             <PlusCircle className="h-4 w-4" />
             <span>Create New Product</span>
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -614,6 +681,165 @@ export default function AdminDashboardPage() {
         </section>
       )}
 
+      {/* CREATE PRODUCT MODAL */}
+      {isCreatingProduct && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleCreateProductSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                  Catalog Creator
+                </span>
+                <h3 className="text-lg font-black text-white mt-1">Create New Product</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatingProduct(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Style Code <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 030767641673"
+                  value={newProductForm.style_code}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, style_code: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  SKU <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 764167"
+                  value={newProductForm.sku}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, sku: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div className="space-y-1 col-span-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Style Name <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 3076 COMBO2 BRF1SO"
+                  value={newProductForm.style_name}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, style_name: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-medium"
+                />
+              </div>
+
+              <div className="space-y-1 col-span-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Product description..."
+                  value={newProductForm.description}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, description: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white resize-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Underwear"
+                  value={newProductForm.category}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Department</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Menswear"
+                  value={newProductForm.department}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, department: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Color</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Black"
+                  value={newProductForm.color}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, color: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Size</label>
+                <input
+                  type="text"
+                  placeholder="e.g. L"
+                  value={newProductForm.size}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, size: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1 col-span-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Price (₱) <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="0.00"
+                  value={newProductForm.price}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, price: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsCreatingProduct(false)}
+                className="bg-slate-950 hover:bg-slate-800 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-800 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingLoading}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-5 py-2 rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer shadow-lg shadow-emerald-500/10"
+              >
+                {isCreatingLoading ? (
+                  <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <PlusCircle className="h-4 w-4" />
+                )}
+                <span>Save Product</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* EDIT PRODUCT MODAL */}
       {editingProduct && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -634,7 +860,7 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Style Code</label>
                 <input
@@ -800,7 +1026,7 @@ export default function AdminDashboardPage() {
               />
             </div>
 
-            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
+            <div className="pt-3 flex Z-50 flex justify-end space-x-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingStockItem(null)}
