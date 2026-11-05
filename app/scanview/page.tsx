@@ -887,7 +887,7 @@ export default function ScanViewPage() {
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ScanView Audit Qty</p>
                         <p className="text-2xl font-black text-indigo-400">{auditQty} <span className="text-xs">pcs</span></p>
                       </div>
-
+                          
                       <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-1">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live On-Hand Qty</p>
                         <p className="text-2xl font-black text-emerald-400">{onHandQty} <span className="text-xs">pcs</span></p>
