@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { 
-  Boxes, 
   ArrowLeft, 
   Search, 
   Edit3, 
@@ -66,6 +65,14 @@ export default function AdminDashboardPage() {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
 
+  // Pagination States for Products
+  const [currentProdPage, setCurrentProdPage] = useState<number>(1);
+  const [prodItemsPerPage, setProdItemsPerPage] = useState<number>(10);
+
+  // Pagination States for Inventory
+  const [currentInvPage, setCurrentInvPage] = useState<number>(1);
+  const [invItemsPerPage, setInvItemsPerPage] = useState<number>(10);
+
   // Notifications
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -109,6 +116,12 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Reset pagination on search or tab change
+  useEffect(() => {
+    setCurrentProdPage(1);
+    setCurrentInvPage(1);
+  }, [searchQuery, selectedStore, activeTab, prodItemsPerPage, invItemsPerPage]);
 
   // --- PRODUCT CRUD HANDLERS ---
   const handleDeleteProduct = async (id: string, name: string) => {
@@ -206,7 +219,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Filtered Lists
+  // Filtered Products
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return products.filter(
@@ -214,10 +227,21 @@ export default function AdminDashboardPage() {
         p.style_name.toLowerCase().includes(q) ||
         p.style_code.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
+        p.category.toLowerCase().includes(q) ||
+        p.department.toLowerCase().includes(q) ||
+        p.color.toLowerCase().includes(q)
     );
   }, [products, searchQuery]);
 
+  // Paginated Products
+  const totalProdPages = Math.ceil(filteredProducts.length / prodItemsPerPage) || 1;
+  const prodStartIndex = (currentProdPage - 1) * prodItemsPerPage;
+  const prodEndIndex = Math.min(prodStartIndex + prodItemsPerPage, filteredProducts.length);
+  const paginatedProducts = useMemo(() => {
+    return filteredProducts.slice(prodStartIndex, prodEndIndex);
+  }, [filteredProducts, prodStartIndex, prodEndIndex]);
+
+  // Filtered & Paginated Inventory
   const filteredInventory = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return inventoryList.filter(
@@ -228,6 +252,13 @@ export default function AdminDashboardPage() {
         String(i.store || "").toLowerCase().includes(q)
     );
   }, [inventoryList, searchQuery]);
+
+  const totalInvPages = Math.ceil(filteredInventory.length / invItemsPerPage) || 1;
+  const invStartIndex = (currentInvPage - 1) * invItemsPerPage;
+  const invEndIndex = Math.min(invStartIndex + invItemsPerPage, filteredInventory.length);
+  const paginatedInventory = useMemo(() => {
+    return filteredInventory.slice(invStartIndex, invEndIndex);
+  }, [filteredInventory, invStartIndex, invEndIndex]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6 max-w-[1600px] mx-auto antialiased space-y-6">
@@ -345,61 +376,123 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-slate-500">Create a new product using the button above.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-4">Style Code / SKU</th>
-                    <th className="py-3 px-4">Product Name</th>
-                    <th className="py-3 px-4">Category / Dept</th>
-                    <th className="py-3 px-4">Color / Size</th>
-                    <th className="py-3 px-4 text-right">Price</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {filteredProducts.map((product, index) => (
-                    <tr
-                      key={product.id}
-                      className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-mono font-bold text-slate-200">{product.style_code}</div>
-                        <div className="font-mono text-[10px] text-blue-400">{product.sku}</div>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
-                        {product.style_name}
-                      </td>
-                      <td className="py-3 px-4 text-slate-400">
-                        {product.category !== "-" ? product.category : "Unassigned"} ({product.department})
-                      </td>
-                      <td className="py-3 px-4 text-slate-400">
-                        {product.color} / {product.size}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                        ₱{Number(product.price).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-3 px-4 text-center space-x-2">
-                        <button
-                          onClick={() => setEditingProduct(product)}
-                          className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
-                        >
-                          <Edit3 className="h-3 w-3" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProduct(product.id, product.style_name)}
-                          className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>Delete</span>
-                        </button>
-                      </td>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-4">Style Code</th>
+                      <th className="py-3 px-4">SKU</th>
+                      <th className="py-3 px-4">Product Name</th>
+                      <th className="py-3 px-4">Description</th>
+                      <th className="py-3 px-4">Category</th>
+                      <th className="py-3 px-4">Department</th>
+                      <th className="py-3 px-4">Color</th>
+                      <th className="py-3 px-4">Size</th>
+                      <th className="py-3 px-4 text-right">Price</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {paginatedProducts.map((product, index) => (
+                      <tr
+                        key={product.id}
+                        className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
+                      >
+                        <td className="py-3 px-4 font-mono font-bold text-slate-200">
+                          {product.style_code}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-semibold text-blue-400">
+                          {product.sku}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
+                          {product.style_name}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400 max-w-xs truncate">
+                          {product.description || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-slate-300 font-medium">
+                          {product.category !== "-" ? product.category : "-"}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">
+                          {product.department !== "-" ? product.department : "-"}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">
+                          {product.color !== "-" ? product.color : "-"}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400 font-mono">
+                          {product.size !== "-" ? product.size : "-"}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
+                          ₱{Number(product.price).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-center space-x-2">
+                          <button
+                            onClick={() => setEditingProduct(product)}
+                            className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
+                          >
+                            <Edit3 className="h-3 w-3" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(product.id, product.style_name)}
+                            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>Delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls for Products Catalog */}
+              <div className="bg-slate-950 border-t border-slate-800 p-4 flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <span className="text-xs text-slate-400 font-medium">
+                    Showing <span className="text-white font-bold">{prodStartIndex + 1}</span> to{" "}
+                    <span className="text-white font-bold">{prodEndIndex}</span> of{" "}
+                    <span className="text-white font-bold">{filteredProducts.length}</span> products
+                  </span>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-slate-500">Per page:</span>
+                    <select
+                      value={prodItemsPerPage}
+                      onChange={(e) => setProdItemsPerPage(Number(e.target.value))}
+                      className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentProdPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentProdPage === 1}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-slate-400 font-mono px-2">
+                    Page {currentProdPage} of {totalProdPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentProdPage((prev) => Math.min(prev + 1, totalProdPages))}
+                    disabled={currentProdPage === totalProdPages}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </section>
       )}
@@ -418,55 +511,105 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-slate-500">Ensure items have been added to store inventory.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-4">Store Location</th>
-                    <th className="py-3 px-4">Style Code / SKU</th>
-                    <th className="py-3 px-4">Product Name</th>
-                    <th className="py-3 px-4 text-center">Live On-Hand Stock</th>
-                    <th className="py-3 px-4 text-center">Quick Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {filteredInventory.map((item, index) => {
-                    const stockQty = Number(item.available_stock ?? item.current_stock ?? item.quantity) || 0;
-                    return (
-                      <tr
-                        key={item.id}
-                        className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
-                      >
-                        <td className="py-3 px-4 font-semibold text-emerald-400">
-                          {item.store}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-mono font-bold text-slate-200">{item.style_code}</div>
-                          <div className="font-mono text-[10px] text-blue-400">{item.sku}</div>
-                        </td>
-                        <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
-                          {item.style_name || "Unassigned Item"}
-                        </td>
-                        <td className="py-3 px-4 text-center font-bold font-mono text-emerald-400">
-                          <span className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl text-sm inline-block">
-                            {stockQty} pcs
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => handleOpenStockEdit(item)}
-                            className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer inline-flex items-center gap-1.5 shadow-md shadow-amber-500/10"
-                          >
-                            <SlidersHorizontal className="h-3.5 w-3.5" />
-                            <span>Update Stock</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-4">Store Location</th>
+                      <th className="py-3 px-4">Style Code</th>
+                      <th className="py-3 px-4">SKU</th>
+                      <th className="py-3 px-4">Product Name</th>
+                      <th className="py-3 px-4 text-center">Live On-Hand Stock</th>
+                      <th className="py-3 px-4 text-center">Quick Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {paginatedInventory.map((item, index) => {
+                      const stockQty = Number(item.available_stock ?? item.current_stock ?? item.quantity) || 0;
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`hover:bg-slate-800/40 transition ${index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/90"}`}
+                        >
+                          <td className="py-3 px-4 font-semibold text-emerald-400">
+                            {item.store}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-200">
+                            {item.style_code}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold text-blue-400">
+                            {item.sku}
+                          </td>
+                          <td className="py-3 px-4 font-medium text-white max-w-xs truncate">
+                            {item.style_name || "Unassigned Item"}
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold font-mono text-emerald-400">
+                            <span className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl text-sm inline-block">
+                              {stockQty} pcs
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => handleOpenStockEdit(item)}
+                              className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer inline-flex items-center gap-1.5 shadow-md shadow-amber-500/10"
+                            >
+                              <SlidersHorizontal className="h-3.5 w-3.5" />
+                              <span>Update Stock</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls for Live Inventory */}
+              <div className="bg-slate-950 border-t border-slate-800 p-4 flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <span className="text-xs text-slate-400 font-medium">
+                    Showing <span className="text-white font-bold">{invStartIndex + 1}</span> to{" "}
+                    <span className="text-white font-bold">{invEndIndex}</span> of{" "}
+                    <span className="text-white font-bold">{filteredInventory.length}</span> records
+                  </span>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-slate-500">Per page:</span>
+                    <select
+                      value={invItemsPerPage}
+                      onChange={(e) => setInvItemsPerPage(Number(e.target.value))}
+                      className="bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentInvPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentInvPage === 1}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-slate-400 font-mono px-2">
+                    Page {currentInvPage} of {totalInvPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentInvPage((prev) => Math.min(prev + 1, totalInvPages))}
+                    disabled={currentInvPage === totalInvPages}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </section>
       )}
