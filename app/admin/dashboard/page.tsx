@@ -133,7 +133,7 @@ export default function AdminDashboardPage() {
       }
       setProducts(allProducts);
 
-      // 2. Fetch Store Inventory (with pagination/chunking loop if necessary)
+      // 2. Fetch Store Inventory with chunking loop
       let allInventory: any[] = [];
       let invPage = 0;
       let fetchMoreInv = true;
@@ -403,34 +403,34 @@ export default function AdminDashboardPage() {
   }, [filteredInventory, invStartIndex, invEndIndex]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 max-w-[1600px] mx-auto antialiased space-y-6 selection:bg-indigo-500 selection:text-white">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 max-w-[1600px] mx-auto antialiased space-y-4 sm:space-y-6 selection:bg-indigo-500 selection:text-white">
       {/* Executive Glass Header Bar */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-3xl shadow-2xl">
-        <div className="flex items-center space-x-4">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-4 sm:p-5 rounded-3xl shadow-2xl">
+        <div className="flex items-center space-x-3 sm:space-x-4">
           <Link
             href="/inventory"
-            className="bg-slate-950 hover:bg-slate-800 text-slate-300 p-3 rounded-2xl border border-slate-800 transition cursor-pointer flex items-center justify-center shadow-inner group"
+            className="bg-slate-950 hover:bg-slate-800 text-slate-300 p-2.5 sm:p-3 rounded-2xl border border-slate-800 transition cursor-pointer flex items-center justify-center shadow-inner group shrink-0"
             title="Back to Inventory"
           >
             <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
           </Link>
           <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-0.5 rounded-full inline-flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 sm:px-3 py-0.5 rounded-full inline-flex items-center gap-1">
                 <Sparkles className="h-3 w-3 text-indigo-400" /> Administrative Hub
               </span>
-              <span className="text-xs text-slate-500 font-mono font-medium">v2.4 System Management</span>
+              <span className="text-[11px] sm:text-xs text-slate-500 font-mono font-medium">v2.4</span>
             </div>
-            <h1 className="text-2xl font-black text-white tracking-tight mt-1">Product Catalog & Inventory Center</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">Product Catalog & Inventory Center</h1>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center justify-end">
           <button
             onClick={() => setIsCreatingProduct(true)}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-5 py-2.5 rounded-2xl text-xs flex items-center space-x-2 transition shadow-xl shadow-emerald-500/20 cursor-pointer active:scale-95"
+            className="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-4 sm:px-5 py-2.5 rounded-2xl text-xs flex items-center justify-center space-x-2 transition shadow-xl shadow-emerald-500/20 cursor-pointer active:scale-95"
           >
-            <PlusCircle className="h-4 w-4" />
+            <PlusCircle className="h-4 w-4 shrink-0" />
             <span>Create New Product</span>
           </button>
         </div>
@@ -438,28 +438,28 @@ export default function AdminDashboardPage() {
 
       {/* Notifications */}
       {successMsg && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
           <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
           <p className="text-xs font-bold">{successMsg}</p>
         </div>
       )}
       {errorMsg && (
-        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3.5 sm:p-4 rounded-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-2">
           <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
           <p className="text-xs font-bold">{errorMsg}</p>
         </div>
       )}
 
       {/* Modern KPI Cards Grid */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800/80 rounded-3xl p-5 relative overflow-hidden shadow-xl">
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Catalog Master Items</p>
-              <p className="text-3xl font-black text-white mt-1 font-mono">{totalCatalogProducts.toLocaleString()} <span className="text-xs font-sans text-indigo-400 font-bold">styles</span></p>
+              <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{totalCatalogProducts.toLocaleString()} <span className="text-xs font-sans text-indigo-400 font-bold">styles</span></p>
             </div>
-            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 shadow-inner">
-              <Package className="h-6 w-6" />
+            <div className="p-2.5 sm:p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 shadow-inner">
+              <Package className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
           <div className="mt-3 flex items-center text-[10px] text-slate-400 font-semibold space-x-1">
@@ -467,14 +467,14 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800/80 rounded-3xl p-5 relative overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Store On-Hand Total Volume</p>
-              <p className="text-3xl font-black text-white mt-1 font-mono">{totalStockUnits.toLocaleString()} <span className="text-xs font-sans text-emerald-400 font-bold">units</span></p>
+              <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{totalStockUnits.toLocaleString()} <span className="text-xs font-sans text-emerald-400 font-bold">units</span></p>
             </div>
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 shadow-inner">
-              <Boxes className="h-6 w-6" />
+            <div className="p-2.5 sm:p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 shadow-inner">
+              <Boxes className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
           <div className="mt-3 flex items-center text-[10px] text-slate-400 font-semibold space-x-1">
@@ -482,14 +482,14 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-slate-800/80 rounded-3xl p-5 relative overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-slate-800/80 rounded-3xl p-4 sm:p-5 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Active Regional Outlets</p>
-              <p className="text-3xl font-black text-white mt-1 font-mono">{STORES.length - 1} <span className="text-xs font-sans text-amber-400 font-bold">branches</span></p>
+              <p className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{STORES.length - 1} <span className="text-xs font-sans text-amber-400 font-bold">branches</span></p>
             </div>
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 shadow-inner">
-              <Store className="h-6 w-6" />
+            <div className="p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 shadow-inner">
+              <Store className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
           <div className="mt-3 flex items-center text-[10px] text-slate-400 font-semibold space-x-1">
@@ -499,59 +499,61 @@ export default function AdminDashboardPage() {
       </section>
 
       {/* Control Navigation & Filter Bar */}
-      <section className="bg-slate-900/90 backdrop-blur-md border border-slate-800/80 rounded-3xl p-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center sticky top-4 z-30 shadow-2xl">
-        <div className="md:col-span-6 flex items-center space-x-2">
+      <section className="bg-slate-900/90 backdrop-blur-md border border-slate-800/80 rounded-3xl p-3 flex flex-col lg:flex-row gap-3 items-stretch lg:items-center sticky top-2 sm:top-4 z-30 shadow-2xl">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           <button
             onClick={() => setActiveTab("products")}
-            className={`flex-1 py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
+            className={`py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
               activeTab === "products"
                 ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-600/20 border-indigo-400/40"
                 : "bg-slate-950/60 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800/60"
             }`}
           >
-            <Package className="h-4 w-4" />
+            <Package className="h-4 w-4 shrink-0" />
             <span>Products Catalog (CRUD)</span>
           </button>
 
           <button
             onClick={() => setActiveTab("inventory")}
-            className={`flex-1 py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
+            className={`py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-2 border ${
               activeTab === "inventory"
-                ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/20 border-amber-400/40"
+                ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/20 border-amber-400/40 font-extrabold"
                 : "bg-slate-950/60 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800/60"
             }`}
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <SlidersHorizontal className="h-4 w-4 shrink-0" />
             <span>Live Stock Adjuster</span>
           </button>
         </div>
 
-        <div className={`md:col-span-${activeTab === "inventory" ? "3" : "6"} bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2 flex items-center space-x-2`}>
-          <Search className="h-4 w-4 text-slate-500 shrink-0" />
-          <input
-            type="text"
-            placeholder={activeTab === "products" ? "Search product, style, SKU..." : "Search store, style, SKU..."}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
-          />
-        </div>
-
-        {activeTab === "inventory" && (
-          <div className="md:col-span-3 bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2 flex items-center">
-            <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="w-full bg-transparent text-xs font-black text-emerald-400 focus:outline-none cursor-pointer"
-            >
-              {STORES.map((store) => (
-                <option key={store} value={store} className="bg-slate-900 text-white font-normal">
-                  {store}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col sm:flex-row gap-2.5 w-full lg:w-auto">
+          <div className="bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 flex items-center space-x-2 w-full lg:w-72">
+            <Search className="h-4 w-4 text-slate-500 shrink-0" />
+            <input
+              type="text"
+              placeholder={activeTab === "products" ? "Search product, style, SKU..." : "Search store, style, SKU..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+            />
           </div>
-        )}
+
+          {activeTab === "inventory" && (
+            <div className="bg-slate-950 border border-slate-800/80 rounded-2xl px-3.5 py-2 flex items-center w-full lg:w-64">
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full bg-transparent text-xs font-black text-emerald-400 focus:outline-none cursor-pointer"
+              >
+                {STORES.map((store) => (
+                  <option key={store} value={store} className="bg-slate-900 text-white font-normal">
+                    {store}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* TAB 1: PRODUCTS CATALOG CRUD TABLE */}
@@ -560,7 +562,7 @@ export default function AdminDashboardPage() {
           {loading ? (
             <div className="p-16 text-center space-y-3">
               <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-xs text-slate-400 font-medium">Synchronizing products database (fetching all records)...</p>
+              <p className="text-xs text-slate-400 font-medium">Synchronizing products database...</p>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="p-16 text-center space-y-2">
@@ -570,7 +572,7 @@ export default function AdminDashboardPage() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead>
                     <tr className="bg-slate-950/90 border-b border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="py-4 px-5">Style Code</th>
@@ -620,21 +622,23 @@ export default function AdminDashboardPage() {
                         <td className="py-3.5 px-5 text-right font-mono font-black text-emerald-400 text-sm">
                           ₱{Number(product.price).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-3.5 px-5 text-center space-x-2">
-                          <button
-                            onClick={() => setEditingProduct(product)}
-                            className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-bold px-3 py-1.5 rounded-xl text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                          >
-                            <Edit3 className="h-3 w-3" />
-                            <span>Edit</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProduct(product.id, product.style_name)}
-                            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold px-3 py-1.5 rounded-xl text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            <span>Delete</span>
-                          </button>
+                        <td className="py-3.5 px-5 text-center">
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              onClick={() => setEditingProduct(product)}
+                              className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-bold px-2.5 py-1.5 rounded-xl text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(product.id, product.style_name)}
+                              className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold px-2.5 py-1.5 rounded-xl text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -643,8 +647,8 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Pagination Bar */}
-              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
+              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
                   <span className="text-xs text-slate-400 font-medium">
                     Showing <span className="text-white font-bold">{prodStartIndex + 1}</span> to{" "}
                     <span className="text-white font-bold">{prodEndIndex}</span> of{" "}
@@ -707,7 +711,7 @@ export default function AdminDashboardPage() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse min-w-[700px]">
                   <thead>
                     <tr className="bg-slate-950/90 border-b border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="py-4 px-5">Store Location</th>
@@ -760,8 +764,8 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Pagination Bar */}
-              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
+              <div className="bg-slate-950/90 border-t border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
                   <span className="text-xs text-slate-400 font-medium">
                     Showing <span className="text-white font-bold">{invStartIndex + 1}</span> to{" "}
                     <span className="text-white font-bold">{invEndIndex}</span> of{" "}
@@ -810,14 +814,14 @@ export default function AdminDashboardPage() {
 
       {/* CREATE PRODUCT MODAL */}
       {isCreatingProduct && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateProductSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <form onSubmit={handleCreateProductSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-0.5 rounded-full">
                   Catalog Creator
                 </span>
-                <h3 className="text-xl font-black text-white mt-1">Create New Product Item</h3>
+                <h3 className="text-lg sm:text-xl font-black text-white mt-1">Create New Product Item</h3>
               </div>
               <button
                 type="button"
@@ -828,7 +832,7 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3.5 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[60vh] overflow-y-auto pr-1">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Style Code <span className="text-rose-400">*</span>
@@ -857,7 +861,7 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Style Name <span className="text-rose-400">*</span>
                 </label>
@@ -871,7 +875,7 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</label>
                 <textarea
                   rows={2}
@@ -938,7 +942,7 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Price (₱) <span className="text-rose-400">*</span>
                 </label>
@@ -954,7 +958,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsCreatingProduct(false)}
@@ -965,7 +969,7 @@ export default function AdminDashboardPage() {
               <button
                 type="submit"
                 disabled={isCreatingLoading}
-                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer shadow-lg shadow-emerald-500/20"
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-emerald-500/20"
               >
                 {isCreatingLoading ? (
                   <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
@@ -981,14 +985,14 @@ export default function AdminDashboardPage() {
 
       {/* EDIT PRODUCT MODAL */}
       {editingProduct && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveProductEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <form onSubmit={handleSaveProductEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-0.5 rounded-full">
                   Catalog Editor
                 </span>
-                <h3 className="text-xl font-black text-white mt-1">Edit Product Record</h3>
+                <h3 className="text-lg sm:text-xl font-black text-white mt-1">Edit Product Record</h3>
               </div>
               <button
                 type="button"
@@ -999,7 +1003,7 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3.5 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[60vh] overflow-y-auto pr-1">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Style Code</label>
                 <input
@@ -1022,7 +1026,7 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Style Name</label>
                 <input
                   type="text"
@@ -1033,7 +1037,7 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</label>
                 <textarea
                   rows={2}
@@ -1099,7 +1103,7 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Price (₱)</label>
                 <input
                   type="number"
@@ -1112,7 +1116,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingProduct(null)}
@@ -1122,7 +1126,7 @@ export default function AdminDashboardPage() {
               </button>
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer shadow-lg shadow-indigo-600/20"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-indigo-600/20"
               >
                 <Save className="h-4 w-4" />
                 <span>Save Changes</span>
@@ -1134,14 +1138,14 @@ export default function AdminDashboardPage() {
 
       {/* UPDATE LIVE STOCK MODAL */}
       {editingStockItem && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveStockEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <form onSubmit={handleSaveStockEdit} className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-0.5 rounded-full">
                   Stock Adjuster
                 </span>
-                <h3 className="text-xl font-black text-white mt-1">Update Live On-Hand Stock</h3>
+                <h3 className="text-lg sm:text-xl font-black text-white mt-1">Update Live On-Hand Stock</h3>
               </div>
               <button
                 type="button"
@@ -1159,7 +1163,7 @@ export default function AdminDashboardPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Product Name:</span>
-                <span className="text-white font-bold truncate max-w-[220px]">{editingStockItem.style_name}</span>
+                <span className="text-white font-bold truncate max-w-[200px]">{editingStockItem.style_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Style / SKU:</span>
@@ -1181,7 +1185,7 @@ export default function AdminDashboardPage() {
               />
             </div>
 
-            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
+            <div className="pt-3 flex flex-col sm:flex-row justify-end gap-2 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingStockItem(null)}
@@ -1191,7 +1195,7 @@ export default function AdminDashboardPage() {
               </button>
               <button
                 type="submit"
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
               >
                 <Save className="h-4 w-4" />
                 <span>Update Stock</span>
