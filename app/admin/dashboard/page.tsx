@@ -137,6 +137,31 @@ export default function AdminDashboardPage() {
     setCurrentInvPage(1);
   }, [searchQuery, selectedStore, activeTab, prodItemsPerPage, invItemsPerPage]);
 
+  // Derive unique dropdown options from existing products table data
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.category && p.category !== "-") set.add(p.category.trim()); });
+    return Array.from(set).sort();
+  }, [products]);
+
+  const availableDepartments = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.department && p.department !== "-") set.add(p.department.trim()); });
+    return Array.from(set).sort();
+  }, [products]);
+
+  const availableColors = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.color && p.color !== "-") set.add(p.color.trim()); });
+    return Array.from(set).sort();
+  }, [products]);
+
+  const availableSizes = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.size && p.size !== "-") set.add(p.size.trim()); });
+    return Array.from(set).sort();
+  }, [products]);
+
   // --- PRODUCT CREATE HANDLER ---
   const handleCreateProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -755,48 +780,64 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
+              {/* Category Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Underwear"
+                <select
                   value={newProductForm.category}
                   onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="">Select Category...</option>
+                  {availableCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Department Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Department</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Menswear"
+                <select
                   value={newProductForm.department}
                   onChange={(e) => setNewProductForm({ ...newProductForm, department: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="">Select Department...</option>
+                  {availableDepartments.map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Color Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Color</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Black"
+                <select
                   value={newProductForm.color}
                   onChange={(e) => setNewProductForm({ ...newProductForm, color: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="">Select Color...</option>
+                  {availableColors.map((col) => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Size Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Size</label>
-                <input
-                  type="text"
-                  placeholder="e.g. L"
+                <select
                   value={newProductForm.size}
                   onChange={(e) => setNewProductForm({ ...newProductForm, size: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="">Select Size...</option>
+                  {availableSizes.map((sz) => (
+                    <option key={sz} value={sz}>{sz}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1 col-span-2">
@@ -904,44 +945,64 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
+              {/* Category Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</label>
-                <input
-                  type="text"
+                <select
                   value={editingProduct.category || ""}
                   onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="-">Select Category...</option>
+                  {availableCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Department Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Department</label>
-                <input
-                  type="text"
+                <select
                   value={editingProduct.department || ""}
                   onChange={(e) => setEditingProduct({ ...editingProduct, department: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="-">Select Department...</option>
+                  {availableDepartments.map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Color Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Color</label>
-                <input
-                  type="text"
+                <select
                   value={editingProduct.color || ""}
                   onChange={(e) => setEditingProduct({ ...editingProduct, color: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="-">Select Color...</option>
+                  {availableColors.map((col) => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
               </div>
 
+              {/* Size Dropdown */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Size</label>
-                <input
-                  type="text"
+                <select
                   value={editingProduct.size || ""}
                   onChange={(e) => setEditingProduct({ ...editingProduct, size: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer"
+                >
+                  <option value="-">Select Size...</option>
+                  {availableSizes.map((sz) => (
+                    <option key={sz} value={sz}>{sz}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1 col-span-2">
@@ -1026,7 +1087,7 @@ export default function AdminDashboardPage() {
               />
             </div>
 
-            <div className="pt-3 flex Z-50 flex justify-end space-x-3 border-t border-slate-800">
+            <div className="pt-3 flex justify-end space-x-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingStockItem(null)}
