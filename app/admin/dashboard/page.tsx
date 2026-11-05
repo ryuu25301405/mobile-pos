@@ -17,7 +17,6 @@ import {
   SlidersHorizontal,
   Boxes,
   Store,
-  Layers,
   Sparkles
 } from "lucide-react";
 
@@ -106,24 +105,65 @@ export default function AdminDashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch Products
-      const { data: prodData, error: prodError } = await supabase
-        .from("products")
-        .select("*")
-        .order("style_name", { ascending: true });
+      // 1. Fetch Products with chunking loop to bypass the 1,000 limit
+      let allProducts: any[] = [];
+      let page = 0;
+      let fetchMoreProducts = true;
+      const pageSize = 1000;
 
-      if (prodError) throw prodError;
-      setProducts(prodData || []);
+      while (fetchMoreProducts) {
+        const { data: prodData, error: prodError } = await supabase
+          .from("products")
+          .select("*")
+          .order("style_name", { ascending: true })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      // 2. Fetch Store Inventory
-      let invQuery = supabase.from("store_inventory").select("*");
-      if (selectedStore !== "All Stores") {
-        invQuery = invQuery.eq("store", selectedStore);
+        if (prodError) throw prodError;
+
+        if (!prodData || prodData.length === 0) {
+          fetchMoreProducts = false;
+        } else {
+          allProducts = [...allProducts, ...prodData];
+          if (prodData.length < pageSize) {
+            fetchMoreProducts = false;
+          } else {
+            page++;
+          }
+        }
       }
-      const { data: invData, error: invError } = await invQuery;
+      setProducts(allProducts);
 
-      if (invError) throw invError;
-      setInventoryList(invData || []);
+      // 2. Fetch Store Inventory (with pagination/chunking loop if necessary)
+      let allInventory: any[] = [];
+      let invPage = 0;
+      let fetchMoreInv = true;
+
+      while (fetchMoreInv) {
+        let invQuery = supabase
+          .from("store_inventory")
+          .select("*")
+          .range(invPage * pageSize, (invPage + 1) * pageSize - 1);
+
+        if (selectedStore !== "All Stores") {
+          invQuery = invQuery.eq("store", selectedStore);
+        }
+
+        const { data: invData, error: invError } = await invQuery;
+
+        if (invError) throw invError;
+
+        if (!invData || invData.length === 0) {
+          fetchMoreInv = false;
+        } else {
+          allInventory = [...allInventory, ...invData];
+          if (invData.length < pageSize) {
+            fetchMoreInv = false;
+          } else {
+            invPage++;
+          }
+        }
+      }
+      setInventoryList(allInventory);
     } catch (err: any) {
       console.error("Error fetching admin data:", err);
       setErrorMsg("Failed to load dashboard records.");
@@ -416,14 +456,14 @@ export default function AdminDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Catalog Master Items</p>
-              <p className="text-3xl font-black text-white mt-1 font-mono">{totalCatalogProducts} <span className="text-xs font-sans text-indigo-400 font-bold">styles</span></p>
+              <p className="text-3xl font-black text-white mt-1 font-mono">{totalCatalogProducts.toLocaleString()} <span className="text-xs font-sans text-indigo-400 font-bold">styles</span></p>
             </div>
             <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 shadow-inner">
               <Package className="h-6 w-6" />
             </div>
           </div>
           <div className="mt-3 flex items-center text-[10px] text-slate-400 font-semibold space-x-1">
-            <span className="text-emerald-400 font-bold">● Active catalog sync</span>
+            <span className="text-emerald-400 font-bold">● Active catalog sync (Bypassed 1k limit)</span>
           </div>
         </div>
 
@@ -520,7 +560,7 @@ export default function AdminDashboardPage() {
           {loading ? (
             <div className="p-16 text-center space-y-3">
               <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-xs text-slate-400 font-medium">Synchronizing products database...</p>
+              <p className="text-xs text-slate-400 font-medium">Synchronizing products database (fetching all records)...</p>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="p-16 text-center space-y-2">
