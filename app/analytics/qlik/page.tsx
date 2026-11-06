@@ -360,7 +360,7 @@ export default function QlikViewAnalyticsPage() {
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         
-        // Exact mapping for pull_out_number column
+        // Comprehensive fallback chain checking pull_out_number first
         const refNo = 
           row.pull_out_number || 
           row.pullout_number || 
@@ -530,6 +530,17 @@ export default function QlikViewAnalyticsPage() {
       .filter((r) => r && r !== "-" && r !== "null" && r !== "undefined");
     return Array.from(new Set(refs));
   }, [currentSubset]);
+
+  // Dynamic reference label function based on active transaction mode
+  const getRefLabel = useCallback(() => {
+    if (stateA.transactionModes.length === 1) {
+      const mode = stateA.transactionModes[0].toLowerCase();
+      if (mode === "delivery" || mode === "dr") return "Delivery Receipt No";
+      if (mode === "pull_out" || mode === "pullout") return "Pull Out No";
+      if (mode === "sales") return "Sales Ref No";
+    }
+    return "Ref / Doc No";
+  }, [stateA.transactionModes]);
 
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (targetField: keyof SalesRecord) => {
@@ -2235,7 +2246,7 @@ export default function QlikViewAnalyticsPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
-                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "PULL OUT"} MANIFEST
+                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY"} MANIFEST
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">Confidential Audit Report</span>
                     </div>
@@ -2243,12 +2254,12 @@ export default function QlikViewAnalyticsPage() {
                       {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
                     </h1>
                     <p className="text-[11px] text-slate-300 font-mono">
-                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "pull_out"}
+                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
                     </p>
                   </div>
                   <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
                     <p className="text-emerald-400 font-bold">
-                      <strong>Ref / Pull Out No:</strong> {
+                      <strong>{getRefLabel()}:</strong> {
                         Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") || 
                         filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || 
                         "N/A"
@@ -2295,7 +2306,7 @@ export default function QlikViewAnalyticsPage() {
                   <table className="w-full text-left border-collapse text-[11px]">
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[10px] text-slate-700">
-                        <th className="p-2 border-r border-slate-200">Ref / Doc #</th>
+                        <th className="p-2 border-r border-slate-200">{getRefLabel()}</th>
                         <th className="p-2 border-r border-slate-200">Style Code & Name</th>
                         <th className="p-2 border-r border-slate-200">Variant</th>
                         <th className="p-2 border-r border-slate-200 text-center">Class</th>
