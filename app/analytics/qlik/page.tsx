@@ -74,6 +74,7 @@ interface SalesRecord {
   revenue: number;
   scanned_at: string;
   scanned_date: string;
+  pullout_no: string; // Dynamic reference / Pull Out / DR number
 }
 
 interface InventoryRecord {
@@ -201,6 +202,7 @@ interface ProductSummaryItem {
   stockStatus: "CRITICAL" | "WARNING" | "HEALTHY";
   slobStatus: "DEAD" | "SLOW" | "ACTIVE";
   tiedUpCapital: number;
+  pulloutNo: string;
 }
 
 export default function QlikViewAnalyticsPage() {
@@ -309,7 +311,7 @@ export default function QlikViewAnalyticsPage() {
     while (fetchMoreLogs) {
       const { data: chunk, error } = await supabase
         .from("scanned_logs")
-        .select("id, store, transaction_mode, style_code, sku, style_name, description, color, size, category, department, price, quantity, scanned_at")
+        .select("*") // Dynamic select to include pullout_no, dr_number, reference_no, doc_no etc.
         .order("scanned_at", { ascending: false })
         .range(logPage * pageSize, (logPage + 1) * pageSize - 1);
 
@@ -357,6 +359,7 @@ export default function QlikViewAnalyticsPage() {
         const qty = Number(row.quantity) || 1;
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
+        const refNo = row.pullout_no || row.dr_number || row.reference_no || row.doc_no || "-";
         return {
           id: String(row.id),
           store: row.store ? row.store.trim() : "Unassigned Store",
@@ -374,6 +377,7 @@ export default function QlikViewAnalyticsPage() {
           revenue: pr * qty,
           scanned_at: row.scanned_at,
           scanned_date: dt.toISOString().split("T")[0],
+          pullout_no: String(refNo),
         };
       });
       setData(parsed);
@@ -509,6 +513,11 @@ export default function QlikViewAnalyticsPage() {
   );
 
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
+
+  const dynamicRefNumbers = useMemo(() => {
+    const refs = currentSubset.map((r) => r.pullout_no).filter((r) => r && r !== "-");
+    return Array.from(new Set(refs));
+  }, [currentSubset]);
 
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (targetField: keyof SalesRecord) => {
@@ -815,11 +824,14 @@ export default function QlikViewAnalyticsPage() {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
           category: item.category, department: item.department, price: parseFloat(String(item.price)) || 0, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
-          currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0
+          currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0, pulloutNo: item.pullout_no || "-"
         };
       }
       map[prodKey].units += item.quantity;
       map[prodKey].revenue += item.revenue;
+      if (item.pullout_no && item.pullout_no !== "-") {
+        map[prodKey].pulloutNo = item.pullout_no;
+      }
       map[prodKey].storeBreakdown[item.store] = (map[prodKey].storeBreakdown[item.store] || 0) + item.quantity;
     });
 
@@ -861,7 +873,8 @@ export default function QlikViewAnalyticsPage() {
         p.color,
         p.size,
         p.department,
-        p.category
+        p.category,
+        p.pulloutNo
       ]
         .filter(Boolean)
         .join(" ")
@@ -895,7 +908,7 @@ export default function QlikViewAnalyticsPage() {
     if (branchModalSearch.trim()) {
       const q = branchModalSearch.toLowerCase().trim();
       list = list.filter((p) => {
-        const searchableText = [p.styleCode, p.styleName, p.color, p.size, p.sku].filter(Boolean).join(" ").toLowerCase();
+        const searchableText = [p.styleCode, p.styleName, p.color, p.size, p.sku, p.pulloutNo].filter(Boolean).join(" ").toLowerCase();
         return searchableText.includes(q);
       });
     }
@@ -904,6 +917,7 @@ export default function QlikViewAnalyticsPage() {
 
   const handleExportExcel = () => {
     const exportData = filteredProducts.map((p) => ({
+      "Reference / Pullout #": p.pulloutNo,
       "Style Code": p.styleCode,
       "Style Name": p.styleName,
       "SKU": p.sku,
@@ -929,6 +943,7 @@ export default function QlikViewAnalyticsPage() {
 
   const handleExportCSV = () => {
     const exportData = filteredProducts.map((p) => ({
+      ReferenceNo: p.pulloutNo,
       StyleCode: p.styleCode,
       StyleName: p.styleName,
       Department: p.department,
@@ -1644,7 +1659,8 @@ export default function QlikViewAnalyticsPage() {
                                     daysOfSupply: 30,
                                     stockStatus: prod.currentStock > 0 ? "HEALTHY" : "CRITICAL",
                                     slobStatus: "ACTIVE",
-                                    tiedUpCapital: prod.currentStock * prod.price
+                                    tiedUpCapital: prod.currentStock * prod.price,
+                                    pulloutNo: "-"
                                   });
                                 }}
                                 className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
@@ -1928,7 +1944,9 @@ export default function QlikViewAnalyticsPage() {
                                     <span className="font-black text-emerald-400 block text-xs truncate select-none">
                                       {prod.styleName !== "-" && prod.styleName !== "Unassigned Item" ? prod.styleName : prod.styleCode}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 block truncate select-none">Code: {prod.styleCode}</span>
+                                    <span className="text-[10px] text-slate-400 block truncate select-none">
+                                      Code: {prod.styleCode} {prod.pulloutNo !== "-" && `• Ref: ${prod.pulloutNo}`}
+                                    </span>
                                   </td>
                                   <td className={`px-3 whitespace-nowrap border-r border-slate-900/50 select-none ${tableDensity === "compact" ? "py-2" : "py-3.5"}`}>
                                     <span className={`text-[10px] font-black px-2 py-0.5 rounded border select-none ${
@@ -2131,7 +2149,7 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </div>
 
-      {/* EXECUTIVE PDF REPORT MODAL PREVIEW */}
+      {/* DYNAMIC EXECUTIVE PDF REPORT MODAL PREVIEW */}
       {isPdfReportModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto select-none print:p-0 print:static print:bg-white">
           <div className="bg-[#0E1526] border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none">
@@ -2168,13 +2186,24 @@ export default function QlikViewAnalyticsPage() {
                 <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center justify-between">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">Executive Summary</span>
-                      <span className="text-[10px] text-slate-400 font-mono">Confidential</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
+                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "EXECUTIVE"} MANIFEST
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">Confidential Audit Report</span>
                     </div>
-                    <h1 className="text-xl font-black text-white uppercase tracking-tight">Retail Performance Brief</h1>
-                    <p className="text-[11px] text-slate-300 font-mono">Real-time associative metrics compiled from active terminal stores</p>
+                    <h1 className="text-xl font-black text-white uppercase tracking-tight">
+                      {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
+                    </h1>
+                    <p className="text-[11px] text-slate-300 font-mono">
+                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "All Scanned Modes"}
+                    </p>
                   </div>
                   <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
+                    {dynamicRefNumbers.length > 0 && (
+                      <p className="text-emerald-400 font-bold">
+                        <strong>Ref / Pull Out No:</strong> {dynamicRefNumbers.join(", ")}
+                      </p>
+                    )}
                     <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
                     <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
                     <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
@@ -2184,7 +2213,7 @@ export default function QlikViewAnalyticsPage() {
                 {/* KPI Ribbon Strip */}
                 <div className="grid grid-cols-4 gap-3">
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Filtered Revenue</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Amount Value</span>
                     <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">{metricsA.shareOfTotal.toFixed(1)}% universe share</span>
                   </div>
@@ -2196,80 +2225,81 @@ export default function QlikViewAnalyticsPage() {
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Average Unit Retail</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Average Unit Price</span>
                     <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">avg selling price</span>
+                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">avg unit price</span>
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Stock Out Risk</span>
-                    <strong className="text-base font-black text-rose-600 block mt-1">
-                      {filteredProducts.filter(p => p.stockStatus === 'CRITICAL' || p.stockStatus === 'WARNING').length} SKUs
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Item Count</span>
+                    <strong className="text-base font-black text-indigo-700 block mt-1">
+                      {filteredProducts.length} SKUs
                     </strong>
-                    <span className="text-[10px] text-rose-600 font-bold block mt-0.5">reorder required</span>
+                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">unique line items</span>
                   </div>
                 </div>
 
-                {/* Pareto Category Distribution Chart */}
-                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2">
-                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">ABC Pareto Classification Concentration</h3>
-                  <div className="w-full bg-slate-200 h-6 rounded-xl overflow-hidden flex font-bold text-[10px] text-white text-center leading-6">
-                    <div className="bg-emerald-600" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'A').length ? 80 : 0}%` }}>Class A (80% Earnings)</div>
-                    <div className="bg-indigo-600" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'B').length ? 15 : 0}%` }}>B (15%)</div>
-                    <div className="bg-amber-500" style={{ width: `${filteredProducts.filter(p => p.abcClass === 'C').length ? 5 : 0}%` }}>C (5%)</div>
-                  </div>
-                  <p className="text-[10px] text-slate-600 italic">
-                    Class A SKUs deliver 80% of revenue. Ensure priority replenishment for top Class A variants to prevent lost sales.
-                  </p>
-                </div>
-
-                {/* Top SKUs Performance Table */}
+                {/* Detailed Item List Table */}
                 <div className="space-y-2">
-                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Top Performing SKU Breakdown</h3>
+                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Scanned Item Manifest Breakdown</h3>
                   <table className="w-full text-left border-collapse text-[11px]">
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[10px] text-slate-700">
+                        <th className="p-2">Ref / Doc #</th>
                         <th className="p-2">Style Code & Name</th>
                         <th className="p-2">Variant</th>
                         <th className="p-2 text-center">Class</th>
-                        <th className="p-2 text-right">Price</th>
-                        <th className="p-2 text-right">Units Sold</th>
-                        <th className="p-2 text-right">Revenue</th>
-                        <th className="p-2 text-right">Stock</th>
+                        <th className="p-2 text-right">Unit Price</th>
+                        <th className="p-2 text-right">Qty</th>
+                        <th className="p-2 text-right">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-mono">
-                      {filteredProducts.slice(0, 8).map((prod) => (
+                      {filteredProducts.map((prod) => (
                         <tr key={prod.key}>
-                          <td className="p-2 font-sans font-bold text-slate-900">{prod.styleName !== '-' ? prod.styleName : prod.styleCode}</td>
+                          <td className="p-2 font-bold text-slate-700">{prod.pulloutNo}</td>
+                          <td className="p-2 font-sans font-bold text-slate-900">
+                            {prod.styleName !== '-' ? prod.styleName : prod.styleCode}
+                            <span className="block text-[10px] text-slate-500 font-mono">Code: {prod.styleCode}</span>
+                          </td>
                           <td className="p-2 text-slate-600 font-sans">{prod.color} ({prod.size})</td>
                           <td className="p-2 text-center font-bold">
                             <span className={`px-1.5 py-0.5 rounded ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
                           </td>
                           <td className="p-2 text-right">₱{prod.price.toFixed(2)}</td>
                           <td className="p-2 text-right font-bold text-slate-900">{prod.units} pcs</td>
-                          <td className="p-2 text-right font-bold text-emerald-700">₱{prod.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
-                          <td className={`p-2 text-right font-bold ${prod.currentStock <= prod.safetyStock ? 'text-rose-600' : 'text-slate-800'}`}>{prod.currentStock} pcs</td>
+                          <td className="p-2 text-right font-bold text-emerald-700">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold text-slate-900">
+                        <td colSpan={5} className="p-2 text-right uppercase">Report Grand Totals:</td>
+                        <td className="p-2 text-right font-black">{metricsA.units.toLocaleString()} pcs</td>
+                        <td className="p-2 text-right font-black text-emerald-700">
+                          ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
 
-                {/* Strategic Management Recommendations */}
-                <div className="bg-slate-100 border border-slate-300 p-4 rounded-2xl space-y-2">
-                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Executive Management Action Items</h3>
-                  <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-700 font-medium">
-                    <li><strong>Stock Transfer Action:</strong> Shift safety stock from slower branches to high-velocity locations for items nearing threshold.</li>
-                    <li><strong>Class A Focus:</strong> Reorder Class A items immediately to protect the primary revenue stream.</li>
-                    <li><strong>SLOB Clearance:</strong> Initiate promotional discounting for Dead Stock variants with days of supply exceeding 120 days.</li>
-                  </ul>
+                {/* Signatures / Turnover Acknowledgement */}
+                <div className="pt-8 grid grid-cols-2 gap-8 text-[11px] text-slate-700">
+                  <div className="border-t border-slate-400 pt-2 text-center">
+                    <p className="font-bold">Prepared / Released By</p>
+                    <p className="text-[10px] text-slate-500">Signature over Printed Name</p>
+                  </div>
+                  <div className="border-t border-slate-400 pt-2 text-center">
+                    <p className="font-bold">Received / Audited By</p>
+                    <p className="text-[10px] text-slate-500">Signature over Printed Name</p>
+                  </div>
                 </div>
 
                 {/* Footer Signoff */}
                 <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500 font-mono">
                   <span>Report Generated via Apex Retail POS Qlik Analytics Engine</span>
-                  <span>Approved By: Retail Operations Manager</span>
+                  <span>Approved By: Store Operations Management</span>
                 </div>
               </div>
             </div>
