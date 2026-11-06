@@ -151,7 +151,14 @@ export default function AdminDashboardPage() {
       }
       setProducts(allProducts);
 
-      // 2. Fetch Store Inventory with chunking loop & joined product lookup to resolve product names
+      // Create a fast lookup map for style_code / sku -> style_name
+      const productMap = new Map<string, string>();
+      allProducts.forEach((p) => {
+        if (p.style_code) productMap.set(p.style_code.trim(), p.style_name);
+        if (p.sku) productMap.set(p.sku.trim(), p.style_name);
+      });
+
+      // 2. Fetch Store Inventory with chunking loop & in-memory product name resolution
       let allInventory: any[] = [];
       let invPage = 0;
       let fetchMoreInv = true;
@@ -159,17 +166,7 @@ export default function AdminDashboardPage() {
       while (fetchMoreInv) {
         let invQuery = supabase
           .from("store_inventory")
-          .select(`
-            id,
-            store,
-            style_code,
-            sku,
-            style_name,
-            current_stock,
-            quantity,
-            available_stock,
-            products (style_name)
-          `)
+          .select("*")
           .range(invPage * pageSize, (invPage + 1) * pageSize - 1);
 
         if (selectedStore !== "All Stores") {
@@ -183,10 +180,18 @@ export default function AdminDashboardPage() {
         if (!invData || invData.length === 0) {
           fetchMoreInv = false;
         } else {
-          const mappedInv = invData.map((item: any) => ({
-            ...item,
-            style_name: item.style_name || item.products?.style_name || "Unassigned Item"
-          }));
+          const mappedInv = invData.map((item: any) => {
+            const resolvedName = 
+              item.style_name || 
+              (item.style_code ? productMap.get(item.style_code.trim()) : undefined) ||
+              (item.sku ? productMap.get(item.sku.trim()) : undefined) ||
+              "Unassigned Item";
+
+            return {
+              ...item,
+              style_name: resolvedName,
+            };
+          });
 
           allInventory = [...allInventory, ...mappedInv];
           if (invData.length < pageSize) {
@@ -208,9 +213,10 @@ export default function AdminDashboardPage() {
       if (!histError) {
         setStockHistoryList(histData || []);
       }
+      setErrorMsg("");
     } catch (err: any) {
       console.error("Error fetching admin data:", err);
-      setErrorMsg("Failed to load dashboard records.");
+      setErrorMsg(err.message || "Failed to load dashboard records.");
     } finally {
       setLoading(false);
     }
@@ -1448,7 +1454,7 @@ export default function AdminDashboardPage() {
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
               >
                 <Save className="h-4 w-4" />
-                Update Stock
+                <span>Update Stock</span>
               </button>
             </div>
           </form>
