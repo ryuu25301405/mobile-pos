@@ -74,7 +74,7 @@ interface SalesRecord {
   revenue: number;
   scanned_at: string;
   scanned_date: string;
-  pullout_no: string; // Dynamic reference / Pull Out / DR number
+  pullout_no: string;
 }
 
 interface InventoryRecord {
@@ -311,7 +311,7 @@ export default function QlikViewAnalyticsPage() {
     while (fetchMoreLogs) {
       const { data: chunk, error } = await supabase
         .from("scanned_logs")
-        .select("*") // Dynamic select to include pullout_no, dr_number, reference_no, doc_no etc.
+        .select("*")
         .order("scanned_at", { ascending: false })
         .range(logPage * pageSize, (logPage + 1) * pageSize - 1);
 
@@ -359,7 +359,7 @@ export default function QlikViewAnalyticsPage() {
         const qty = Number(row.quantity) || 1;
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
-        const refNo = row.pullout_no || row.dr_number || row.reference_no || row.doc_no || "-";
+        const refNo = row.pullout_no || row.dr_number || row.reference_no || row.doc_no || row.pullout_number || "-";
         return {
           id: String(row.id),
           store: row.store ? row.store.trim() : "Unassigned Store",
@@ -377,7 +377,7 @@ export default function QlikViewAnalyticsPage() {
           revenue: pr * qty,
           scanned_at: row.scanned_at,
           scanned_date: dt.toISOString().split("T")[0],
-          pullout_no: String(refNo),
+          pullout_no: String(refNo).trim(),
         };
       });
       setData(parsed);
@@ -515,7 +515,7 @@ export default function QlikViewAnalyticsPage() {
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
 
   const dynamicRefNumbers = useMemo(() => {
-    const refs = currentSubset.map((r) => r.pullout_no).filter((r) => r && r !== "-");
+    const refs = currentSubset.map((r) => r.pullout_no).filter((r) => r && r !== "-" && r !== "null" && r !== "undefined");
     return Array.from(new Set(refs));
   }, [currentSubset]);
 
@@ -820,17 +820,20 @@ export default function QlikViewAnalyticsPage() {
 
     currentSubset.forEach((item) => {
       const prodKey = `${item.style_code}-${item.sku}-${item.size}-${item.color}`;
+      const foundRef = item.pullout_no && item.pullout_no !== "-" && item.pullout_no !== "null" ? item.pullout_no : "";
+      
       if (!map[prodKey]) {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
           category: item.category, department: item.department, price: parseFloat(String(item.price)) || 0, units: 0, revenue: 0, abcClass: "C", storeBreakdown: {},
-          currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0, pulloutNo: item.pullout_no || "-"
+          currentStock: 0, safetyStock: 0, velocity: 0, daysOfSupply: 999, stockStatus: "HEALTHY", slobStatus: "ACTIVE", tiedUpCapital: 0, pulloutNo: foundRef || "-"
         };
       }
       map[prodKey].units += item.quantity;
       map[prodKey].revenue += item.revenue;
-      if (item.pullout_no && item.pullout_no !== "-") {
-        map[prodKey].pulloutNo = item.pullout_no;
+      
+      if (foundRef && (map[prodKey].pulloutNo === "-" || !map[prodKey].pulloutNo)) {
+        map[prodKey].pulloutNo = foundRef;
       }
       map[prodKey].storeBreakdown[item.store] = (map[prodKey].storeBreakdown[item.store] || 0) + item.quantity;
     });
@@ -980,8 +983,37 @@ export default function QlikViewAnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none">
+    <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none print:p-0 print:m-0 print:bg-white print:text-black">
       
+      {/* CSS STYLES FOR PERFECT PRINT / PDF OUTPUT */}
+      <style jsx global>{`
+        @media print {
+          body {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          nav, header, footer, .print\\:hidden {
+            display: none !important;
+          }
+          #executive-pdf-report {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+          .page-break-inside-avoid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+        }
+      `}</style>
+
       {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden select-none">
         <div className="flex items-center gap-3">
@@ -1098,7 +1130,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* EXECUTIVE KPI STRIP */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 select-none">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 select-none print:hidden">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl animate-pulse select-none">
               <div className="space-y-2 w-2/3">
@@ -1111,7 +1143,7 @@ export default function QlikViewAnalyticsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4 select-none">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:hidden select-none">
           <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filtered Revenue</p>
@@ -1294,7 +1326,7 @@ export default function QlikViewAnalyticsPage() {
       )}
 
       {/* MAIN LAYOUT AREA */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start select-none">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start select-none print:hidden">
         
         {/* STICKY SIDEBAR FILTER PANE */}
         {isSidebarOpen && productViewMode !== "audit_logs" && (
@@ -2183,11 +2215,11 @@ export default function QlikViewAnalyticsPage() {
               <div id="executive-pdf-report" className="bg-white text-slate-900 p-8 rounded-lg shadow-2xl w-full max-w-[210mm] min-h-[297mm] text-xs font-sans space-y-6 print:shadow-none print:p-0 print:w-full">
                 
                 {/* Document Masthead */}
-                <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center justify-between">
+                <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center justify-between page-break-inside-avoid">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
-                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "EXECUTIVE"} MANIFEST
+                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "PULL OUT"} MANIFEST
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">Confidential Audit Report</span>
                     </div>
@@ -2195,15 +2227,16 @@ export default function QlikViewAnalyticsPage() {
                       {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
                     </h1>
                     <p className="text-[11px] text-slate-300 font-mono">
-                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "All Scanned Modes"}
+                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "pull_out"}
                     </p>
                   </div>
                   <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
-                    {dynamicRefNumbers.length > 0 && (
-                      <p className="text-emerald-400 font-bold">
-                        <strong>Ref / Pull Out No:</strong> {dynamicRefNumbers.join(", ")}
-                      </p>
-                    )}
+                    <p className="text-emerald-400 font-bold">
+                      <strong>Ref / Pull Out No:</strong> {
+                        dynamicRefNumbers.length > 0 ? dynamicRefNumbers.join(", ") : 
+                        filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || "N/A"
+                      }
+                    </p>
                     <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
                     <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
                     <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
@@ -2211,7 +2244,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
 
                 {/* KPI Ribbon Strip */}
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-3 page-break-inside-avoid">
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
                     <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Amount Value</span>
                     <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
@@ -2240,42 +2273,45 @@ export default function QlikViewAnalyticsPage() {
                 </div>
 
                 {/* Detailed Item List Table */}
-                <div className="space-y-2">
+                <div className="space-y-2 page-break-inside-avoid">
                   <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Scanned Item Manifest Breakdown</h3>
                   <table className="w-full text-left border-collapse text-[11px]">
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[10px] text-slate-700">
-                        <th className="p-2">Ref / Doc #</th>
-                        <th className="p-2">Style Code & Name</th>
-                        <th className="p-2">Variant</th>
-                        <th className="p-2 text-center">Class</th>
-                        <th className="p-2 text-right">Unit Price</th>
-                        <th className="p-2 text-right">Qty</th>
+                        <th className="p-2 border-r border-slate-200">Ref / Doc #</th>
+                        <th className="p-2 border-r border-slate-200">Style Code & Name</th>
+                        <th className="p-2 border-r border-slate-200">Variant</th>
+                        <th className="p-2 border-r border-slate-200 text-center">Class</th>
+                        <th className="p-2 border-r border-slate-200 text-right">Unit Price</th>
+                        <th className="p-2 border-r border-slate-200 text-right">Qty</th>
                         <th className="p-2 text-right">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-mono">
-                      {filteredProducts.map((prod) => (
-                        <tr key={prod.key}>
-                          <td className="p-2 font-bold text-slate-700">{prod.pulloutNo}</td>
-                          <td className="p-2 font-sans font-bold text-slate-900">
-                            {prod.styleName !== '-' ? prod.styleName : prod.styleCode}
-                            <span className="block text-[10px] text-slate-500 font-mono">Code: {prod.styleCode}</span>
-                          </td>
-                          <td className="p-2 text-slate-600 font-sans">{prod.color} ({prod.size})</td>
-                          <td className="p-2 text-center font-bold">
-                            <span className={`px-1.5 py-0.5 rounded ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
-                          </td>
-                          <td className="p-2 text-right">₱{prod.price.toFixed(2)}</td>
-                          <td className="p-2 text-right font-bold text-slate-900">{prod.units} pcs</td>
-                          <td className="p-2 text-right font-bold text-emerald-700">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
-                        </tr>
-                      ))}
+                      {filteredProducts.map((prod) => {
+                        const refValue = prod.pulloutNo !== "-" && prod.pulloutNo ? prod.pulloutNo : dynamicRefNumbers[0] || "-";
+                        return (
+                          <tr key={prod.key}>
+                            <td className="p-2 font-bold text-slate-700 border-r border-slate-200">{refValue}</td>
+                            <td className="p-2 font-sans font-bold text-slate-900 border-r border-slate-200">
+                              {prod.styleName !== '-' ? prod.styleName : prod.styleCode}
+                              <span className="block text-[10px] text-slate-500 font-mono">Code: {prod.styleCode}</span>
+                            </td>
+                            <td className="p-2 text-slate-600 font-sans border-r border-slate-200">{prod.color} ({prod.size})</td>
+                            <td className="p-2 text-center font-bold border-r border-slate-200">
+                              <span className={`px-1.5 py-0.5 rounded ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
+                            </td>
+                            <td className="p-2 text-right border-r border-slate-200">₱{prod.price.toFixed(2)}</td>
+                            <td className="p-2 text-right font-bold text-slate-900 border-r border-slate-200">{prod.units} pcs</td>
+                            <td className="p-2 text-right font-bold text-emerald-700">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold text-slate-900">
                         <td colSpan={5} className="p-2 text-right uppercase">Report Grand Totals:</td>
-                        <td className="p-2 text-right font-black">{metricsA.units.toLocaleString()} pcs</td>
+                        <td className="p-2 text-right font-black border-r border-slate-200">{metricsA.units.toLocaleString()} pcs</td>
                         <td className="p-2 text-right font-black text-emerald-700">
                           ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
@@ -2285,7 +2321,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
 
                 {/* Signatures / Turnover Acknowledgement */}
-                <div className="pt-8 grid grid-cols-2 gap-8 text-[11px] text-slate-700">
+                <div className="pt-8 grid grid-cols-2 gap-8 text-[11px] text-slate-700 page-break-inside-avoid">
                   <div className="border-t border-slate-400 pt-2 text-center">
                     <p className="font-bold">Prepared / Released By</p>
                     <p className="text-[10px] text-slate-500">Signature over Printed Name</p>
@@ -2297,7 +2333,7 @@ export default function QlikViewAnalyticsPage() {
                 </div>
 
                 {/* Footer Signoff */}
-                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500 font-mono page-break-inside-avoid">
                   <span>Report Generated via Apex Retail POS Qlik Analytics Engine</span>
                   <span>Approved By: Store Operations Management</span>
                 </div>
@@ -2309,7 +2345,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* BRANCH DETAILS MODAL */}
       {selectedBranchDetail && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none print:hidden">
           <div className={`bg-[#0E1526] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-4 text-left transition-all duration-300 flex flex-col select-none ${
             isBranchModalExpanded ? "w-full h-full max-w-none max-h-none m-2" : "w-full max-w-2xl max-h-[90vh]"
           }`}>
