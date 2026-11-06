@@ -151,7 +151,7 @@ export default function AdminDashboardPage() {
       }
       setProducts(allProducts);
 
-      // 2. Fetch Store Inventory with chunking loop
+      // 2. Fetch Store Inventory with chunking loop & joined product lookup to resolve product names
       let allInventory: any[] = [];
       let invPage = 0;
       let fetchMoreInv = true;
@@ -159,7 +159,17 @@ export default function AdminDashboardPage() {
       while (fetchMoreInv) {
         let invQuery = supabase
           .from("store_inventory")
-          .select("*")
+          .select(`
+            id,
+            store,
+            style_code,
+            sku,
+            style_name,
+            current_stock,
+            quantity,
+            available_stock,
+            products (style_name)
+          `)
           .range(invPage * pageSize, (invPage + 1) * pageSize - 1);
 
         if (selectedStore !== "All Stores") {
@@ -173,7 +183,12 @@ export default function AdminDashboardPage() {
         if (!invData || invData.length === 0) {
           fetchMoreInv = false;
         } else {
-          allInventory = [...allInventory, ...invData];
+          const mappedInv = invData.map((item: any) => ({
+            ...item,
+            style_name: item.style_name || item.products?.style_name || "Unassigned Item"
+          }));
+
+          allInventory = [...allInventory, ...mappedInv];
           if (invData.length < pageSize) {
             fetchMoreInv = false;
           } else {
@@ -1433,7 +1448,7 @@ export default function AdminDashboardPage() {
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
               >
                 <Save className="h-4 w-4" />
-                <span>Update Stock</span>
+                Update Stock
               </button>
             </div>
           </form>
