@@ -359,7 +359,17 @@ export default function QlikViewAnalyticsPage() {
         const qty = Number(row.quantity) || 1;
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
-        const refNo = row.pullout_no || row.dr_number || row.reference_no || row.doc_no || row.pullout_number || "-";
+        
+        // Exact mapping for pull_out_number column
+        const refNo = 
+          row.pull_out_number || 
+          row.pullout_number || 
+          row.pullout_no || 
+          row.dr_number || 
+          row.reference_no || 
+          row.doc_no || 
+          "-";
+
         return {
           id: String(row.id),
           store: row.store ? row.store.trim() : "Unassigned Store",
@@ -515,7 +525,9 @@ export default function QlikViewAnalyticsPage() {
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
 
   const dynamicRefNumbers = useMemo(() => {
-    const refs = currentSubset.map((r) => r.pullout_no).filter((r) => r && r !== "-" && r !== "null" && r !== "undefined");
+    const refs = currentSubset
+      .map((r) => r.pullout_no)
+      .filter((r) => r && r !== "-" && r !== "null" && r !== "undefined");
     return Array.from(new Set(refs));
   }, [currentSubset]);
 
@@ -985,9 +997,14 @@ export default function QlikViewAnalyticsPage() {
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none print:p-0 print:m-0 print:bg-white print:text-black">
       
-      {/* CSS STYLES FOR PERFECT PRINT / PDF OUTPUT */}
+      {/* GLOBAL PRINT STYLES - FORCES EXACT COLORS & HEADER BACKGROUNDS */}
       <style jsx global>{`
         @media print {
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
           body {
             background-color: #ffffff !important;
             color: #000000 !important;
@@ -1005,7 +1022,6 @@ export default function QlikViewAnalyticsPage() {
             box-shadow: none !important;
             border: none !important;
             background: #ffffff !important;
-            color: #000000 !important;
           }
           .page-break-inside-avoid {
             page-break-inside: avoid !important;
@@ -2233,8 +2249,9 @@ export default function QlikViewAnalyticsPage() {
                   <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
                     <p className="text-emerald-400 font-bold">
                       <strong>Ref / Pull Out No:</strong> {
-                        dynamicRefNumbers.length > 0 ? dynamicRefNumbers.join(", ") : 
-                        filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || "N/A"
+                        Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") || 
+                        filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || 
+                        "N/A"
                       }
                     </p>
                     <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
