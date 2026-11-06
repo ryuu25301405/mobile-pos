@@ -360,7 +360,6 @@ export default function QlikViewAnalyticsPage() {
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
         
-        // Comprehensive fallback chain checking pull_out_number first
         const refNo = 
           row.pull_out_number || 
           row.pullout_number || 
@@ -531,7 +530,6 @@ export default function QlikViewAnalyticsPage() {
     return Array.from(new Set(refs));
   }, [currentSubset]);
 
-  // Dynamic reference label function based on active transaction mode
   const getRefLabel = useCallback(() => {
     if (stateA.transactionModes.length === 1) {
       const mode = stateA.transactionModes[0].toLowerCase();
@@ -1008,7 +1006,7 @@ export default function QlikViewAnalyticsPage() {
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none print:p-0 print:m-0 print:bg-white print:text-black">
       
-      {/* GLOBAL PRINT STYLES - FORCES EXACT COLORS & HEADER BACKGROUNDS */}
+      {/* GLOBAL PRINT STYLES - COMPACT & FLOWING PAGINATION */}
       <style jsx global>{`
         @media print {
           * {
@@ -1035,6 +1033,16 @@ export default function QlikViewAnalyticsPage() {
             background: #ffffff !important;
           }
           .page-break-inside-avoid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          table {
+            page-break-inside: auto !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }
@@ -2239,80 +2247,83 @@ export default function QlikViewAnalyticsPage() {
 
             {/* PRINT-CALIBRATED REPORT CANVAS */}
             <div className="p-6 overflow-y-auto flex justify-center bg-slate-950/80 print:p-0 print:bg-white">
-              <div id="executive-pdf-report" className="bg-white text-slate-900 p-8 rounded-lg shadow-2xl w-full max-w-[210mm] min-h-[297mm] text-xs font-sans space-y-6 print:shadow-none print:p-0 print:w-full">
+              <div id="executive-pdf-report" className="bg-white text-slate-900 p-6 rounded-lg shadow-2xl w-full max-w-[210mm] text-xs font-sans space-y-4 print:shadow-none print:p-0 print:w-full">
                 
-                {/* Document Masthead */}
-                <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center justify-between page-break-inside-avoid">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
-                        {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY"} MANIFEST
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">Confidential Audit Report</span>
+                {/* Header & KPI Block */}
+                <div className="space-y-4 page-break-inside-avoid">
+                  {/* Document Masthead */}
+                  <div className="bg-slate-900 text-white p-4 rounded-xl flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
+                          {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY"} MANIFEST
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono">Confidential Audit Report</span>
+                      </div>
+                      <h1 className="text-lg font-black text-white uppercase tracking-tight">
+                        {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
+                      </h1>
+                      <p className="text-[10px] text-slate-300 font-mono">
+                        Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
+                      </p>
                     </div>
-                    <h1 className="text-xl font-black text-white uppercase tracking-tight">
-                      {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
-                    </h1>
-                    <p className="text-[11px] text-slate-300 font-mono">
-                      Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
-                    </p>
-                  </div>
-                  <div className="text-right font-mono text-[11px] text-slate-300 space-y-0.5">
-                    <p className="text-emerald-400 font-bold">
-                      <strong>{getRefLabel()}:</strong> {
-                        Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") || 
-                        filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || 
-                        "N/A"
-                      }
-                    </p>
-                    <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
-                    <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
-                    <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
-                  </div>
-                </div>
-
-                {/* KPI Ribbon Strip */}
-                <div className="grid grid-cols-4 gap-3 page-break-inside-avoid">
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Amount Value</span>
-                    <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">{metricsA.shareOfTotal.toFixed(1)}% universe share</span>
+                    <div className="text-right font-mono text-[10px] text-slate-300 space-y-0.5">
+                      <p className="text-emerald-400 font-bold">
+                        <strong>{getRefLabel()}:</strong> {
+                          Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") || 
+                          filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || 
+                          "N/A"
+                        }
+                      </p>
+                      <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
+                      <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
+                      <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
+                    </div>
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Volume</span>
-                    <strong className="text-base font-black text-slate-900 block mt-1">{metricsA.units.toLocaleString()} pcs</strong>
-                    <span className="text-[10px] text-indigo-600 font-bold block mt-0.5">scanned movement</span>
-                  </div>
+                  {/* KPI Ribbon Strip */}
+                  <div className="grid grid-cols-4 gap-2.5">
+                    <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase block">Total Amount Value</span>
+                      <strong className="text-sm font-black text-slate-900 block mt-0.5">₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      <span className="text-[9px] text-emerald-600 font-bold block">{metricsA.shareOfTotal.toFixed(1)}% universe share</span>
+                    </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Average Unit Price</span>
-                    <strong className="text-base font-black text-slate-900 block mt-1">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">avg unit price</span>
-                  </div>
+                    <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase block">Total Volume</span>
+                      <strong className="text-sm font-black text-slate-900 block mt-0.5">{metricsA.units.toLocaleString()} pcs</strong>
+                      <span className="text-[9px] text-indigo-600 font-bold block">scanned movement</span>
+                    </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Item Count</span>
-                    <strong className="text-base font-black text-indigo-700 block mt-1">
-                      {filteredProducts.length} SKUs
-                    </strong>
-                    <span className="text-[10px] text-slate-500 font-bold block mt-0.5">unique line items</span>
+                    <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase block">Average Unit Price</span>
+                      <strong className="text-sm font-black text-slate-900 block mt-0.5">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      <span className="text-[9px] text-slate-500 font-bold block">avg unit price</span>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase block">Item Count</span>
+                      <strong className="text-sm font-black text-indigo-700 block mt-0.5">
+                        {filteredProducts.length} SKUs
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-bold block">unique line items</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Detailed Item List Table */}
-                <div className="space-y-2 page-break-inside-avoid">
-                  <h3 className="font-bold text-xs uppercase text-slate-800 tracking-wider">Scanned Item Manifest Breakdown</h3>
-                  <table className="w-full text-left border-collapse text-[11px]">
+                <div className="space-y-1.5 pt-1">
+                  <h3 className="font-bold text-[11px] uppercase text-slate-800 tracking-wider">Scanned Item Manifest Breakdown</h3>
+                  <table className="w-full text-left border-collapse text-[10px]">
                     <thead>
-                      <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[10px] text-slate-700">
-                        <th className="p-2 border-r border-slate-200">{getRefLabel()}</th>
-                        <th className="p-2 border-r border-slate-200">Style Code & Name</th>
-                        <th className="p-2 border-r border-slate-200">Variant</th>
-                        <th className="p-2 border-r border-slate-200 text-center">Class</th>
-                        <th className="p-2 border-r border-slate-200 text-right">Unit Price</th>
-                        <th className="p-2 border-r border-slate-200 text-right">Qty</th>
-                        <th className="p-2 text-right">Subtotal</th>
+                      <tr className="bg-slate-100 border-b border-slate-300 font-bold uppercase text-[9px] text-slate-700">
+                        <th className="p-1.5 border-r border-slate-200">{getRefLabel()}</th>
+                        <th className="p-1.5 border-r border-slate-200">Style Code & Name</th>
+                        <th className="p-1.5 border-r border-slate-200">Variant</th>
+                        <th className="p-1.5 border-r border-slate-200 text-center">Class</th>
+                        <th className="p-1.5 border-r border-slate-200 text-right">Unit Price</th>
+                        <th className="p-1.5 border-r border-slate-200 text-right">Qty</th>
+                        <th className="p-1.5 text-right">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-mono">
@@ -2320,27 +2331,27 @@ export default function QlikViewAnalyticsPage() {
                         const refValue = prod.pulloutNo !== "-" && prod.pulloutNo ? prod.pulloutNo : dynamicRefNumbers[0] || "-";
                         return (
                           <tr key={prod.key}>
-                            <td className="p-2 font-bold text-slate-700 border-r border-slate-200">{refValue}</td>
-                            <td className="p-2 font-sans font-bold text-slate-900 border-r border-slate-200">
+                            <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200">{refValue}</td>
+                            <td className="p-1.5 font-sans font-bold text-slate-900 border-r border-slate-200">
                               {prod.styleName !== '-' ? prod.styleName : prod.styleCode}
-                              <span className="block text-[10px] text-slate-500 font-mono">Code: {prod.styleCode}</span>
+                              <span className="block text-[9px] text-slate-500 font-mono">Code: {prod.styleCode}</span>
                             </td>
-                            <td className="p-2 text-slate-600 font-sans border-r border-slate-200">{prod.color} ({prod.size})</td>
-                            <td className="p-2 text-center font-bold border-r border-slate-200">
-                              <span className={`px-1.5 py-0.5 rounded ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
+                            <td className="p-1.5 text-slate-600 font-sans border-r border-slate-200">{prod.color} ({prod.size})</td>
+                            <td className="p-1.5 text-center font-bold border-r border-slate-200">
+                              <span className={`px-1 py-0.2 rounded text-[8px] ${prod.abcClass === 'A' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{prod.abcClass}</span>
                             </td>
-                            <td className="p-2 text-right border-r border-slate-200">₱{prod.price.toFixed(2)}</td>
-                            <td className="p-2 text-right font-bold text-slate-900 border-r border-slate-200">{prod.units} pcs</td>
-                            <td className="p-2 text-right font-bold text-emerald-700">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-1.5 text-right border-r border-slate-200">₱{prod.price.toFixed(2)}</td>
+                            <td className="p-1.5 text-right font-bold text-slate-900 border-r border-slate-200">{prod.units} pcs</td>
+                            <td className="p-1.5 text-right font-bold text-emerald-700">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         );
                       })}
                     </tbody>
                     <tfoot>
                       <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold text-slate-900">
-                        <td colSpan={5} className="p-2 text-right uppercase">Report Grand Totals:</td>
-                        <td className="p-2 text-right font-black border-r border-slate-200">{metricsA.units.toLocaleString()} pcs</td>
-                        <td className="p-2 text-right font-black text-emerald-700">
+                        <td colSpan={5} className="p-1.5 text-right uppercase">Report Grand Totals:</td>
+                        <td className="p-1.5 text-right font-black border-r border-slate-200">{metricsA.units.toLocaleString()} pcs</td>
+                        <td className="p-1.5 text-right font-black text-emerald-700">
                           ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
@@ -2349,19 +2360,19 @@ export default function QlikViewAnalyticsPage() {
                 </div>
 
                 {/* Signatures / Turnover Acknowledgement */}
-                <div className="pt-8 grid grid-cols-2 gap-8 text-[11px] text-slate-700 page-break-inside-avoid">
-                  <div className="border-t border-slate-400 pt-2 text-center">
+                <div className="pt-6 grid grid-cols-2 gap-8 text-[10px] text-slate-700 page-break-inside-avoid">
+                  <div className="border-t border-slate-400 pt-1.5 text-center">
                     <p className="font-bold">Prepared / Released By</p>
-                    <p className="text-[10px] text-slate-500">Signature over Printed Name</p>
+                    <p className="text-[9px] text-slate-500">Signature over Printed Name</p>
                   </div>
-                  <div className="border-t border-slate-400 pt-2 text-center">
+                  <div className="border-t border-slate-400 pt-1.5 text-center">
                     <p className="font-bold">Received / Audited By</p>
-                    <p className="text-[10px] text-slate-500">Signature over Printed Name</p>
+                    <p className="text-[9px] text-slate-500">Signature over Printed Name</p>
                   </div>
                 </div>
 
                 {/* Footer Signoff */}
-                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500 font-mono page-break-inside-avoid">
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[9px] text-slate-500 font-mono page-break-inside-avoid">
                   <span>Report Generated via Apex Retail POS Qlik Analytics Engine</span>
                   <span>Approved By: Store Operations Management</span>
                 </div>
