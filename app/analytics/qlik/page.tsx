@@ -944,6 +944,23 @@ export default function QlikViewAnalyticsPage() {
     return { totalUnits, totalRevenue, avgPrice };
   }, [filteredProducts]);
 
+  // Derived Header Context for Store Destination and Department Category
+  const manifestDestinationStore = useMemo(() => {
+    if (stateA.stores.length === 1) return stateA.stores[0];
+    const uniqueStores = Array.from(new Set(filteredProducts.flatMap(p => Object.keys(p.storeBreakdown))));
+    if (uniqueStores.length === 1) return uniqueStores[0];
+    if (uniqueStores.length > 1) return `${uniqueStores[0]} (+${uniqueStores.length - 1} stores)`;
+    return "Landmark Trinoma";
+  }, [stateA.stores, filteredProducts]);
+
+  const manifestDepartmentLabel = useMemo(() => {
+    if (stateA.departments.length > 0) return stateA.departments.join(", ");
+    const depts = Array.from(new Set(filteredProducts.map(p => p.department).filter(Boolean)));
+    if (depts.length === 1) return depts[0];
+    if (depts.length > 1) return depts.join(" & ");
+    return "Men's Apparel";
+  }, [stateA.departments, filteredProducts]);
+
   const storeCardsSummary = useMemo(() => {
     const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
     universe.stores.forEach((st) => map[st] = { store: st, totalUnits: 0, totalRevenue: 0 });
@@ -1084,8 +1101,8 @@ export default function QlikViewAnalyticsPage() {
       {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
       <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl relative z-40 print:hidden select-none">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
-            <LayoutDashboard className="w-5 h-5" />
+          <div className="p-2 bg-[#D62828] rounded-xl text-white font-black text-xs px-2.5 py-1 tracking-tighter shadow-md">
+            huga
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -1145,7 +1162,6 @@ export default function QlikViewAnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* GENERATE MANAGER PDF REPORT BUTTON */}
           <button
             onClick={openPdfReportModal}
             className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer shadow-lg shadow-emerald-500/10 border border-emerald-400/30"
@@ -1154,7 +1170,6 @@ export default function QlikViewAnalyticsPage() {
             <span>Generate Executive PDF</span>
           </button>
 
-          {/* EXPORT DROPDOWN MENU */}
           <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -1572,7 +1587,7 @@ export default function QlikViewAnalyticsPage() {
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/50 transition-colors">
                             <td className="px-4 py-3 text-amber-400 font-bold border-r border-slate-900/50">{prod.pulloutNo}</td>
-                            <td className="px-4 py-3 text-indigo-300 border-r border-slate-900/50">{Object.keys(prod.storeBreakdown).join(", ") || "All Stores"}</td>
+                            <td className="px-4 py-3 text-indigo-300 border-r border-slate-900/50">{Object.keys(prod.storeBreakdown).join(", ") || manifestDestinationStore}</td>
                             <td className="px-5 py-3 border-r border-slate-900/50 font-sans">
                               <strong className="text-white block">{prod.styleName}</strong>
                               <span className="text-[10px] text-slate-400 font-mono">Code: {prod.styleCode}</span>
@@ -2369,24 +2384,28 @@ export default function QlikViewAnalyticsPage() {
 
                 {/* Header & KPI Block */}
                 <div className="space-y-4 page-break-inside-avoid">
-                  {/* Document Masthead */}
-                  <div className="bg-slate-900 text-white p-4 rounded-xl flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
+                  {/* HUGA RED BRAND MASTHEAD */}
+                  <div className="bg-[#D62828] text-white p-5 rounded-2xl flex items-center justify-between shadow-md">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        {/* Integrated HUGA Logo */}
+                        <div className="bg-white text-[#D62828] font-black text-base px-3 py-0.5 rounded-lg tracking-tighter shadow-sm">
+                          huga
+                        </div>
+                        <span className="text-[9px] font-black uppercase tracking-widest bg-white/20 text-white px-2.5 py-0.5 rounded-full backdrop-blur-sm">
                           {refNoFilter ? `MANIFEST #${refNoFilter}` : stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY & PULL OUT"} MANIFEST
                         </span>
-                        <span className="text-[9px] text-slate-400 font-mono">Confidential Audit Report</span>
                       </div>
-                      <h1 className="text-lg font-black text-white uppercase tracking-tight">
-                        {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
+                      <h1 className="text-xl font-black text-white uppercase tracking-tight pt-1">
+                        DELIVERY TO: {manifestDestinationStore}
                       </h1>
-                      <p className="text-[10px] text-slate-300 font-mono">
-                        Transaction Mode: {refTypeFilter !== "ALL" ? refTypeFilter : stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
+                      <p className="text-[11px] text-white/90 font-semibold">
+                        Department: <strong className="underline decoration-white/50">{manifestDepartmentLabel}</strong>
                       </p>
                     </div>
-                    <div className="text-right font-mono text-[10px] text-slate-300 space-y-0.5">
-                      <p className="text-emerald-400 font-bold">
+
+                    <div className="text-right font-mono text-[10px] text-white/90 space-y-0.5 border-l border-white/20 pl-4">
+                      <p className="font-bold text-white text-xs">
                         <strong>{getRefLabel()}:</strong> {
                           refNoFilter ||
                           Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") ||
@@ -2396,7 +2415,7 @@ export default function QlikViewAnalyticsPage() {
                       </p>
                       <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
                       <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
-                      <p><strong>Active Branches:</strong> {stateA.stores.length > 0 ? stateA.stores.length : universe.stores.length}</p>
+                      <p><strong>Mode:</strong> {refTypeFilter !== "ALL" ? refTypeFilter.toUpperCase() : "DELIVERY"}</p>
                     </div>
                   </div>
 
@@ -2410,13 +2429,13 @@ export default function QlikViewAnalyticsPage() {
 
                     <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
                       <span className="text-[9px] font-bold text-slate-500 uppercase block">Total Volume</span>
-                      <strong className="text-sm font-black text-slate-900 block mt-0.5">{metricsA.units.toLocaleString()} pcs</strong>
+                      <strong className="text-sm font-black text-slate-900 block mt-0.5">{tableTotals.totalUnits.toLocaleString()} pcs</strong>
                       <span className="text-[9px] text-indigo-600 font-bold block">scanned movement</span>
                     </div>
 
                     <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
                       <span className="text-[9px] font-bold text-slate-500 uppercase block">Average Unit Price</span>
-                      <strong className="text-sm font-black text-slate-900 block mt-0.5">₱{metricsA.aur.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      <strong className="text-sm font-black text-slate-900 block mt-0.5">₱{tableTotals.avgPrice.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       <span className="text-[9px] text-slate-500 font-bold block">avg unit price</span>
                     </div>
 
@@ -2492,7 +2511,7 @@ export default function QlikViewAnalyticsPage() {
 
                 {/* Footer Signoff */}
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[9px] text-slate-500 font-mono page-break-inside-avoid">
-                  <span>Report Generated via Apex Retail POS Qlik Analytics Engine</span>
+                  <span>Report Generated via HUGA Retail POS Qlik Analytics Engine</span>
                   <span>Approved By: Store Operations Management</span>
                 </div>
               </div>
