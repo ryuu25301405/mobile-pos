@@ -52,7 +52,9 @@ import {
   FileText,
   Tag,
   History,
-  FileCheck
+  FileCheck,
+  Truck,
+  Receipt
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -221,10 +223,14 @@ export default function QlikViewAnalyticsPage() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  // Delivery & Pull-Out Specific Reference Search Filter State
+  const [refNoFilter, setRefNoFilter] = useState<string>("");
+  const [refTypeFilter, setRefTypeFilter] = useState<"ALL" | "delivery" | "pull_out">("ALL");
+
   const [visualizationMode, setVisualizationMode] = useState<"chart" | "donut">("chart");
   const [graphDimensionKey, setGraphDimensionKey] = useState<DimensionKey>("store");
-  const [productViewMode, setProductViewMode] = useState<"consolidated" | "master_catalog" | "stores_grid" | "replenishment" | "aging_slob" | "audit_logs">("consolidated");
-  
+  const [productViewMode, setProductViewMode] = useState<"consolidated" | "master_catalog" | "stores_grid" | "replenishment" | "aging_slob" | "audit_logs" | "delivery_report">("consolidated");
+
   const [masterCatalogSearch, setMasterCatalogSearch] = useState<string>("");
   const [masterCatalogStoreFilter, setMasterCatalogStoreFilter] = useState<string>("All Stores");
   const [masterCatalogDeptFilter, setMasterCatalogDeptFilter] = useState<string>("All Departments");
@@ -243,7 +249,7 @@ export default function QlikViewAnalyticsPage() {
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
 
   const [detailSearch, setDetailSearch] = useState("");
-  
+
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [activeSidebarTab, setActiveSidebarTab] = useState<DimensionKey>("store");
   const [drawerSearch, setDrawerSearch] = useState("");
@@ -359,14 +365,15 @@ export default function QlikViewAnalyticsPage() {
         const qty = Number(row.quantity) || 1;
         const pr = parseFloat(row.price) || 0;
         const dt = row.scanned_at ? new Date(row.scanned_at) : new Date();
-        
-        const refNo = 
-          row.pull_out_number || 
-          row.pullout_number || 
-          row.pullout_no || 
-          row.dr_number || 
-          row.reference_no || 
-          row.doc_no || 
+
+        const refNo =
+          row.pull_out_number ||
+          row.pullout_number ||
+          row.pullout_no ||
+          row.dr_number ||
+          row.delivery_no ||
+          row.reference_no ||
+          row.doc_no ||
           "-";
 
         return {
@@ -508,17 +515,29 @@ export default function QlikViewAnalyticsPage() {
   const evaluateSubset = useCallback(
     (selection: StateSelection) => {
       return dateFilteredData.filter((row) => {
-        return (selection.stores.length === 0 || selection.stores.includes(row.store)) &&
-               (selection.transactionModes.length === 0 || selection.transactionModes.includes(row.transaction_mode)) &&
-               (selection.departments.length === 0 || selection.departments.includes(row.department)) &&
-               (selection.categories.length === 0 || selection.categories.includes(row.category)) &&
-               (selection.colors.length === 0 || selection.colors.includes(row.color)) &&
-               (selection.sizes.length === 0 || selection.sizes.includes(row.size)) &&
-               (selection.styles.length === 0 || selection.styles.includes(row.style_code)) &&
-               (selection.styleNames.length === 0 || selection.styleNames.includes(row.style_name));
+        const matchesRefType =
+          refTypeFilter === "ALL" ||
+          row.transaction_mode.toLowerCase() === refTypeFilter.toLowerCase();
+
+        const matchesRefNo =
+          !refNoFilter.trim() ||
+          row.pullout_no.toLowerCase().includes(refNoFilter.trim().toLowerCase());
+
+        return (
+          matchesRefType &&
+          matchesRefNo &&
+          (selection.stores.length === 0 || selection.stores.includes(row.store)) &&
+          (selection.transactionModes.length === 0 || selection.transactionModes.includes(row.transaction_mode)) &&
+          (selection.departments.length === 0 || selection.departments.includes(row.department)) &&
+          (selection.categories.length === 0 || selection.categories.includes(row.category)) &&
+          (selection.colors.length === 0 || selection.colors.includes(row.color)) &&
+          (selection.sizes.length === 0 || selection.sizes.includes(row.size)) &&
+          (selection.styles.length === 0 || selection.styles.includes(row.style_code)) &&
+          (selection.styleNames.length === 0 || selection.styleNames.includes(row.style_name))
+        );
       });
     },
-    [dateFilteredData]
+    [dateFilteredData, refNoFilter, refTypeFilter]
   );
 
   const currentSubset = useMemo(() => evaluateSubset(stateA), [evaluateSubset, stateA]);
@@ -531,14 +550,16 @@ export default function QlikViewAnalyticsPage() {
   }, [currentSubset]);
 
   const getRefLabel = useCallback(() => {
+    if (refTypeFilter === "delivery") return "Delivery Receipt No";
+    if (refTypeFilter === "pull_out") return "Pull Out No";
     if (stateA.transactionModes.length === 1) {
       const mode = stateA.transactionModes[0].toLowerCase();
       if (mode === "delivery" || mode === "dr") return "Delivery Receipt No";
       if (mode === "pull_out" || mode === "pullout") return "Pull Out No";
       if (mode === "sales") return "Sales Ref No";
     }
-    return "Ref / Doc No";
-  }, [stateA.transactionModes]);
+    return "Delivery / Pull-Out No";
+  }, [stateA.transactionModes, refTypeFilter]);
 
   const { possibleValues, fieldFrequencies } = useMemo(() => {
     const calcPossibleAndFreq = (targetField: keyof SalesRecord) => {
@@ -557,7 +578,7 @@ export default function QlikViewAnalyticsPage() {
       const possibleSet = new Set<string>();
       const freqMap: Record<string, number> = {};
       subset.forEach((row) => {
-        const val = String(row[targetField]); 
+        const val = String(row[targetField]);
         possibleSet.add(val);
         freqMap[val] = (freqMap[val] || 0) + row.quantity;
       });
@@ -588,15 +609,15 @@ export default function QlikViewAnalyticsPage() {
 
   const toggleSelection = (field: DimensionKey, value: string) => {
     setStateA((prev) => {
-      const fieldKeyMap: Record<DimensionKey, keyof StateSelection> = { 
-        store: "stores", 
+      const fieldKeyMap: Record<DimensionKey, keyof StateSelection> = {
+        store: "stores",
         transaction_mode: "transactionModes",
-        department: "departments", 
-        category: "categories", 
-        color: "colors", 
-        size: "sizes", 
+        department: "departments",
+        category: "categories",
+        color: "colors",
+        size: "sizes",
         style_code: "styles",
-        style_name: "styleNames" 
+        style_name: "styleNames"
       };
       const key = fieldKeyMap[field];
       const exists = prev[key].includes(value);
@@ -604,7 +625,11 @@ export default function QlikViewAnalyticsPage() {
     });
   };
 
-  const clearCurrentStateSelections = () => { setStateA(() => EMPTY_SELECTIONS); };
+  const clearCurrentStateSelections = () => {
+    setStateA(() => EMPTY_SELECTIONS);
+    setRefNoFilter("");
+    setRefTypeFilter("ALL");
+  };
 
   const calcMetrics = (subset: SalesRecord[]) => {
     const revenue = subset.reduce((acc, curr) => acc + curr.revenue, 0);
@@ -842,7 +867,7 @@ export default function QlikViewAnalyticsPage() {
     currentSubset.forEach((item) => {
       const prodKey = `${item.style_code}-${item.sku}-${item.size}-${item.color}`;
       const foundRef = item.pullout_no && item.pullout_no !== "-" && item.pullout_no !== "null" ? item.pullout_no : "";
-      
+
       if (!map[prodKey]) {
         map[prodKey] = {
           key: prodKey, styleCode: item.style_code, sku: item.sku, styleName: item.style_name, color: item.color, size: item.size,
@@ -852,7 +877,7 @@ export default function QlikViewAnalyticsPage() {
       }
       map[prodKey].units += item.quantity;
       map[prodKey].revenue += item.revenue;
-      
+
       if (foundRef && (map[prodKey].pulloutNo === "-" || !map[prodKey].pulloutNo)) {
         map[prodKey].pulloutNo = foundRef;
       }
@@ -863,7 +888,7 @@ export default function QlikViewAnalyticsPage() {
       const invMatches = relevantInv.filter(i => i.style_code === prod.styleCode);
       prod.currentStock = invMatches.reduce((acc, curr) => acc + (curr.current_stock || 0), 0);
       prod.safetyStock = invMatches.reduce((acc, curr) => acc + (curr.safety_stock || 0), 0);
-      
+
       prod.tiedUpCapital = prod.currentStock * prod.price;
       prod.velocity = prod.units / daysInPeriod;
       prod.daysOfSupply = prod.velocity > 0 ? prod.currentStock / prod.velocity : 999;
@@ -960,7 +985,8 @@ export default function QlikViewAnalyticsPage() {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Sales Analytics");
-    XLSX.writeFile(workbook, `Retail_Analytics_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+    const refSuffix = refNoFilter ? `_${refNoFilter}` : "";
+    XLSX.writeFile(workbook, `Retail_Manifest_${new Date().toISOString().split("T")[0]}${refSuffix}.xlsx`);
     setIsExportMenuOpen(false);
     logUserActivity("EXPORT_EXCEL", "Exported sales analytics to Excel spreadsheet");
   };
@@ -983,8 +1009,9 @@ export default function QlikViewAnalyticsPage() {
     const blob = new Blob([csvOutput], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+    const refSuffix = refNoFilter ? `_${refNoFilter}` : "";
     link.setAttribute("href", url);
-    link.setAttribute("download", `Retail_Analytics_Export_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `Retail_Manifest_${new Date().toISOString().split("T")[0]}${refSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1006,7 +1033,7 @@ export default function QlikViewAnalyticsPage() {
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 p-4 sm:p-6 space-y-4 font-sans antialiased select-none print:p-0 print:m-0 print:bg-white print:text-black">
       
-      {/* GLOBAL PRINT STYLES - COMPACT & FLOWING PAGINATION */}
+      {/* GLOBAL PRINT STYLES */}
       <style jsx global>{`
         @media print {
           * {
@@ -1073,6 +1100,12 @@ export default function QlikViewAnalyticsPage() {
             className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
           >
             Sales Analytics
+          </button>
+          <button 
+            onClick={() => setProductViewMode("delivery_report")} 
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "delivery_report" ? "bg-slate-800 text-amber-400" : "text-slate-400 hover:text-white"}`}
+          >
+            <Truck className="w-3.5 h-3.5 text-amber-400"/> Delivery & Pull-Out Module
           </button>
           <button 
             onClick={() => setProductViewMode("master_catalog")} 
@@ -1163,6 +1196,66 @@ export default function QlikViewAnalyticsPage() {
         </div>
       </nav>
 
+      {/* DEDICATED DELIVERY & PULL-OUT NUMBER FILTER RIBBON */}
+      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden select-none">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs">
+            <Receipt className="w-4 h-4" />
+            <span>Delivery / Pull-Out No Filter:</span>
+          </div>
+
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
+            <button
+              onClick={() => setRefTypeFilter("ALL")}
+              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "ALL" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-slate-400 hover:text-white"}`}
+            >
+              All Manifests
+            </button>
+            <button
+              onClick={() => setRefTypeFilter("delivery")}
+              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "delivery" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-slate-400 hover:text-white"}`}
+            >
+              📦 Delivery Receipts
+            </button>
+            <button
+              onClick={() => setRefTypeFilter("pull_out")}
+              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "pull_out" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" : "text-slate-400 hover:text-white"}`}
+            >
+              🚚 Pull Out Manifests
+            </button>
+          </div>
+
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Enter Delivery / Pull Out No (e.g. 1001)..."
+              value={refNoFilter}
+              onChange={(e) => setRefNoFilter(e.target.value)}
+              className="w-64 bg-slate-950 border border-amber-500/40 text-xs pl-9 pr-8 py-1.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+            />
+            {refNoFilter && (
+              <button
+                onClick={() => setRefNoFilter("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {refNoFilter && (
+          <div className="flex items-center gap-2 text-xs font-mono">
+            <span className="text-slate-400">Filtering for Ref #:</span>
+            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-lg font-bold">
+              {refNoFilter}
+            </span>
+            <span className="text-slate-500">({filteredProducts.length} items matched)</span>
+          </div>
+        )}
+      </div>
+
       {/* EXECUTIVE KPI STRIP */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 select-none print:hidden">
@@ -1190,7 +1283,7 @@ export default function QlikViewAnalyticsPage() {
 
           <div className="bg-[#0E1526]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-xl select-none">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Units Sold / Logged</p>
               <h3 className="text-2xl font-black text-white mt-1">{metricsA.units.toLocaleString()} pcs</h3>
               <p className="text-[10px] text-indigo-400 font-mono mt-1">out of {universe.totalUnits.toLocaleString()} total units</p>
             </div>
@@ -1282,7 +1375,7 @@ export default function QlikViewAnalyticsPage() {
           <button onClick={() => setIsBookmarkModalOpen(true)} className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
             <Bookmark className="w-3.5 h-3.5" /><span>Presets</span>
           </button>
-          {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
+          {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0 || refNoFilter !== "") && (
             <button onClick={clearCurrentStateSelections} className="flex items-center gap-1 text-slate-400 hover:text-rose-400 font-bold transition px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer text-xs">
               <RotateCcw className="w-3.5 h-3.5" /><span>Reset</span>
             </button>
@@ -1291,12 +1384,19 @@ export default function QlikViewAnalyticsPage() {
       </div>
 
       {/* ACTIVE FACETS PILL TRAY */}
-      {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0) && (
+      {(stateA.stores.length > 0 || stateA.transactionModes.length > 0 || stateA.departments.length > 0 || stateA.categories.length > 0 || stateA.colors.length > 0 || stateA.sizes.length > 0 || stateA.styles.length > 0 || stateA.styleNames.length > 0 || refNoFilter !== "") && (
         <div className="bg-[#0E1526]/60 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs print:hidden select-none">
           <div className="flex items-center gap-1.5 text-slate-400 font-bold mr-1">
             <Tag className="w-3.5 h-3.5 text-emerald-400" />
             <span>Active Filters:</span>
           </div>
+
+          {refNoFilter && (
+            <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-xl font-bold shadow-sm">
+              <span>Ref #: {refNoFilter}</span>
+              <button onClick={() => setRefNoFilter("")} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
+            </span>
+          )}
 
           {stateA.stores.map((val) => (
             <span key={`store-${val}`} className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
@@ -1319,41 +1419,6 @@ export default function QlikViewAnalyticsPage() {
             </span>
           ))}
 
-          {stateA.categories.map((val) => (
-            <span key={`cat-${val}`} className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-300 border border-blue-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Category: {val}</span>
-              <button onClick={() => toggleSelection("category", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-
-          {stateA.colors.map((val) => (
-            <span key={`color-${val}`} className="inline-flex items-center gap-1.5 bg-purple-500/10 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Color: {val}</span>
-              <button onClick={() => toggleSelection("color", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-
-          {stateA.sizes.map((val) => (
-            <span key={`size-${val}`} className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Size: {val}</span>
-              <button onClick={() => toggleSelection("size", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-
-          {stateA.styles.map((val) => (
-            <span key={`style-${val}`} className="inline-flex items-center gap-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Style Code: {val}</span>
-              <button onClick={() => toggleSelection("style_code", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-
-          {stateA.styleNames.map((val) => (
-            <span key={`styleName-${val}`} className="inline-flex items-center gap-1.5 bg-teal-500/10 text-teal-300 border border-teal-500/30 px-3 py-1 rounded-xl font-medium shadow-sm">
-              <span>Style Name: {val}</span>
-              <button onClick={() => toggleSelection("style_name", val)} className="hover:text-white cursor-pointer"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-
           <button onClick={clearCurrentStateSelections} className="text-xs text-slate-400 hover:text-rose-400 font-semibold underline ml-2 cursor-pointer">
             Clear All Filters
           </button>
@@ -1362,7 +1427,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* MAIN LAYOUT AREA */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start select-none print:hidden">
-        
+
         {/* STICKY SIDEBAR FILTER PANE */}
         {isSidebarOpen && productViewMode !== "audit_logs" && (
           <div className="lg:col-span-3 bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 print:hidden sticky top-4 select-none">
@@ -1471,7 +1536,113 @@ export default function QlikViewAnalyticsPage() {
         {/* MAIN WORKSPACE AREA */}
         <div className={isSidebarOpen && productViewMode !== "audit_logs" ? "lg:col-span-9 select-none" : "lg:col-span-12 select-none"}>
 
-          {productViewMode === "audit_logs" ? (
+          {productViewMode === "delivery_report" ? (
+            <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-amber-500/40 rounded-2xl p-6 shadow-2xl space-y-4 select-none">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+                    <Truck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white uppercase tracking-wide">
+                      Delivery Receipt & Pull-Out Manifest Reporting Module
+                    </h2>
+                    <p className="text-xs text-slate-400 font-mono">
+                      Generate individual breakdown reports by Delivery No. or Pull-Out No.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={openPdfReportModal}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition cursor-pointer shadow-lg shadow-amber-500/10"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Manifest PDF</span>
+                </button>
+              </div>
+
+              {/* Delivery Filter Quick Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Search Delivery / Pull-Out No</label>
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="e.g. 1001"
+                      value={refNoFilter}
+                      onChange={(e) => setRefNoFilter(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-xs pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Transaction Type Filter</label>
+                  <select
+                    value={refTypeFilter}
+                    onChange={(e) => setRefTypeFilter(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-700 text-xs px-3 py-2 rounded-xl text-slate-200 focus:outline-none cursor-pointer font-bold"
+                  >
+                    <option value="ALL">All Manifest Modes</option>
+                    <option value="delivery">📦 Delivery Receipts</option>
+                    <option value="pull_out">🚚 Pull Out Manifests</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1 flex flex-col justify-end">
+                  <div className="bg-slate-900 border border-slate-800 p-2 rounded-xl flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-400">Total Items in Manifest:</span>
+                    <strong className="text-amber-400 font-bold">{filteredProducts.length} items ({metricsA.units} pcs)</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manifest Data Table */}
+              <div className="relative overflow-hidden border border-slate-800 rounded-2xl h-[480px] flex flex-col bg-slate-950">
+                <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md">
+                      <tr>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Ref / Manifest #</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Store Destination</th>
+                        <th className="px-5 py-3.5 border-r border-slate-800">Style Name & Code</th>
+                        <th className="px-4 py-3.5 border-r border-slate-800">Color & Size</th>
+                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Unit Price</th>
+                        <th className="px-4 py-3.5 text-right border-r border-slate-800">Quantity</th>
+                        <th className="px-4 py-3.5 text-right">Total Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80 text-xs font-mono">
+                      {filteredProducts.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-16 text-center text-slate-500 italic">
+                            No delivery or pull-out entries found for number "{refNoFilter || 'ALL'}".
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredProducts.map((prod) => (
+                          <tr key={prod.key} className="hover:bg-slate-900/50 transition-colors">
+                            <td className="px-4 py-3 text-amber-400 font-bold border-r border-slate-900/50">{prod.pulloutNo !== "-" ? prod.pulloutNo : refNoFilter || "-"}</td>
+                            <td className="px-4 py-3 text-indigo-300 border-r border-slate-900/50">{Object.keys(prod.storeBreakdown).join(", ") || "All Stores"}</td>
+                            <td className="px-5 py-3 border-r border-slate-900/50 font-sans">
+                              <strong className="text-white block">{prod.styleName}</strong>
+                              <span className="text-[10px] text-slate-400 font-mono">Code: {prod.styleCode}</span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 border-r border-slate-900/50">{prod.color} / {prod.size}</td>
+                            <td className="px-4 py-3 text-right text-slate-300 border-r border-slate-900/50">₱{prod.price.toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right font-bold text-emerald-400 border-r border-slate-900/50">{prod.units} pcs</td>
+                            <td className="px-4 py-3 text-right font-bold text-amber-300">₱{(prod.price * prod.units).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : productViewMode === "audit_logs" ? (
             <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4 select-none">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
@@ -1795,7 +1966,7 @@ export default function QlikViewAnalyticsPage() {
           ) : (
 
           <div className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 select-none">
-            
+
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden select-none">
               <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
                 <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
@@ -1808,7 +1979,7 @@ export default function QlikViewAnalyticsPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1 select-none">
-              
+
               {expandedPanel !== "table" && (
                 <div className={`bg-slate-950/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] ${expandedPanel === "graph" ? "lg:col-span-2" : ""}`}>
                   <div className="px-5 py-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between gap-3 shadow-md shrink-0 select-none">
@@ -1946,7 +2117,7 @@ export default function QlikViewAnalyticsPage() {
 
                   <div className="relative flex-1 overflow-hidden flex flex-col select-none">
                     <div className={`overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin] ${productViewMode === "stores_grid" ? "p-4" : ""}`}>
-                      
+
                       {productViewMode === "consolidated" && (
                         <table className="w-full text-left text-xs border-collapse table-fixed select-none">
                           <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
@@ -2220,7 +2391,7 @@ export default function QlikViewAnalyticsPage() {
       {isPdfReportModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto select-none print:p-0 print:static print:bg-white">
           <div className="bg-[#0E1526] border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none">
-            
+
             {/* Modal Header Controls */}
             <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0 print:hidden">
               <div className="flex items-center gap-2">
@@ -2248,7 +2419,7 @@ export default function QlikViewAnalyticsPage() {
             {/* PRINT-CALIBRATED REPORT CANVAS */}
             <div className="p-6 overflow-y-auto flex justify-center bg-slate-950/80 print:p-0 print:bg-white">
               <div id="executive-pdf-report" className="bg-white text-slate-900 p-6 rounded-lg shadow-2xl w-full max-w-[210mm] text-xs font-sans space-y-4 print:shadow-none print:p-0 print:w-full">
-                
+
                 {/* Header & KPI Block */}
                 <div className="space-y-4 page-break-inside-avoid">
                   {/* Document Masthead */}
@@ -2256,7 +2427,7 @@ export default function QlikViewAnalyticsPage() {
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
-                          {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY"} MANIFEST
+                          {refNoFilter ? `MANIFEST #${refNoFilter}` : stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY & PULL OUT"} MANIFEST
                         </span>
                         <span className="text-[9px] text-slate-400 font-mono">Confidential Audit Report</span>
                       </div>
@@ -2264,14 +2435,15 @@ export default function QlikViewAnalyticsPage() {
                         {stateA.stores.length > 0 ? stateA.stores.join(", ") : "Multi-Store"} Performance Summary
                       </h1>
                       <p className="text-[10px] text-slate-300 font-mono">
-                        Transaction Mode: {stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
+                        Transaction Mode: {refTypeFilter !== "ALL" ? refTypeFilter : stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ") : "delivery"}
                       </p>
                     </div>
                     <div className="text-right font-mono text-[10px] text-slate-300 space-y-0.5">
                       <p className="text-emerald-400 font-bold">
                         <strong>{getRefLabel()}:</strong> {
-                          Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") || 
-                          filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] || 
+                          refNoFilter ||
+                          Array.from(new Set(currentSubset.map(r => r.pullout_no).filter(n => n && n !== "-" && n !== "null"))).join(", ") ||
+                          filteredProducts.map(p => p.pulloutNo).filter(n => n && n !== "-")[0] ||
                           "N/A"
                         }
                       </p>
@@ -2328,7 +2500,7 @@ export default function QlikViewAnalyticsPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-mono">
                       {filteredProducts.map((prod) => {
-                        const refValue = prod.pulloutNo !== "-" && prod.pulloutNo ? prod.pulloutNo : dynamicRefNumbers[0] || "-";
+                        const refValue = refNoFilter || (prod.pulloutNo !== "-" && prod.pulloutNo ? prod.pulloutNo : dynamicRefNumbers[0] || "-");
                         return (
                           <tr key={prod.key}>
                             <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200">{refValue}</td>
