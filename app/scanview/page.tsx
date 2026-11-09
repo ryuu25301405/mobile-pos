@@ -169,7 +169,6 @@ export default function ScanViewPage() {
     }
   };
 
-  // Flexible live store inventory stock lookup handling style codes, SKUs, and descriptions
   const handleOpenCompareModal = async (item: GroupedProduct) => {
     setComparingItem(item);
     setIsComparingLoading(true);
@@ -307,6 +306,7 @@ export default function ScanViewPage() {
     };
   }, [filteredRawLogs]);
 
+  // GROUP BY LOGIC WITH DATE ISOLATION FIX INTEGRATED
   const groupedItems = useMemo(() => {
     if (groupBy === "none") {
       return filteredRawLogs.map((log) => ({
@@ -318,14 +318,19 @@ export default function ScanViewPage() {
     const groupedMap = new Map<string, GroupedProduct>();
 
     filteredRawLogs.forEach((item) => {
+      // Extract YYYY-MM-DD to isolate scans by date
+      const scanDateStr = item.rawTimestamp
+        ? new Date(item.rawTimestamp).toISOString().split("T")[0]
+        : "no-date";
+
       let groupKey = "";
 
       if (groupBy === "store_style") {
-        groupKey = `${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}|${item.transaction_mode}`;
+        groupKey = `${scanDateStr}|${item.store}|${item.styleCode}|${item.sku}|${item.color}|${item.size}|${item.transaction_mode}`;
       } else if (groupBy === "category") {
-        groupKey = `${item.store}|${item.category}|${item.styleCode}|${item.transaction_mode}`;
+        groupKey = `${scanDateStr}|${item.store}|${item.category}|${item.styleCode}|${item.transaction_mode}`;
       } else if (groupBy === "department") {
-        groupKey = `${item.store}|${item.department}|${item.styleCode}|${item.transaction_mode}`;
+        groupKey = `${scanDateStr}|${item.store}|${item.department}|${item.styleCode}|${item.transaction_mode}`;
       }
 
       if (groupedMap.has(groupKey)) {
@@ -769,7 +774,7 @@ export default function ScanViewPage() {
                             <span>Compare</span>
                           </button>
                         ) : (
-                          <span className="inline-block w-[72px]"></span> // Balanced empty spacer to align action column padding
+                          <span className="inline-block w-[72px]"></span>
                         )}
 
                         <button
