@@ -909,9 +909,17 @@ export default function QlikViewAnalyticsPage() {
       return { ...p, abcClass: cumulativePct <= 80 ? "A" : cumulativePct <= 95 ? "B" : "C" as "A"|"B"|"C" };
     });
 
-    if (!detailSearch.trim()) return classifiedList;
+    // EXCLUDE UNASSIGNED / EMPTY REFERENCE NUMBERS IN DELIVERY & PULL-OUT MODULE
+    let resultList = classifiedList;
+    if (productViewMode === "delivery_report") {
+      resultList = resultList.filter(
+        (p) => p.pulloutNo && p.pulloutNo !== "-" && p.pulloutNo !== "null" && p.pulloutNo !== "undefined"
+      );
+    }
+
+    if (!detailSearch.trim()) return resultList;
     const q = detailSearch.toLowerCase().trim();
-    return classifiedList.filter((p) => {
+    return resultList.filter((p) => {
       const searchableText = [
         p.styleCode,
         p.styleName,
@@ -927,7 +935,7 @@ export default function QlikViewAnalyticsPage() {
         .toLowerCase();
       return searchableText.includes(q);
     });
-  }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate]);
+  }, [currentSubset, detailSearch, inventoryData, stateA.stores, universe.stores, startDate, endDate, productViewMode]);
 
   const tableTotals = useMemo(() => {
     const totalUnits = filteredProducts.reduce((acc, p) => acc + p.units, 0);
@@ -1146,7 +1154,7 @@ export default function QlikViewAnalyticsPage() {
             <span>Generate Executive PDF</span>
           </button>
 
-          {/* FIXED EXPORT DROPDOWN MENU */}
+          {/* EXPORT DROPDOWN MENU */}
           <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -1531,7 +1539,9 @@ export default function QlikViewAnalyticsPage() {
                 <div className="space-y-1 flex flex-col justify-end">
                   <div className="bg-slate-900 border border-slate-800 p-2 rounded-xl flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-400">Total Items in Manifest:</span>
-                    <strong className="text-amber-400 font-bold">{filteredProducts.length} items ({metricsA.units} pcs)</strong>
+                    <strong className="text-amber-400 font-bold">
+                      {filteredProducts.length} items ({tableTotals.totalUnits} pcs)
+                    </strong>
                   </div>
                 </div>
               </div>
@@ -1555,13 +1565,13 @@ export default function QlikViewAnalyticsPage() {
                       {filteredProducts.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-16 text-center text-slate-500 italic">
-                            No delivery or pull-out entries found for number "{refNoFilter || 'ALL'}".
+                            No delivery or pull-out manifest records found matching "{refNoFilter || 'ALL'}".
                           </td>
                         </tr>
                       ) : (
                         filteredProducts.map((prod) => (
                           <tr key={prod.key} className="hover:bg-slate-900/50 transition-colors">
-                            <td className="px-4 py-3 text-amber-400 font-bold border-r border-slate-900/50">{prod.pulloutNo !== "-" ? prod.pulloutNo : refNoFilter || "-"}</td>
+                            <td className="px-4 py-3 text-amber-400 font-bold border-r border-slate-900/50">{prod.pulloutNo}</td>
                             <td className="px-4 py-3 text-indigo-300 border-r border-slate-900/50">{Object.keys(prod.storeBreakdown).join(", ") || "All Stores"}</td>
                             <td className="px-5 py-3 border-r border-slate-900/50 font-sans">
                               <strong className="text-white block">{prod.styleName}</strong>
@@ -2459,9 +2469,9 @@ export default function QlikViewAnalyticsPage() {
                     <tfoot>
                       <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold text-slate-900">
                         <td colSpan={5} className="p-1.5 text-right uppercase">Report Grand Totals:</td>
-                        <td className="p-1.5 text-right font-black border-r border-slate-200">{metricsA.units.toLocaleString()} pcs</td>
+                        <td className="p-1.5 text-right font-black border-r border-slate-200">{tableTotals.totalUnits.toLocaleString()} pcs</td>
                         <td className="p-1.5 text-right font-black text-emerald-700">
-                          ₱{metricsA.revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ₱{tableTotals.totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     </tfoot>
