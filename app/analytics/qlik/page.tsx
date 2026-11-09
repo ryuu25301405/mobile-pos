@@ -53,8 +53,7 @@ import {
   Tag,
   History,
   FileCheck,
-  Truck,
-  Receipt
+  Truck
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -223,7 +222,6 @@ export default function QlikViewAnalyticsPage() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
-  // Delivery & Pull-Out Specific Reference Search Filter State
   const [refNoFilter, setRefNoFilter] = useState<string>("");
   const [refTypeFilter, setRefTypeFilter] = useState<"ALL" | "delivery" | "pull_out">("ALL");
 
@@ -247,7 +245,6 @@ export default function QlikViewAnalyticsPage() {
   const [isBranchModalExpanded, setIsBranchModalExpanded] = useState<boolean>(false);
 
   const [expandedPanel, setExpandedPanel] = useState<"none" | "graph" | "table">("none");
-
   const [detailSearch, setDetailSearch] = useState("");
 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -1077,7 +1074,7 @@ export default function QlikViewAnalyticsPage() {
       `}</style>
 
       {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
-      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl print:hidden select-none">
+      <nav className="bg-[#0E1526]/90 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl relative z-40 print:hidden select-none">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
             <LayoutDashboard className="w-5 h-5" />
@@ -1149,7 +1146,7 @@ export default function QlikViewAnalyticsPage() {
             <span>Generate Executive PDF</span>
           </button>
 
-          {/* QUICK EXPORT DROPDOWN MENU */}
+          {/* FIXED EXPORT DROPDOWN MENU */}
           <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -1161,7 +1158,7 @@ export default function QlikViewAnalyticsPage() {
             </button>
 
             {isExportMenuOpen && (
-              <div className="absolute right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-[100] space-y-1 animate-in fade-in zoom-in-95 duration-150">
                 <button
                   onClick={openPdfReportModal}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition cursor-pointer text-left"
@@ -1195,66 +1192,6 @@ export default function QlikViewAnalyticsPage() {
           </Link>
         </div>
       </nav>
-
-      {/* DEDICATED DELIVERY & PULL-OUT NUMBER FILTER RIBBON */}
-      <div className="bg-[#0E1526]/90 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl print:hidden select-none">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs">
-            <Receipt className="w-4 h-4" />
-            <span>Delivery / Pull-Out No Filter:</span>
-          </div>
-
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs">
-            <button
-              onClick={() => setRefTypeFilter("ALL")}
-              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "ALL" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-slate-400 hover:text-white"}`}
-            >
-              All Manifests
-            </button>
-            <button
-              onClick={() => setRefTypeFilter("delivery")}
-              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "delivery" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-slate-400 hover:text-white"}`}
-            >
-              📦 Delivery Receipts
-            </button>
-            <button
-              onClick={() => setRefTypeFilter("pull_out")}
-              className={`px-2.5 py-1 rounded-lg transition font-bold ${refTypeFilter === "pull_out" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" : "text-slate-400 hover:text-white"}`}
-            >
-              🚚 Pull Out Manifests
-            </button>
-          </div>
-
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Enter Delivery / Pull Out No (e.g. 1001)..."
-              value={refNoFilter}
-              onChange={(e) => setRefNoFilter(e.target.value)}
-              className="w-64 bg-slate-950 border border-amber-500/40 text-xs pl-9 pr-8 py-1.5 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-            />
-            {refNoFilter && (
-              <button
-                onClick={() => setRefNoFilter("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {refNoFilter && (
-          <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="text-slate-400">Filtering for Ref #:</span>
-            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-lg font-bold">
-              {refNoFilter}
-            </span>
-            <span className="text-slate-500">({filteredProducts.length} items matched)</span>
-          </div>
-        )}
-      </div>
 
       {/* EXECUTIVE KPI STRIP */}
       {loading ? (
@@ -1562,7 +1499,7 @@ export default function QlikViewAnalyticsPage() {
                 </button>
               </div>
 
-              {/* Delivery Filter Quick Controls */}
+              {/* Delivery Filter Quick Controls inside Module */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Search Delivery / Pull-Out No</label>
@@ -2389,7 +2326,7 @@ export default function QlikViewAnalyticsPage() {
 
       {/* DYNAMIC EXECUTIVE PDF REPORT MODAL PREVIEW */}
       {isPdfReportModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto select-none print:p-0 print:static print:bg-white">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto select-none print:p-0 print:static print:bg-white">
           <div className="bg-[#0E1526] border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none">
 
             {/* Modal Header Controls */}
