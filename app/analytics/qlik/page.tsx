@@ -961,6 +961,13 @@ export default function QlikViewAnalyticsPage() {
     return "Men's Apparel";
   }, [stateA.departments, filteredProducts]);
 
+  const isPulloutMode = useMemo(() => {
+    return (
+      refTypeFilter === "pull_out" ||
+      stateA.transactionModes.some((m) => m.toLowerCase().includes("pull"))
+    );
+  }, [refTypeFilter, stateA.transactionModes]);
+
   const storeCardsSummary = useMemo(() => {
     const map: Record<string, { store: string; totalUnits: number; totalRevenue: number }> = {};
     universe.stores.forEach((st) => map[st] = { store: st, totalUnits: 0, totalRevenue: 0 });
@@ -2396,9 +2403,12 @@ export default function QlikViewAnalyticsPage() {
                           {refNoFilter ? `MANIFEST #${refNoFilter}` : stateA.transactionModes.length > 0 ? stateA.transactionModes.join(", ").toUpperCase() : "DELIVERY & PULL OUT"} MANIFEST
                         </span>
                       </div>
+                      
+                      {/* DYNAMIC MANIFEST HEADER TITLE */}
                       <h1 className="text-xl font-black text-white uppercase tracking-tight pt-1">
-                        DELIVERY TO: {manifestDestinationStore}
+                        {isPulloutMode ? `PULL-OUT FROM: ${manifestDestinationStore}` : `DELIVERY TO: ${manifestDestinationStore}`}
                       </h1>
+
                       <p className="text-[11px] text-white/90 font-semibold">
                         Department: <strong className="underline decoration-white/50">{manifestDepartmentLabel}</strong>
                       </p>
@@ -2415,7 +2425,7 @@ export default function QlikViewAnalyticsPage() {
                       </p>
                       <p><strong>Generated:</strong> {new Date().toLocaleDateString('en-PH', { dateStyle: 'medium' })}</p>
                       <p><strong>Period:</strong> {startDate && endDate ? `${startDate} to ${endDate}` : "All Time Records"}</p>
-                      <p><strong>Mode:</strong> {refTypeFilter !== "ALL" ? refTypeFilter.toUpperCase() : "DELIVERY"}</p>
+                      <p><strong>Mode:</strong> {refTypeFilter !== "ALL" ? refTypeFilter.toUpperCase() : isPulloutMode ? "PULL_OUT" : "DELIVERY"}</p>
                     </div>
                   </div>
 
