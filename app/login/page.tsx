@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  ShieldCheck,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -46,72 +47,64 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-sans antialiased selection:bg-[#D62828]/30 selection:text-white">
-      {/* Subtle Top-Center Radial Spotlight */}
+    <div className="min-h-screen bg-[#0B111E] text-slate-200 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-sans antialiased selection:bg-emerald-500/25 selection:text-emerald-200">
+      {/* Soft Diffused Aurora Background (Soothing, Low-Contrast) */}
       <div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none opacity-40"
+        className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse at top, rgba(214, 40, 40, 0.18), rgba(16, 185, 129, 0.06) 45%, transparent 75%)",
+            "radial-gradient(circle at 20% 20%, rgba(214, 40, 40, 0.12), transparent 45%), radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.11), transparent 50%), radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.5), transparent 80%)",
         }}
       />
 
-      {/* Fine Dot Matrix Texture */}
-      <div
-        className="absolute inset-0 opacity-[0.15] pointer-events-none"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-        }}
-      />
+      {/* Subtle Ambient Floating Glows */}
+      <div className="absolute -top-32 left-1/4 w-[480px] h-[480px] bg-[#D62828]/[0.08] rounded-full blur-[130px] pointer-events-none" />
+      <div className="absolute -bottom-32 right-1/4 w-[480px] h-[480px] bg-teal-500/[0.08] rounded-full blur-[130px] pointer-events-none" />
 
       {/* Main Centered Container */}
-      <div className="w-full max-w-[400px] relative z-10 flex flex-col items-center">
-        {/* Top Live Status Pill */}
-        <div className="mb-6 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] backdrop-blur-md text-[11px] font-medium text-slate-400 shadow-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-          <span>HUGA Retail Operations • Online</span>
-        </div>
+      <div className="w-full max-w-[420px] relative z-10 flex flex-col items-center">
+        {/* Frosted Glass Card */}
+        <div className="w-full bg-slate-900/55 backdrop-blur-2xl rounded-[32px] p-8 sm:p-10 border border-slate-700/40 shadow-[0_32px_90px_-16px_rgba(2,6,23,0.85)] relative overflow-hidden">
+          {/* Soft Top Glass Rim Light */}
+          <div className="absolute inset-x-10 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-300/25 to-transparent" />
 
-        {/* Glassmorphic Spotlight Card */}
-        <div className="w-full bg-[#0D111A]/90 backdrop-blur-2xl rounded-[28px] p-8 sm:p-9 border border-white/[0.08] shadow-[0_24px_80px_-12px_rgba(0,0,0,0.9)] relative overflow-hidden">
-          {/* Top Edge Metallic Shimmer */}
-          <div className="absolute inset-x-12 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-
-          {/* Brand Header */}
+          {/* Brand & Title Header */}
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="bg-[#D62828] text-white font-black text-2xl px-4 py-1 rounded-xl tracking-tighter shadow-[0_8px_24px_-4px_rgba(214,40,40,0.5)] mb-4">
-              huga
+            <div className="relative mb-5">
+              <div className="absolute -inset-1.5 bg-[#D62828]/30 rounded-2xl blur-md" />
+              <div className="relative bg-gradient-to-br from-[#E03131] to-[#B91C1C] text-white font-black text-2xl px-4.5 py-1 rounded-xl tracking-tighter shadow-md">
+                huga
+              </div>
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              Control Deck Sign In
+
+            <h1 className="text-[22px] font-semibold tracking-tight text-slate-100">
+              Retail Control Deck
             </h1>
-            <p className="text-xs text-slate-400 mt-1.5">
-              Enter your staff credentials to access inventory &amp; audits
+            <p className="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-[260px]">
+              Sign in to manage store inventory, barcode audits, and stock transfers
             </p>
           </div>
 
-          {/* Error Banner */}
+          {/* Soft Error Banner */}
           {error && (
-            <div className="mb-6 bg-rose-500/10 border border-rose-500/25 text-rose-200 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
+            <div className="mb-6 bg-rose-500/10 border border-rose-400/25 text-rose-200 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
               <span className="leading-relaxed">{error}</span>
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Email */}
-            <div className="space-y-1.5">
+          {/* Login Form */}
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* Staff Email */}
+            <div className="space-y-2">
               <label
                 htmlFor="email"
-                className="block text-xs font-medium text-slate-300 pl-0.5"
+                className="block text-xs font-medium text-slate-300 pl-1"
               >
                 Staff Email
               </label>
               <div className="relative group">
-                <Mail className="w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-slate-400 group-focus-within:text-emerald-400 transition-colors absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   id="email"
                   type="email"
@@ -120,21 +113,21 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@huga.com"
-                  className="w-full bg-[#07090E]/80 border border-white/[0.08] hover:border-white/[0.16] text-sm pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-4 focus:ring-white/[0.04] transition-all"
+                  className="w-full bg-slate-950/50 border border-slate-700/50 hover:border-slate-600/70 text-sm pl-11 pr-4 py-3.5 rounded-2xl text-slate-100 placeholder-slate-500 focus:outline-none focus:bg-slate-950/70 focus:border-emerald-400/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
                 />
               </div>
             </div>
 
             {/* Password */}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <label
                 htmlFor="password"
-                className="block text-xs font-medium text-slate-300 pl-0.5"
+                className="block text-xs font-medium text-slate-300 pl-1"
               >
                 Password
               </label>
               <div className="relative group">
-                <Lock className="w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-emerald-400 transition-colors absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -143,13 +136,13 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-[#07090E]/80 border border-white/[0.08] hover:border-white/[0.16] text-sm pl-10 pr-11 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-4 focus:ring-white/[0.04] transition-all"
+                  className="w-full bg-slate-950/50 border border-slate-700/50 hover:border-slate-600/70 text-sm pl-11 pr-12 py-3.5 rounded-2xl text-slate-100 placeholder-slate-500 focus:outline-none focus:bg-slate-950/70 focus:border-emerald-400/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-200 rounded-lg transition cursor-pointer"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-200 rounded-xl transition cursor-pointer"
                 >
                   {showPassword ? (
                     <EyeOff className="w-4 h-4" />
@@ -160,37 +153,36 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Submit Button */}
-            <div className="pt-3">
+            {/* Soothing Emerald-Teal Submit Button */}
+            <div className="pt-2">
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-b from-white to-slate-200 hover:from-white hover:to-white active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-semibold py-3 rounded-xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.4),0_12px_28px_-6px_rgba(255,255,255,0.22)]"
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-semibold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_12px_30px_-8px_rgba(16,185,129,0.4)]"
               >
                 {loading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                    <span>Authenticating...</span>
+                    <span>Signing in...</span>
                   </>
                 ) : (
                   <>
-                    <span>Sign In</span>
+                    <span>Sign In to Workspace</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
             </div>
           </form>
-        </div>
 
-        {/* Minimalist Branch & Security Caption Below Card */}
-        <div className="mt-7 text-center space-y-1.5">
-          <p className="text-[11px] font-medium text-slate-500">
-            Trinoma • Makati • Metro Gaisano Colon
-          </p>
-          <p className="text-[10px] font-mono text-slate-600">
-            Authorized Personnel Only • Session Audited
-          </p>
+          {/* Subtle Security & Branch Footer Inside Card */}
+          <div className="mt-8 pt-5 border-t border-slate-800/70 flex items-center justify-between text-[11px] text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400/80" />
+              <span>Audited Session</span>
+            </div>
+            <span className="text-slate-500">Trinoma • Makati • Colon</span>
+          </div>
         </div>
       </div>
     </div>
