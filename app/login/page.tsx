@@ -10,13 +10,10 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  ShieldCheck,
-  Database,
-  ScanBarcode,
-  Store,
+  CheckCircle2,
 } from "lucide-react";
 
-export default function HomeLoginPage() {
+export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,215 +47,193 @@ export default function HomeLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 flex items-center justify-center p-4 lg:p-8 relative overflow-hidden font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
-      {/* Subtle Ambient Background Grid & Glow */}
+    <div className="min-h-screen bg-[#050810] text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+      {/* Architectural Background Layers */}
       <div
-        className="absolute inset-0 opacity-[0.04] pointer-events-none"
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
         style={{
-          backgroundImage:
-            "radial-gradient(#94a3b8 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
+          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
+          backgroundSize: "48px 48px",
         }}
       />
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-[#D62828]/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Subtle Ambient Light Orbs */}
+      <div className="absolute top-[-15%] left-[-10%] w-[520px] h-[520px] bg-[#D62828]/[0.09] rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-15%] right-[-10%] w-[520px] h-[520px] bg-emerald-500/[0.07] rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Main Container */}
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 bg-[#0B1120]/90 backdrop-blur-2xl border border-slate-800/80 rounded-3xl shadow-[0_25px_70px_-15px_rgba(0,0,0,0.8)] overflow-hidden relative z-10">
-        
-        {/* LEFT PANEL: Operational Telemetry & Brand Context (Hidden on small mobile, visible on Desktop) */}
-        <div className="hidden lg:flex lg:col-span-6 flex-col justify-between p-10 bg-gradient-to-br from-[#0F172A] via-[#0B1120] to-[#060913] border-r border-slate-800/80 relative">
-          <div className="space-y-6">
-            {/* Brand Pill */}
-            <div className="flex items-center gap-3">
-              <div className="bg-[#D62828] text-white font-black text-xl px-3.5 py-1 rounded-xl tracking-tighter shadow-lg shadow-red-600/20">
-                huga
-              </div>
-              <span className="text-[11px] font-mono uppercase tracking-widest text-slate-400 border border-slate-800 bg-slate-900/80 px-2.5 py-1 rounded-full">
-                POS & Inventory Hub
-              </span>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h2 className="text-2xl font-black text-white tracking-tight leading-snug">
-                Centralized Retail Control & Stock Audit Deck
-              </h2>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Real-time barcode scanning, stock variance reconciliation, delivery receipts, and pull-out manifest tracking across retail branches.
-              </p>
-            </div>
-
-            {/* Feature Highlights */}
-            <div className="space-y-3 pt-4">
-              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
-                  <ScanBarcode className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-200">
-                    Live Audit & Variance Reconciliation
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Instant comparison between physical barcode counts and live branch stock.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 shrink-0">
-                  <Store className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-200">
-                    Multi-Branch Operations
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Landmark Trinoma • Landmark Makati • Metro Gaisano Colon
-                  </p>
-                </div>
-              </div>
-            </div>
+      {/* Top Minimalist Header Bar */}
+      <header className="w-full max-w-6xl mx-auto px-6 pt-7 flex items-center justify-between relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="bg-[#D62828] text-white font-black text-lg px-3 py-0.5 rounded-lg tracking-tighter shadow-md shadow-red-600/25">
+            huga
           </div>
-
-          {/* System Status Footer */}
-          <div className="pt-6 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-emerald-400 font-semibold">CLOUD DB ONLINE</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-500">
-              <Database className="w-3.5 h-3.5" />
-              <span>Supabase + SSMS Sync</span>
-            </div>
-          </div>
+          <div className="h-4 w-[1px] bg-white/10" />
+          <span className="text-xs font-medium tracking-wide text-slate-400">
+            Retail Operations Suite
+          </span>
         </div>
 
-        {/* RIGHT PANEL: Authentication Form */}
-        <div className="lg:col-span-6 p-7 sm:p-10 lg:p-12 flex flex-col justify-center">
-          {/* Mobile-only Brand Header */}
-          <div className="lg:hidden text-center space-y-2 mb-6">
-            <div className="inline-block bg-[#D62828] text-white font-black text-2xl px-4 py-1 rounded-xl tracking-tighter shadow-lg">
-              huga
-            </div>
-            <h1 className="text-base font-black text-white uppercase tracking-wider pt-1">
-              Retail Control Deck
-            </h1>
-          </div>
+        <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-full backdrop-blur-md">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>System Operational</span>
+        </div>
+      </header>
 
-          <div className="space-y-1.5 mb-6">
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full mb-1">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Authorized Personnel</span>
-            </div>
-            <h1 className="text-xl font-black text-white tracking-tight">
-              Sign in to Workspace
+      {/* Center Stage */}
+      <main className="w-full max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
+        
+        {/* Left Editorial Column (Desktop) */}
+        <div className="hidden lg:flex lg:col-span-6 flex-col space-y-8 pr-6">
+          <div className="space-y-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-emerald-400/90">
+              Inventory & Audit Intelligence
+            </p>
+            <h1 className="text-4xl font-semibold tracking-tight text-white leading-[1.15]">
+              Precision stock control across every{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
+                retail branch.
+              </span>
             </h1>
-            <p className="text-xs text-slate-400">
-              Enter your assigned staff credentials to access inventory and scan logs.
+            <p className="text-sm text-slate-400 leading-relaxed max-w-md">
+              Unified workspace for real-time barcode auditing, variance reconciliation, delivery receipts, and pull-out manifests.
             </p>
           </div>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="mb-5 bg-rose-500/10 border border-rose-500/40 text-rose-300 text-xs p-3.5 rounded-xl flex items-start gap-2.5 animate-in fade-in duration-200">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-              <span>{error}</span>
+          {/* Minimalist Branch Coverage List */}
+          <div className="space-y-3 pt-2">
+            <p className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
+              Active Store Network
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                "Landmark Trinoma",
+                "Landmark Makati",
+                "Metro Gaisano Colon",
+              ].map((branch) => (
+                <span
+                  key={branch}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-lg"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400/80" />
+                  {branch}
+                </span>
+              ))}
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Form */}
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Email Field */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="email"
-                className="block text-[11px] font-bold uppercase tracking-wider text-slate-300"
-              >
-                Staff Email
-              </label>
-              <div className="relative group">
-                <Mail className="w-4 h-4 text-slate-500 group-focus-within:text-emerald-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="staff@huga.com"
-                  className="w-full bg-[#060913] border border-slate-800 hover:border-slate-700 text-xs pl-10 pr-4 py-3.5 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                />
+        {/* Right Glassmorphic Login Card */}
+        <div className="lg:col-span-6 flex justify-center lg:justify-end">
+          <div className="w-full max-w-[420px] bg-[#0B101D]/80 backdrop-blur-2xl border border-white/[0.08] rounded-3xl p-8 sm:p-10 shadow-[0_30px_90px_-20px_rgba(0,0,0,0.85)] relative">
+            
+            {/* Subtle Top Rim Highlight */}
+            <div className="absolute inset-x-10 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+
+            <div className="space-y-2 mb-8">
+              <h2 className="text-xl font-semibold tracking-tight text-white">
+                Welcome back
+              </h2>
+              <p className="text-xs text-slate-400">
+                Sign in with your authorized staff credentials to continue.
+              </p>
+            </div>
+
+            {/* Error Banner */}
+            {error && (
+              <div className="mb-6 bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs p-3.5 rounded-xl flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                <span className="leading-relaxed">{error}</span>
               </div>
-            </div>
+            )}
 
-            {/* Password Field with Show/Hide Toggle */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
+            <form onSubmit={handleLogin} className="space-y-5">
+              {/* Email Input */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="email"
+                  className="block text-xs font-medium text-slate-300"
+                >
+                  Email address
+                </label>
+                <div className="relative group">
+                  <Mail className="w-4 h-4 text-slate-500 group-focus-within:text-slate-200 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@huga.com"
+                    className="w-full bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-sm pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:bg-white/[0.05] focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Password Input */}
+              <div className="space-y-2">
                 <label
                   htmlFor="password"
-                  className="block text-[11px] font-bold uppercase tracking-wider text-slate-300"
+                  className="block text-xs font-medium text-slate-300"
                 >
                   Password
                 </label>
+                <div className="relative group">
+                  <Lock className="w-4 h-4 text-slate-500 group-focus-within:text-slate-200 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-sm pl-10 pr-11 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:bg-white/[0.05] focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-200 rounded-lg transition cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="relative group">
-                <Lock className="w-4 h-4 text-slate-500 group-focus-within:text-emerald-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full bg-[#060913] border border-slate-800 hover:border-slate-700 text-xs pl-10 pr-11 py-3.5 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                />
+
+              {/* Submit CTA */}
+              <div className="pt-2">
                 <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-white hover:bg-slate-100 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-semibold py-3 rounded-xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_10px_30px_-10px_rgba(255,255,255,0.3)]"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
+                  {loading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                      <span>Signing in...</span>
+                    </>
                   ) : (
-                    <Eye className="w-4 h-4" />
+                    <>
+                      <span>Continue to Workspace</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
                   )}
                 </button>
               </div>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-black py-3.5 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
-              >
-                {loading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                    <span>Authenticating...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Sign In to Control Deck</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          {/* Footer Note */}
-          <p className="text-[11px] text-slate-500 text-center mt-6 font-mono">
-            All scan & audit sessions are logged by user ID.
-          </p>
+            </form>
+          </div>
         </div>
-      </div>
+      </main>
+
+      {/* Subtle Bottom Footer */}
+      <footer className="w-full max-w-6xl mx-auto px-6 pb-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500 relative z-10">
+        <span>© {new Date().getFullYear()} HUGA Retail Control Deck</span>
+        <span className="font-mono">Encrypted Session • Audit Logging Active</span>
+      </footer>
     </div>
   );
 }
