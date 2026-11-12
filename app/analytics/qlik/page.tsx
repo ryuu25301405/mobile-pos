@@ -909,7 +909,6 @@ export default function QlikViewAnalyticsPage() {
       return { ...p, abcClass: cumulativePct <= 80 ? "A" : cumulativePct <= 95 ? "B" : "C" as "A"|"B"|"C" };
     });
 
-    // EXCLUDE UNASSIGNED / EMPTY REFERENCE NUMBERS IN DELIVERY & PULL-OUT MODULE
     let resultList = classifiedList;
     if (productViewMode === "delivery_report") {
       resultList = resultList.filter(
@@ -944,7 +943,6 @@ export default function QlikViewAnalyticsPage() {
     return { totalUnits, totalRevenue, avgPrice };
   }, [filteredProducts]);
 
-  // Derived Header Context for Store Destination and Department Category
   const manifestDestinationStore = useMemo(() => {
     if (stateA.stores.length === 1) return stateA.stores[0];
     const uniqueStores = Array.from(new Set(filteredProducts.flatMap(p => Object.keys(p.storeBreakdown))));
@@ -1119,13 +1117,14 @@ export default function QlikViewAnalyticsPage() {
 
       {/* MAIN CONTENT WRAPPER */}
       <div className="relative z-10 space-y-4">
-        {/* CONSOLIDATED HEADER & VIEW NAVIGATION BAR */}
-        <nav className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-4 shadow-2xl relative z-40 print:hidden select-none">
-          <div className="flex items-center gap-3">
+        {/* CONSOLIDATED HEADER & PRIMARY WORKSPACE NAVIGATION */}
+        <nav className="bg-[#0E1526]/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xl relative z-40 print:hidden select-none">
+          {/* Brand & Quick App Switcher */}
+          <div className="flex items-center gap-3 shrink-0">
             <div className="p-2 bg-[#D62828] rounded-xl text-white font-black text-xs px-2.5 py-1 tracking-tighter shadow-md">
               huga
             </div>
-            <div>
+            <div className="hidden xl:block">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black tracking-tight text-white">RETAIL CONTROL DECK</span>
                 <span className="text-[9px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
@@ -1134,71 +1133,94 @@ export default function QlikViewAnalyticsPage() {
               </div>
               <p className="text-[11px] text-slate-400 font-mono">Multi-Branch Associative Visual Analytics</p>
             </div>
+
+            {/* Compact Utility App Switcher */}
+            <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-0.5 ml-1">
+              <Link
+                href="/inventory"
+                title="Open Inventory Management"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-slate-800/80 transition"
+              >
+                <Boxes className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden md:inline">Inventory</span>
+              </Link>
+              <Link
+                href="/scanview"
+                title="Open Barcode Scanner"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-slate-800/80 transition"
+              >
+                <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">Scanner</span>
+              </Link>
+            </div>
           </div>
 
-          {/* CONSOLIDATED VIEW SWITCHERS IN HEADER */}
-          <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-0.5 text-xs">
-            <button 
-              onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }} 
-              className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              Sales Analytics
-            </button>
-            <button 
-              onClick={() => setProductViewMode("delivery_report")} 
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "delivery_report" ? "bg-slate-800 text-amber-400" : "text-slate-400 hover:text-white"}`}
-            >
-              <Truck className="w-3.5 h-3.5 text-amber-400"/> Delivery & Pull-Out Module
-            </button>
-            <button 
-              onClick={() => setProductViewMode("master_catalog")} 
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "master_catalog" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-400"/> Master Catalog
-            </button>
-            <button 
-              onClick={() => setProductViewMode("replenishment")} 
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              <Activity className="w-3.5 h-3.5 text-emerald-400"/> Replenishment
-            </button>
-            <button 
-              onClick={() => setProductViewMode("aging_slob")} 
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "aging_slob" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-400"/> Aging / SLOB
-            </button>
-            <button 
-              onClick={() => setProductViewMode("stores_grid")} 
-              className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer ${productViewMode === "stores_grid" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              Branches
-            </button>
-            <button 
-              onClick={() => setProductViewMode("audit_logs")} 
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer ${productViewMode === "audit_logs" ? "bg-slate-800 text-emerald-400" : "text-slate-400 hover:text-white"}`}
-            >
-              <History className="w-3.5 h-3.5 text-purple-400"/> Audit Trail
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+          {/* 4 Primary Workspace Switchers */}
+          <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-1 text-xs overflow-x-auto [scrollbar-width:none]">
             <button
-              onClick={openPdfReportModal}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer shadow-lg shadow-emerald-500/10 border border-emerald-400/30"
+              onClick={() => {
+                if (["delivery_report", "master_catalog", "audit_logs"].includes(productViewMode)) {
+                  setProductViewMode("consolidated");
+                }
+                setSelectedBranchDetail(null);
+              }}
+              className={`px-3.5 py-1.5 rounded-lg transition font-bold cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                ["consolidated", "replenishment", "aging_slob", "stores_grid"].includes(productViewMode)
+                  ? "bg-slate-800 text-emerald-400 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
             >
-              <FileCheck className="w-4 h-4" />
-              <span>Generate Executive PDF</span>
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>Analytics</span>
             </button>
 
+            <button
+              onClick={() => setProductViewMode("delivery_report")}
+              className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                productViewMode === "delivery_report"
+                  ? "bg-slate-800 text-amber-400 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Manifests</span>
+            </button>
+
+            <button
+              onClick={() => setProductViewMode("master_catalog")}
+              className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                productViewMode === "master_catalog"
+                  ? "bg-slate-800 text-indigo-400 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Master Catalog</span>
+            </button>
+
+            <button
+              onClick={() => setProductViewMode("audit_logs")}
+              className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                productViewMode === "audit_logs"
+                  ? "bg-slate-800 text-purple-400 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <History className="w-3.5 h-3.5 text-purple-400" />
+              <span>Audit Trail</span>
+            </button>
+          </div>
+
+          {/* Right Actions: Export Dropdown & Primary PDF CTA */}
+          <div className="flex items-center gap-2 shrink-0">
             <div className="relative" ref={exportMenuRef}>
               <button
                 onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                className="flex items-center gap-1.5 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Export Data</span>
-                <ChevronDown className="w-3 h-3 text-indigo-400 ml-0.5" />
+                <span className="hidden sm:inline">Export</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
               </button>
 
               {isExportMenuOpen && (
@@ -1228,12 +1250,13 @@ export default function QlikViewAnalyticsPage() {
               )}
             </div>
 
-            <Link href="/inventory" className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
-              <Boxes className="w-3.5 h-3.5 text-indigo-400" /><span>Inventory</span>
-            </Link>
-            <Link href="/scanview" className="flex items-center gap-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
-              <ScanBarcode className="w-3.5 h-3.5 text-emerald-400" /><span>Scanner</span>
-            </Link>
+            <button
+              onClick={openPdfReportModal}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer shadow-lg shadow-emerald-500/15 border border-emerald-400/30"
+            >
+              <FileCheck className="w-4 h-4" />
+              <span>Executive PDF</span>
+            </button>
           </div>
         </nav>
 
@@ -1950,14 +1973,57 @@ export default function QlikViewAnalyticsPage() {
 
             <div className="bg-[#0E1526]/75 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl space-y-4 select-none">
 
+              {/* ANALYTICS SUB-VIEWS & MEASURE CONTROLS */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs print:hidden select-none">
-                <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
-                  <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
-                </button>
+                {/* Analytics Sub-Views */}
+                <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-xl p-1 gap-1 overflow-x-auto">
+                  <button
+                    onClick={() => { setProductViewMode("consolidated"); setSelectedBranchDetail(null); }}
+                    className={`px-3 py-1.5 rounded-lg transition font-bold cursor-pointer whitespace-nowrap ${
+                      productViewMode === "consolidated" ? "bg-slate-800 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Sales Overview
+                  </button>
+                  <button
+                    onClick={() => setProductViewMode("replenishment")}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                      productViewMode === "replenishment" ? "bg-slate-800 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Replenishment</span>
+                  </button>
+                  <button
+                    onClick={() => setProductViewMode("aging_slob")}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                      productViewMode === "aging_slob" ? "bg-slate-800 text-amber-400 shadow-sm" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Aging / SLOB</span>
+                  </button>
+                  <button
+                    onClick={() => setProductViewMode("stores_grid")}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-bold cursor-pointer whitespace-nowrap ${
+                      productViewMode === "stores_grid" ? "bg-slate-800 text-indigo-400 shadow-sm" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Branches</span>
+                  </button>
+                </div>
 
-                <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-0.5 text-xs">
-                  <button onClick={() => setVisualizationMode("chart")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Bars</button>
-                  <button onClick={() => setVisualizationMode("donut")} className={`px-3.5 py-1.5 rounded-lg transition ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Proportion Ring</button>
+                {/* Measure & Chart Mode Controls */}
+                <div className="flex items-center gap-2.5">
+                  <button onClick={cycleMeasure} className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer">
+                    <Layers className="w-3.5 h-3.5 text-emerald-400" /><span>Measure: {activeMeasure.label} ⟳</span>
+                  </button>
+
+                  <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-0.5 text-xs">
+                    <button onClick={() => setVisualizationMode("chart")} className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${visualizationMode === "chart" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Bars</button>
+                    <button onClick={() => setVisualizationMode("donut")} className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${visualizationMode === "donut" ? "bg-slate-800 text-emerald-400 font-bold" : "text-slate-400 hover:text-white"}`}>Proportion Ring</button>
+                  </div>
                 </div>
               </div>
 
