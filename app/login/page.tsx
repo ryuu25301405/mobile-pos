@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  CheckCircle2,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -48,7 +47,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#050810] text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
-      {/* Architectural Background Layers */}
+      {/* Architectural Background Grid */}
       <div
         className="absolute inset-0 opacity-[0.03] pointer-events-none"
         style={{
@@ -56,11 +55,12 @@ export default function LoginPage() {
           backgroundSize: "48px 48px",
         }}
       />
-      {/* Subtle Ambient Light Orbs */}
+
+      {/* Ambient Light Orbs */}
       <div className="absolute top-[-15%] left-[-10%] w-[520px] h-[520px] bg-[#D62828]/[0.09] rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-15%] right-[-10%] w-[520px] h-[520px] bg-emerald-500/[0.07] rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Top Minimalist Header Bar */}
+      {/* Top Header Bar */}
       <header className="w-full max-w-6xl mx-auto px-6 pt-7 flex items-center justify-between relative z-10">
         <div className="flex items-center gap-3">
           <div className="bg-[#D62828] text-white font-black text-lg px-3 py-0.5 rounded-lg tracking-tighter shadow-md shadow-red-600/25">
@@ -80,43 +80,45 @@ export default function LoginPage() {
 
       {/* Center Stage */}
       <main className="w-full max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
-        
-        {/* Left Editorial Column (Desktop) */}
-        <div className="hidden lg:flex lg:col-span-6 flex-col space-y-8 pr-6">
-          <div className="space-y-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-emerald-400/90">
-              Inventory & Audit Intelligence
-            </p>
-            <h1 className="text-4xl font-semibold tracking-tight text-white leading-[1.15]">
-              Precision stock control across every{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
-                retail branch.
-              </span>
+        {/* Left Editorial Lockup (Desktop) */}
+        <div className="hidden lg:flex lg:col-span-6 flex-col justify-between h-[420px] pr-8">
+          <div className="space-y-5">
+            <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.2em] text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-[#D62828]" />
+              <span>HUGA Retail Infrastructure</span>
+            </div>
+
+            <h1 className="text-5xl font-semibold tracking-tight text-white leading-[1.08]">
+              Inventory &amp;{" "}
+              <span className="block text-slate-500">Audit Control.</span>
             </h1>
-            <p className="text-sm text-slate-400 leading-relaxed max-w-md">
-              Unified workspace for real-time barcode auditing, variance reconciliation, delivery receipts, and pull-out manifests.
-            </p>
           </div>
 
-          {/* Minimalist Branch Coverage List */}
-          <div className="space-y-3 pt-2">
-            <p className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
-              Active Store Network
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Landmark Trinoma",
-                "Landmark Makati",
-                "Metro Gaisano Colon",
-              ].map((branch) => (
-                <span
-                  key={branch}
-                  className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-lg"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400/80" />
-                  {branch}
-                </span>
-              ))}
+          {/* Minimalist Spec Strip */}
+          <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/[0.08]">
+            <div>
+              <p className="text-[10px] font-mono text-slate-500 uppercase">
+                01 / Scan
+              </p>
+              <p className="text-xs font-medium text-slate-300 mt-1">
+                POS &amp; Stock Logs
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-slate-500 uppercase">
+                02 / Audit
+              </p>
+              <p className="text-xs font-medium text-slate-300 mt-1">
+                Variance Compare
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-slate-500 uppercase">
+                03 / Logistics
+              </p>
+              <p className="text-xs font-medium text-slate-300 mt-1">
+                DR &amp; Pull-Outs
+              </p>
             </div>
           </div>
         </div>
@@ -124,7 +126,6 @@ export default function LoginPage() {
         {/* Right Glassmorphic Login Card */}
         <div className="lg:col-span-6 flex justify-center lg:justify-end">
           <div className="w-full max-w-[420px] bg-[#0B101D]/80 backdrop-blur-2xl border border-white/[0.08] rounded-3xl p-8 sm:p-10 shadow-[0_30px_90px_-20px_rgba(0,0,0,0.85)] relative">
-            
             {/* Subtle Top Rim Highlight */}
             <div className="absolute inset-x-10 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
