@@ -46,195 +46,153 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050810] text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
-      {/* Architectural Background Grid */}
+    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-sans antialiased selection:bg-[#D62828]/30 selection:text-white">
+      {/* Subtle Top-Center Radial Spotlight */}
       <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none opacity-40"
         style={{
-          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
-          backgroundSize: "48px 48px",
+          background:
+            "radial-gradient(ellipse at top, rgba(214, 40, 40, 0.18), rgba(16, 185, 129, 0.06) 45%, transparent 75%)",
         }}
       />
 
-      {/* Ambient Light Orbs */}
-      <div className="absolute top-[-15%] left-[-10%] w-[520px] h-[520px] bg-[#D62828]/[0.09] rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-15%] right-[-10%] w-[520px] h-[520px] bg-emerald-500/[0.07] rounded-full blur-[120px] pointer-events-none" />
+      {/* Fine Dot Matrix Texture */}
+      <div
+        className="absolute inset-0 opacity-[0.15] pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px)",
+          backgroundSize: "24px 24px",
+        }}
+      />
 
-      {/* Top Header Bar */}
-      <header className="w-full max-w-6xl mx-auto px-6 pt-7 flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-3">
-          <div className="bg-[#D62828] text-white font-black text-lg px-3 py-0.5 rounded-lg tracking-tighter shadow-md shadow-red-600/25">
-            huga
-          </div>
-          <div className="h-4 w-[1px] bg-white/10" />
-          <span className="text-xs font-medium tracking-wide text-slate-400">
-            Retail Operations Suite
-          </span>
+      {/* Main Centered Container */}
+      <div className="w-full max-w-[400px] relative z-10 flex flex-col items-center">
+        {/* Top Live Status Pill */}
+        <div className="mb-6 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] backdrop-blur-md text-[11px] font-medium text-slate-400 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+          <span>HUGA Retail Operations • Online</span>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-full backdrop-blur-md">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>System Operational</span>
-        </div>
-      </header>
+        {/* Glassmorphic Spotlight Card */}
+        <div className="w-full bg-[#0D111A]/90 backdrop-blur-2xl rounded-[28px] p-8 sm:p-9 border border-white/[0.08] shadow-[0_24px_80px_-12px_rgba(0,0,0,0.9)] relative overflow-hidden">
+          {/* Top Edge Metallic Shimmer */}
+          <div className="absolute inset-x-12 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
-      {/* Center Stage */}
-      <main className="w-full max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
-        {/* Left Editorial Lockup (Desktop) */}
-        <div className="hidden lg:flex lg:col-span-6 flex-col justify-between h-[420px] pr-8">
-          <div className="space-y-5">
-            <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.2em] text-slate-400">
-              <span className="w-2 h-2 rounded-full bg-[#D62828]" />
-              <span>HUGA Retail Infrastructure</span>
+          {/* Brand Header */}
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="bg-[#D62828] text-white font-black text-2xl px-4 py-1 rounded-xl tracking-tighter shadow-[0_8px_24px_-4px_rgba(214,40,40,0.5)] mb-4">
+              huga
             </div>
-
-            <h1 className="text-5xl font-semibold tracking-tight text-white leading-[1.08]">
-              Inventory &amp;{" "}
-              <span className="block text-slate-500">Audit Control.</span>
+            <h1 className="text-xl font-semibold tracking-tight text-white">
+              Control Deck Sign In
             </h1>
+            <p className="text-xs text-slate-400 mt-1.5">
+              Enter your staff credentials to access inventory &amp; audits
+            </p>
           </div>
 
-          {/* Minimalist Spec Strip */}
-          <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/[0.08]">
-            <div>
-              <p className="text-[10px] font-mono text-slate-500 uppercase">
-                01 / Scan
-              </p>
-              <p className="text-xs font-medium text-slate-300 mt-1">
-                POS &amp; Stock Logs
-              </p>
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-6 bg-rose-500/10 border border-rose-500/25 text-rose-200 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+              <span className="leading-relaxed">{error}</span>
             </div>
-            <div>
-              <p className="text-[10px] font-mono text-slate-500 uppercase">
-                02 / Audit
-              </p>
-              <p className="text-xs font-medium text-slate-300 mt-1">
-                Variance Compare
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-mono text-slate-500 uppercase">
-                03 / Logistics
-              </p>
-              <p className="text-xs font-medium text-slate-300 mt-1">
-                DR &amp; Pull-Outs
-              </p>
-            </div>
-          </div>
-        </div>
+          )}
 
-        {/* Right Glassmorphic Login Card */}
-        <div className="lg:col-span-6 flex justify-center lg:justify-end">
-          <div className="w-full max-w-[420px] bg-[#0B101D]/80 backdrop-blur-2xl border border-white/[0.08] rounded-3xl p-8 sm:p-10 shadow-[0_30px_90px_-20px_rgba(0,0,0,0.85)] relative">
-            {/* Subtle Top Rim Highlight */}
-            <div className="absolute inset-x-10 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-            <div className="space-y-2 mb-8">
-              <h2 className="text-xl font-semibold tracking-tight text-white">
-                Welcome back
-              </h2>
-              <p className="text-xs text-slate-400">
-                Sign in with your authorized staff credentials to continue.
-              </p>
-            </div>
-
-            {/* Error Banner */}
-            {error && (
-              <div className="mb-6 bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs p-3.5 rounded-xl flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                <span className="leading-relaxed">{error}</span>
+          {/* Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            {/* Email */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="email"
+                className="block text-xs font-medium text-slate-300 pl-0.5"
+              >
+                Staff Email
+              </label>
+              <div className="relative group">
+                <Mail className="w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@huga.com"
+                  className="w-full bg-[#07090E]/80 border border-white/[0.08] hover:border-white/[0.16] text-sm pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-4 focus:ring-white/[0.04] transition-all"
+                />
               </div>
-            )}
+            </div>
 
-            <form onSubmit={handleLogin} className="space-y-5">
-              {/* Email Input */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="email"
-                  className="block text-xs font-medium text-slate-300"
-                >
-                  Email address
-                </label>
-                <div className="relative group">
-                  <Mail className="w-4 h-4 text-slate-500 group-focus-within:text-slate-200 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@huga.com"
-                    className="w-full bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-sm pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:bg-white/[0.05] focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Password Input */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="password"
-                  className="block text-xs font-medium text-slate-300"
-                >
-                  Password
-                </label>
-                <div className="relative group">
-                  <Lock className="w-4 h-4 text-slate-500 group-focus-within:text-slate-200 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-sm pl-10 pr-11 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:bg-white/[0.05] focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-200 rounded-lg transition cursor-pointer"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit CTA */}
-              <div className="pt-2">
+            {/* Password */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="password"
+                className="block text-xs font-medium text-slate-300 pl-0.5"
+              >
+                Password
+              </label>
+              <div className="relative group">
+                <Lock className="w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-[#07090E]/80 border border-white/[0.08] hover:border-white/[0.16] text-sm pl-10 pr-11 py-3 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-4 focus:ring-white/[0.04] transition-all"
+                />
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-white hover:bg-slate-100 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-semibold py-3 rounded-xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_10px_30px_-10px_rgba(255,255,255,0.3)]"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-200 rounded-lg transition cursor-pointer"
                 >
-                  {loading ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                      <span>Signing in...</span>
-                    </>
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
                   ) : (
-                    <>
-                      <span>Continue to Workspace</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
+                    <Eye className="w-4 h-4" />
                   )}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      </main>
+            </div>
 
-      {/* Subtle Bottom Footer */}
-      <footer className="w-full max-w-6xl mx-auto px-6 pb-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500 relative z-10">
-        <span>© {new Date().getFullYear()} HUGA Retail Control Deck</span>
-        <span className="font-mono">Encrypted Session • Audit Logging Active</span>
-      </footer>
+            {/* Submit Button */}
+            <div className="pt-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-b from-white to-slate-200 hover:from-white hover:to-white active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-slate-950 font-semibold py-3 rounded-xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.4),0_12px_28px_-6px_rgba(255,255,255,0.22)]"
+              >
+                {loading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                    <span>Authenticating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Minimalist Branch & Security Caption Below Card */}
+        <div className="mt-7 text-center space-y-1.5">
+          <p className="text-[11px] font-medium text-slate-500">
+            Trinoma • Makati • Metro Gaisano Colon
+          </p>
+          <p className="text-[10px] font-mono text-slate-600">
+            Authorized Personnel Only • Session Audited
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
