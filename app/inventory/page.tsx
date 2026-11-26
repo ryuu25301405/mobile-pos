@@ -198,6 +198,7 @@ export default function InventoryMonitoringPage() {
     setLoading(true);
 
     try {
+      // 1. Paginate store_inventory (1,000 rows per chunk)
       let allInvData: any[] = [];
       let page = 0;
       let fetchMore = true;
@@ -219,10 +220,29 @@ export default function InventoryMonitoringPage() {
         }
       }
 
-      const prodRes = await supabase.from("products").select("*");
-      if (prodRes.error) throw prodRes.error;
+      // 2. Paginate products master catalog (1,000 rows per chunk)
+      let allProdData: any[] = [];
+      let prodPage = 0;
+      let fetchMoreProds = true;
 
-      const prodData = (prodRes.data as any[]) || [];
+      while (fetchMoreProds) {
+        const { data: prodChunk, error: prodErr } = await supabase
+          .from("products")
+          .select("*")
+          .range(prodPage * 1000, (prodPage + 1) * 1000 - 1);
+
+        if (prodErr) throw prodErr;
+
+        if (prodChunk && prodChunk.length > 0) {
+          allProdData = [...allProdData, ...prodChunk];
+          if (prodChunk.length < 1000) fetchMoreProds = false;
+          prodPage++;
+        } else {
+          fetchMoreProds = false;
+        }
+      }
+
+      const prodData = allProdData;
       setProductsMaster(prodData);
 
       const prodMap = new Map<string, any>();
@@ -305,16 +325,40 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
-  // Check if the encoded Style Code exists in Master Products
+  // Check if the encoded Style Code or SKU exists in Master Products or Store Inventory
   const matchedRestockProduct = useMemo(() => {
     const code = restockStyleCode.trim().toLowerCase();
     if (!code) return null;
-    return (
-      productsMaster.find(
-        (p) => String(p.style_code || "").trim().toLowerCase() === code
-      ) || null
+
+    const fromMaster = productsMaster.find(
+      (p) =>
+        String(p.style_code || "").trim().toLowerCase() === code ||
+        String(p.sku || "").trim().toLowerCase() === code
     );
-  }, [restockStyleCode, productsMaster]);
+    if (fromMaster) return fromMaster;
+
+    const fromInv = items.find(
+      (i) =>
+        String(i.style_code || "").trim().toLowerCase() === code ||
+        String(i.sku || "").trim().toLowerCase() === code
+    );
+    if (fromInv) {
+      return {
+        id: fromInv.id,
+        style_code: fromInv.style_code,
+        sku: fromInv.sku || "",
+        style_name: fromInv.style_name || fromInv.style_code,
+        department: fromInv.department || "General",
+        category: "General",
+        color: fromInv.color || "Default",
+        size: fromInv.size || "Free Size",
+        price: fromInv.price || 0,
+        description: fromInv.description || "",
+      } as ProductMasterRecord;
+    }
+
+    return null;
+  }, [restockStyleCode, productsMaster, items]);
 
   const isNewRestockProduct = useMemo(() => {
     return restockStyleCode.trim().length > 0 && !matchedRestockProduct;
@@ -375,7 +419,9 @@ export default function InventoryMonitoringPage() {
 
     setRestockSubmitting(true);
     try {
-      const codeStr = String(restockStyleCode).trim();
+      const codeStr = matchedRestockProduct
+        ? String(matchedRestockProduct.style_code).trim()
+        : String(restockStyleCode).trim();
       const skuStr = restockSku
         ? String(restockSku).trim()
         : matchedRestockProduct?.sku
@@ -1369,7 +1415,7 @@ export default function InventoryMonitoringPage() {
                       Existing Product: {matchedRestockProduct.style_name || matchedRestockProduct.style_code}
                     </p>
                     <p className="text-[11px] text-slate-300 font-mono">
-                      SKU: {matchedRestockProduct.sku || "-"} • {matchedRestockProduct.color || "Default"} • {matchedRestockProduct.size || "Free Size"} • SRP: ₱{cleanNumericPrice(matchedRestockProduct.price || matchedRestockProduct.srp).toFixed(2)}
+                      Code: {matchedRestockProduct.style_code} • SKU: {matchedRestockProduct.sku || "-"} • {matchedRestockProduct.color || "Default"} • {matchedRestockProduct.size || "Free Size"} • SRP: ₱{cleanNumericPrice(matchedRestockProduct.price || matchedRestockProduct.srp).toFixed(2)}
                     </p>
                   </div>
                 </div>
