@@ -1775,7 +1775,7 @@ export default function QlikViewAnalyticsPage() {
 
                 <div className="relative overflow-hidden border border-slate-800 rounded-2xl h-[560px] flex flex-col">
                   <div className="overflow-x-auto overflow-y-auto flex-1 [scrollbar-width:thin]">
-                    <table className="w-full text-left text-xs border-collapse">
+                    <table role="table" aria-label="Master product catalog" className="w-full text-left text-xs border-collapse">
                       <thead className="bg-slate-900 text-slate-300 uppercase tracking-widest text-[11px] font-extrabold border-b-2 border-slate-700 sticky top-0 z-30 shadow-md select-none">
                         <tr>
                           <th onClick={() => handleMasterSort("store")} className="px-4 py-3.5 border-r border-slate-800 bg-slate-900 cursor-pointer hover:text-white transition-colors">

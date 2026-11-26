@@ -34,6 +34,7 @@ import {
   Bell,
   Loader2,
   Calendar,
+  Sparkles,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -149,12 +150,22 @@ export default function InventoryMonitoringPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
+  // Single Delivery & New Product Creation States
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
   const [restockStyleCode, setRestockStyleCode] = useState<string>("");
   const [restockSku, setRestockSku] = useState<string>("");
   const [restockStore, setRestockStore] = useState<string>(STORES[1]);
   const [restockQty, setRestockQty] = useState<number>(10);
   const [restockSubmitting, setRestockSubmitting] = useState<boolean>(false);
+
+  // New Product Fields (shown automatically when Style Code is not in products table)
+  const [newProdStyleName, setNewProdStyleName] = useState<string>("");
+  const [newProdDescription, setNewProdDescription] = useState<string>("");
+  const [newProdCategory, setNewProdCategory] = useState<string>("");
+  const [newProdDepartment, setNewProdDepartment] = useState<string>("");
+  const [newProdColor, setNewProdColor] = useState<string>("");
+  const [newProdSize, setNewProdSize] = useState<string>("");
+  const [newProdPrice, setNewProdPrice] = useState<string>("");
 
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
 
@@ -243,7 +254,6 @@ export default function InventoryMonitoringPage() {
           const lookupKey2 = skuStr.toLowerCase();
           const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
 
-          // NULL-SAFE MAPPING: Robust coercion to prevent frontend display zeroing
           const rawTotalSold = row.total_sold !== null && row.total_sold !== undefined ? Number(row.total_sold) : 0;
           const rawPullOut = row.pull_out !== null && row.pull_out !== undefined ? Number(row.pull_out) : 0;
 
@@ -295,6 +305,34 @@ export default function InventoryMonitoringPage() {
     };
   }, [fetchInventory]);
 
+  // Check if the encoded Style Code exists in Master Products
+  const matchedRestockProduct = useMemo(() => {
+    const code = restockStyleCode.trim().toLowerCase();
+    if (!code) return null;
+    return (
+      productsMaster.find(
+        (p) => String(p.style_code || "").trim().toLowerCase() === code
+      ) || null
+    );
+  }, [restockStyleCode, productsMaster]);
+
+  const isNewRestockProduct = useMemo(() => {
+    return restockStyleCode.trim().length > 0 && !matchedRestockProduct;
+  }, [restockStyleCode, matchedRestockProduct]);
+
+  const resetRestockForm = () => {
+    setRestockStyleCode("");
+    setRestockSku("");
+    setRestockQty(10);
+    setNewProdStyleName("");
+    setNewProdDescription("");
+    setNewProdCategory("");
+    setNewProdDepartment("");
+    setNewProdColor("");
+    setNewProdSize("");
+    setNewProdPrice("");
+  };
+
   const handleSelectManualProduct = async (item: StoreInventoryItem) => {
     setSelectedManualItem(item);
 
@@ -338,8 +376,37 @@ export default function InventoryMonitoringPage() {
     setRestockSubmitting(true);
     try {
       const codeStr = String(restockStyleCode).trim();
-      const skuStr = restockSku ? String(restockSku).trim() : null;
+      const skuStr = restockSku
+        ? String(restockSku).trim()
+        : matchedRestockProduct?.sku
+        ? String(matchedRestockProduct.sku).trim()
+        : null;
 
+      // 1. If product does not exist in `products` table, create it first
+      if (isNewRestockProduct) {
+        const parsedPrice = cleanNumericPrice(newProdPrice);
+        const finalStyleName = newProdStyleName.trim() || codeStr;
+        const finalDescription = newProdDescription.trim() || finalStyleName;
+
+        const { error: createProdErr } = await supabase.from("products").insert({
+          style_code: codeStr,
+          sku: skuStr || codeStr,
+          style_name: finalStyleName,
+          description: finalDescription,
+          category: newProdCategory.trim() || "General",
+          department: newProdDepartment.trim() || "General",
+          color: newProdColor.trim() || "Default",
+          size: newProdSize.trim() || "Free Size",
+          price: parsedPrice,
+        });
+
+        // Ignore unique violation (23505) if created concurrently, otherwise throw
+        if (createProdErr && createProdErr.code !== "23505") {
+          throw new Error(`Failed to create new product: ${createProdErr.message}`);
+        }
+      }
+
+      // 2. Check existing store_inventory row for the selected store
       const { data: existing, error: checkErr } = await supabase
         .from("store_inventory")
         .select("*")
@@ -383,13 +450,11 @@ export default function InventoryMonitoringPage() {
       }
 
       setIsRestockOpen(false);
-      setRestockStyleCode("");
-      setRestockSku("");
-      setRestockQty(10);
-      fetchInventory();
-    } catch (err) {
+      resetRestockForm();
+      await fetchInventory();
+    } catch (err: any) {
       console.error("Restock failed:", err);
-      alert("Failed to process restock intake.");
+      alert(err?.message || "Failed to process restock intake.");
     } finally {
       setRestockSubmitting(false);
     }
@@ -885,7 +950,10 @@ export default function InventoryMonitoringPage() {
           </button>
 
           <button
-            onClick={() => setIsRestockOpen(true)}
+            onClick={() => {
+              resetRestockForm();
+              setIsRestockOpen(true);
+            }}
             className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-indigo-900/20"
           >
             <PlusCircle className="w-4 h-4" />
@@ -1082,6 +1150,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
+      {/* MANUAL SALE MODAL */}
       {isManualModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1227,12 +1296,24 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
+      {/* SINGLE DELIVERY MODAL (WITH AUTO-CREATE NEW PRODUCT) */}
       {isRestockOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+          <div className={`bg-slate-900 border border-slate-800 rounded-2xl w-full ${isNewRestockProduct ? "max-w-xl" : "max-w-md"} p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto transition-all`}>
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
-              <button onClick={() => setIsRestockOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <div>
+                <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
+                <p className="text-[11px] text-slate-400">
+                  Encode delivery stock — auto-registers new products if missing from catalog
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsRestockOpen(false);
+                  resetRestockForm();
+                }}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1251,45 +1332,170 @@ export default function InventoryMonitoringPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Style Code</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 30765663011"
-                  value={restockStyleCode}
-                  onChange={(e) => setRestockStyleCode(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Style Code *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 30765663011"
+                    value={restockStyleCode}
+                    onChange={(e) => setRestockStyleCode(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                    SKU {isNewRestockProduct ? "*" : "(Optional)"}
+                  </label>
+                  <input
+                    type="text"
+                    required={isNewRestockProduct}
+                    placeholder={matchedRestockProduct?.sku || "e.g. 566301"}
+                    value={restockSku}
+                    onChange={(e) => setRestockSku(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">SKU (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 566301"
-                  value={restockSku}
-                  onChange={(e) => setRestockSku(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono"
-                />
-              </div>
+              {/* LIVE CATALOG STATUS INDICATOR */}
+              {matchedRestockProduct && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-emerald-300">
+                      Existing Product: {matchedRestockProduct.style_name || matchedRestockProduct.style_code}
+                    </p>
+                    <p className="text-[11px] text-slate-300 font-mono">
+                      SKU: {matchedRestockProduct.sku || "-"} • {matchedRestockProduct.color || "Default"} • {matchedRestockProduct.size || "Free Size"} • SRP: ₱{cleanNumericPrice(matchedRestockProduct.price || matchedRestockProduct.srp).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* AUTO-CREATE NEW PRODUCT FIELDS WHEN NOT FOUND IN MASTER CATALOG */}
+              {isNewRestockProduct && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-3.5">
+                  <div className="flex items-center gap-2 text-amber-300">
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide">New Product Detected</p>
+                      <p className="text-[11px] text-amber-200/80">
+                        Style Code <span className="font-mono font-bold text-white">{restockStyleCode.trim()}</span> is not yet in the database. Complete details below to register & stock it:
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Style Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Men's Cotton Polo"
+                        value={newProdStyleName}
+                        onChange={(e) => setNewProdStyleName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Price (SRP ₱) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        placeholder="e.g. 599.00"
+                        value={newProdPrice}
+                        onChange={(e) => setNewProdPrice(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white font-mono focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Description</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Slim Fit Pique Polo Shirt"
+                        value={newProdDescription}
+                        onChange={(e) => setNewProdDescription(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Category *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Tops / Shirts"
+                        value={newProdCategory}
+                        onChange={(e) => setNewProdCategory(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Department *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Menswear / Ladies"
+                        value={newProdDepartment}
+                        onChange={(e) => setNewProdDepartment(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Color *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Navy Blue"
+                        value={newProdColor}
+                        onChange={(e) => setNewProdColor(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Size *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Large / L"
+                        value={newProdSize}
+                        onChange={(e) => setNewProdSize(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity to Add</label>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Quantity to Add *</label>
                 <input
                   type="number"
                   min={1}
                   required
                   value={restockQty}
                   onChange={(e) => setRestockQty(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold"
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsRestockOpen(false)}
+                  onClick={() => {
+                    setIsRestockOpen(false);
+                    resetRestockForm();
+                  }}
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
@@ -1299,7 +1505,11 @@ export default function InventoryMonitoringPage() {
                   disabled={restockSubmitting}
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs cursor-pointer disabled:opacity-50"
                 >
-                  {restockSubmitting ? "Saving..." : "Commit Delivery"}
+                  {restockSubmitting
+                    ? "Saving..."
+                    : isNewRestockProduct
+                    ? "Create Product & Commit Delivery"
+                    : "Commit Delivery"}
                 </button>
               </div>
             </form>
@@ -1307,6 +1517,7 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
+      {/* BULK DELIVERY PREVIEW MODAL */}
       {isBulkOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
@@ -1375,6 +1586,7 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
+      {/* STOCK ALERTS MODAL */}
       {isAlertModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
