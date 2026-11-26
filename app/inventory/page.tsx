@@ -35,6 +35,7 @@ import {
   Loader2,
   Calendar,
   Sparkles,
+  Download,
 } from "lucide-react";
 
 interface StoreInventoryItem {
@@ -77,6 +78,15 @@ interface BulkImportItem {
   style_code: string;
   sku: string;
   quantity: number;
+}
+
+interface BulkSaleImportItem {
+  store: string;
+  style_code: string;
+  sku: string;
+  quantity: number;
+  price: number;
+  sale_date: string;
 }
 
 type ColumnKey =
@@ -135,6 +145,19 @@ const cleanNumericPrice = (val: any): number => {
   return isNaN(num) ? 0 : num;
 };
 
+const parseExcelDateToISO = (val: any, fallbackISO: string): string => {
+  if (val === null || val === undefined || val === "") return fallbackISO;
+  if (typeof val === "number") {
+    const utcDays = Math.floor(val - 25569);
+    const utcValue = utcDays * 86400;
+    const dateInfo = new Date(utcValue * 1000);
+    if (!isNaN(dateInfo.getTime())) return dateInfo.toISOString();
+  }
+  const parsed = new Date(String(val).trim());
+  if (!isNaN(parsed.getTime())) return parsed.toISOString();
+  return fallbackISO;
+};
+
 export default function InventoryMonitoringPage() {
   const [items, setItems] = useState<StoreInventoryItem[]>([]);
   const [productsMaster, setProductsMaster] = useState<ProductMasterRecord[]>([]);
@@ -169,11 +192,23 @@ export default function InventoryMonitoringPage() {
 
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
 
+  // Bulk Delivery Upload States
   const [isBulkOpen, setIsBulkOpen] = useState<boolean>(false);
   const [bulkDefaultStore, setBulkDefaultStore] = useState<string>(STORES[1]);
   const [bulkPreview, setBulkPreview] = useState<BulkImportItem[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
 
+  // Bulk Sales Upload States
+  const [isBulkSaleOpen, setIsBulkSaleOpen] = useState<boolean>(false);
+  const [bulkSaleStore, setBulkSaleStore] = useState<string>(STORES[1]);
+  const [bulkSaleDefaultDate, setBulkSaleDefaultDate] = useState<string>(
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  );
+  const [bulkSalePreview, setBulkSalePreview] = useState<BulkSaleImportItem[]>([]);
+  const [bulkSaleSubmitting, setBulkSaleSubmitting] = useState<boolean>(false);
+  const [bulkSaleAllowNegative, setBulkSaleAllowNegative] = useState<boolean>(false);
+
+  // Manual Single Sale States
   const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
   const [manualSearchQuery, setManualSearchQuery] = useState<string>("");
   const [selectedManualItem, setSelectedManualItem] = useState<StoreInventoryItem | null>(null);
@@ -186,9 +221,10 @@ export default function InventoryMonitoringPage() {
   const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState<string>("");
   const [manualErrorMsg, setManualErrorMsg] = useState<string>("");
-  
+
   const [lastSubmittedTime, setLastSubmittedTime] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const saleFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -269,7 +305,7 @@ export default function InventoryMonitoringPage() {
           const storeName = row.store ? row.store.trim() : "Main Store";
           const styleCodeStr = row.style_code ? String(row.style_code).trim() : "";
           const skuStr = row.sku ? String(row.sku).trim() : "";
-          
+
           const lookupKey1 = styleCodeStr.toLowerCase();
           const lookupKey2 = skuStr.toLowerCase();
           const matchedProd = prodMap.get(lookupKey1) || prodMap.get(lookupKey2) || {};
@@ -385,15 +421,15 @@ export default function InventoryMonitoringPage() {
     let descVal = item.description || "";
 
     if (priceVal <= 0 || !descVal || descVal === "-") {
-      const foundMaster: any = productsMaster.find(
-        (p: any) => {
-          const mc = String(p.style_code || "").trim();
-          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
-        }
-      );
+      const foundMaster: any = productsMaster.find((p: any) => {
+        const mc = String(p.style_code || "").trim();
+        return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
+      });
       if (foundMaster) {
         if (priceVal <= 0) {
-          priceVal = cleanNumericPrice(foundMaster.price || foundMaster.unit_price || foundMaster.srp || foundMaster.amount);
+          priceVal = cleanNumericPrice(
+            foundMaster.price || foundMaster.unit_price || foundMaster.srp || foundMaster.amount
+          );
         }
         if (!descVal || descVal === "-") {
           descVal = foundMaster.description || foundMaster.style_name || "";
@@ -413,6 +449,9 @@ export default function InventoryMonitoringPage() {
     return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 0;
   }, [selectedManualItem, manualPrice]);
 
+  // =========================================================================
+  // SINGLE DELIVERY SUBMIT (WITH AUTO-CREATE NEW PRODUCT)
+  // =========================================================================
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!restockStyleCode.trim()) return;
@@ -428,7 +467,6 @@ export default function InventoryMonitoringPage() {
         ? String(matchedRestockProduct.sku).trim()
         : null;
 
-      // 1. If product does not exist in `products` table, create it first
       if (isNewRestockProduct) {
         const parsedPrice = cleanNumericPrice(newProdPrice);
         const finalStyleName = newProdStyleName.trim() || codeStr;
@@ -446,13 +484,11 @@ export default function InventoryMonitoringPage() {
           price: parsedPrice,
         });
 
-        // Ignore unique violation (23505) if created concurrently, otherwise throw
         if (createProdErr && createProdErr.code !== "23505") {
           throw new Error(`Failed to create new product: ${createProdErr.message}`);
         }
       }
 
-      // 2. Check existing store_inventory row for the selected store
       const { data: existing, error: checkErr } = await supabase
         .from("store_inventory")
         .select("*")
@@ -480,17 +516,15 @@ export default function InventoryMonitoringPage() {
 
         if (updateErr) throw updateErr;
       } else {
-        const { error: insertErr } = await supabase
-          .from("store_inventory")
-          .insert({
-            store: restockStore,
-            style_code: codeStr,
-            sku: skuStr,
-            initial_stock: Number(restockQty),
-            current_stock: Number(restockQty),
-            safety_stock: 5,
-            last_replenished_at: now,
-          });
+        const { error: insertErr } = await supabase.from("store_inventory").insert({
+          store: restockStore,
+          style_code: codeStr,
+          sku: skuStr,
+          initial_stock: Number(restockQty),
+          current_stock: Number(restockQty),
+          safety_stock: 5,
+          last_replenished_at: now,
+        });
 
         if (insertErr) throw insertErr;
       }
@@ -506,6 +540,9 @@ export default function InventoryMonitoringPage() {
     }
   };
 
+  // =========================================================================
+  // BULK DELIVERY UPLOAD HANDLERS
+  // =========================================================================
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -528,7 +565,9 @@ export default function InventoryMonitoringPage() {
         const storeIdx = headers.findIndex((h) => h.includes("store") || h.includes("location"));
         const styleIdx = headers.findIndex((h) => h.includes("style") || h.includes("code"));
         const skuIdx = headers.findIndex((h) => h.includes("sku"));
-        const qtyIdx = headers.findIndex((h) => h.includes("qty") || h.includes("quantity") || h.includes("stock") || h.includes("count"));
+        const qtyIdx = headers.findIndex(
+          (h) => h.includes("qty") || h.includes("quantity") || h.includes("stock") || h.includes("count")
+        );
 
         if (styleIdx === -1 || qtyIdx === -1) {
           alert("Could not find required columns ('Style Code' and 'Quantity'). Please check template format.");
@@ -541,7 +580,8 @@ export default function InventoryMonitoringPage() {
           if (!row || row.length === 0) continue;
 
           const storeVal = storeIdx !== -1 && row[storeIdx] ? String(row[storeIdx]).trim() : bulkDefaultStore;
-          const styleVal = row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
+          const styleVal =
+            row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
           const skuVal = skuIdx !== -1 && row[skuIdx] !== undefined && row[skuIdx] !== null ? String(row[skuIdx]).trim() : "";
           const qtyVal = Number(row[qtyIdx]);
 
@@ -605,7 +645,10 @@ export default function InventoryMonitoringPage() {
 
         if (existing) {
           const newInitial = Number(item.quantity);
-          const currentOut = Math.max(0, (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0));
+          const currentOut = Math.max(
+            0,
+            (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0)
+          );
           const newCurrent = Math.max(0, newInitial - currentOut);
 
           const { error: updateErr } = await supabase
@@ -624,17 +667,15 @@ export default function InventoryMonitoringPage() {
             successCount++;
           }
         } else {
-          const { error: insertErr } = await supabase
-            .from("store_inventory")
-            .insert({
-              store: targetStore,
-              style_code: styleCodeStr,
-              sku: skuStr,
-              initial_stock: Number(item.quantity),
-              current_stock: Number(item.quantity),
-              safety_stock: 5,
-              last_replenished_at: now,
-            });
+          const { error: insertErr } = await supabase.from("store_inventory").insert({
+            store: targetStore,
+            style_code: styleCodeStr,
+            sku: skuStr,
+            initial_stock: Number(item.quantity),
+            current_stock: Number(item.quantity),
+            safety_stock: 5,
+            last_replenished_at: now,
+          });
 
           if (insertErr) {
             if (insertErr.code === "23505") {
@@ -647,7 +688,10 @@ export default function InventoryMonitoringPage() {
 
               if (refetchRow) {
                 const newInitial = Number(item.quantity);
-                const currentOut = Math.max(0, (Number(refetchRow.initial_stock) || 0) - (Number(refetchRow.current_stock) || 0));
+                const currentOut = Math.max(
+                  0,
+                  (Number(refetchRow.initial_stock) || 0) - (Number(refetchRow.current_stock) || 0)
+                );
                 const newCurrent = Math.max(0, newInitial - currentOut);
                 const { error: retryErr } = await supabase
                   .from("store_inventory")
@@ -675,7 +719,7 @@ export default function InventoryMonitoringPage() {
       setIsBulkOpen(false);
       setBulkPreview([]);
       fetchInventory();
-      
+
       if (errorMessages.length > 0) {
         alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.`);
       } else {
@@ -689,6 +733,279 @@ export default function InventoryMonitoringPage() {
     }
   };
 
+  // =========================================================================
+  // BULK SALES UPLOAD HANDLERS
+  // =========================================================================
+  const handleDownloadBulkSaleTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Style Code", "SKU", "Quantity", "Price", "Date"],
+      ["3210408097602", "104080976", 2, 389.75, new Date().toISOString().slice(0, 10)],
+      ["30765663011", "566301", 1, "", new Date().toISOString().slice(0, 10)],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sales_Upload");
+    XLSX.writeFile(wb, "Bulk_Sales_Upload_Template.xlsx");
+  };
+
+  const handleBulkSaleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: "binary" });
+        const worksheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[worksheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        if (data.length < 2) {
+          alert("Uploaded sales file is empty or missing data rows.");
+          return;
+        }
+
+        const headers = data[0].map((h: any) => String(h).trim().toLowerCase());
+        const storeIdx = headers.findIndex((h) => h.includes("store") || h.includes("location") || h.includes("branch"));
+        const styleIdx = headers.findIndex((h) => h.includes("style") || h.includes("code") || h.includes("barcode"));
+        const skuIdx = headers.findIndex((h) => h.includes("sku"));
+        const qtyIdx = headers.findIndex(
+          (h) => h.includes("qty") || h.includes("quantity") || h.includes("sold") || h.includes("count")
+        );
+        const priceIdx = headers.findIndex(
+          (h) => h.includes("price") || h.includes("srp") || h.includes("amount") || h.includes("rate")
+        );
+        const dateIdx = headers.findIndex((h) => h.includes("date") || h.includes("time"));
+
+        if (styleIdx === -1 || qtyIdx === -1) {
+          alert(
+            "Could not find required columns ('Style Code' and 'Quantity'). Click 'Sample Template' to verify headers."
+          );
+          return;
+        }
+
+        const fallbackISO = bulkSaleDefaultDate
+          ? new Date(bulkSaleDefaultDate).toISOString()
+          : new Date().toISOString();
+
+        const parsedSales: BulkSaleImportItem[] = [];
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          if (!row || row.length === 0) continue;
+
+          const storeVal = storeIdx !== -1 && row[storeIdx] ? String(row[storeIdx]).trim() : bulkSaleStore;
+          const styleVal =
+            row[styleIdx] !== undefined && row[styleIdx] !== null ? String(row[styleIdx]).trim() : "";
+          const skuVal = skuIdx !== -1 && row[skuIdx] !== undefined && row[skuIdx] !== null ? String(row[skuIdx]).trim() : "";
+          const qtyVal = Number(row[qtyIdx]);
+          const rawPriceVal = priceIdx !== -1 ? cleanNumericPrice(row[priceIdx]) : 0;
+          const dateVal = dateIdx !== -1 ? parseExcelDateToISO(row[dateIdx], fallbackISO) : fallbackISO;
+
+          if (styleVal && !isNaN(qtyVal) && qtyVal > 0) {
+            parsedSales.push({
+              store: storeVal || bulkSaleStore,
+              style_code: styleVal,
+              sku: skuVal,
+              quantity: qtyVal,
+              price: rawPriceVal,
+              sale_date: dateVal,
+            });
+          }
+        }
+
+        if (parsedSales.length === 0) {
+          alert("No valid sales rows with Quantity > 0 were found in the file.");
+          return;
+        }
+
+        setBulkSalePreview(parsedSales);
+        setIsBulkSaleOpen(true);
+      } catch (err) {
+        console.error("Failed to parse bulk sales file:", err);
+        alert("Failed to read spreadsheet file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (saleFileInputRef.current) saleFileInputRef.current.value = "";
+  };
+
+  // Enrich preview rows with live stock availability & resolved unit prices
+  const enrichedBulkSalePreview = useMemo(() => {
+    const targetStoreNorm = bulkSaleStore.toLowerCase().trim();
+    return bulkSalePreview.map((row) => {
+      const codeNorm = row.style_code.toLowerCase().trim();
+      const skuNorm = row.sku.toLowerCase().trim();
+
+      const invMatch = items.find(
+        (i) =>
+          i.store.toLowerCase().trim() === targetStoreNorm &&
+          (i.style_code.toLowerCase().trim() === codeNorm ||
+            (skuNorm && i.sku && i.sku.toLowerCase().trim() === skuNorm))
+      );
+
+      const masterMatch = productsMaster.find(
+        (p) =>
+          String(p.style_code || "").trim().toLowerCase() === codeNorm ||
+          (skuNorm && String(p.sku || "").trim().toLowerCase() === skuNorm)
+      );
+
+      const resolvedPrice =
+        row.price > 0
+          ? row.price
+          : cleanNumericPrice(invMatch?.price) ||
+            cleanNumericPrice(
+              masterMatch?.price || masterMatch?.unit_price || masterMatch?.srp || masterMatch?.amount
+            ) ||
+            0;
+
+      const availableStock = invMatch ? invMatch.current_stock : null;
+      const isMissingInStore = !invMatch;
+      const isInsufficient = invMatch ? invMatch.current_stock < row.quantity : true;
+
+      return {
+        ...row,
+        invMatch,
+        masterMatch,
+        resolvedPrice,
+        lineRevenue: resolvedPrice * row.quantity,
+        availableStock,
+        isMissingInStore,
+        isInsufficient,
+      };
+    });
+  }, [bulkSalePreview, bulkSaleStore, items, productsMaster]);
+
+  const handleBulkSaleSubmit = async () => {
+    if (enrichedBulkSalePreview.length === 0) return;
+
+    setBulkSaleSubmitting(true);
+    try {
+      const targetStore = bulkSaleStore;
+      const defaultIso = bulkSaleDefaultDate
+        ? new Date(bulkSaleDefaultDate).toISOString()
+        : new Date().toISOString();
+
+      // Fetch fresh store_inventory rows for targetStore to guarantee accurate stock deduction
+      const { data: freshStoreRows, error: fetchErr } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store", targetStore);
+
+      if (fetchErr) throw fetchErr;
+
+      const storeRowMap = new Map<string, any>();
+      (freshStoreRows || []).forEach((r: any) => {
+        if (r.style_code) storeRowMap.set(String(r.style_code).trim().toLowerCase(), r);
+        if (r.sku) storeRowMap.set(String(r.sku).trim().toLowerCase(), r);
+      });
+
+      let successCount = 0;
+      const skippedReasons: string[] = [];
+      const logsToInsert: any[] = [];
+
+      for (const item of enrichedBulkSalePreview) {
+        const codeKey = item.style_code.trim().toLowerCase();
+        const skuKey = item.sku.trim().toLowerCase();
+        const invRow = storeRowMap.get(codeKey) || (skuKey ? storeRowMap.get(skuKey) : undefined);
+
+        if (!invRow) {
+          skippedReasons.push(`${item.style_code}: not found in ${targetStore}`);
+          continue;
+        }
+
+        const currentStock = Number(invRow.current_stock) || 0;
+        if (!bulkSaleAllowNegative && currentStock < item.quantity) {
+          skippedReasons.push(
+            `${item.style_code}: insufficient stock (avail ${currentStock}, sold ${item.quantity})`
+          );
+          continue;
+        }
+
+        const newCurrentStock = bulkSaleAllowNegative
+          ? currentStock - item.quantity
+          : Math.max(0, currentStock - item.quantity);
+        const newTotalSold = (Number(invRow.total_sold) || 0) + item.quantity;
+
+        const { error: updateErr } = await supabase
+          .from("store_inventory")
+          .update({
+            current_stock: newCurrentStock,
+            total_sold: newTotalSold,
+          })
+          .eq("id", invRow.id);
+
+        if (updateErr) {
+          skippedReasons.push(`${item.style_code}: ${updateErr.message}`);
+          continue;
+        }
+
+        // Update local reference in case the Excel sheet has multiple rows for the same Style Code
+        invRow.current_stock = newCurrentStock;
+        invRow.total_sold = newTotalSold;
+
+        const p: any = item.masterMatch || {};
+        const styleCodeStr = String(invRow.style_code || item.style_code).trim();
+        const finalStyleName = p.style_name || invRow.style_name || styleCodeStr;
+        const finalDescription = p.description || invRow.description || finalStyleName;
+        const finalColor = p.color || (invRow.color && invRow.color !== "Default" ? invRow.color : "-");
+        const finalSize = p.size || (invRow.size && invRow.size !== "Free Size" ? invRow.size : "-");
+        const finalDept =
+          p.department || (invRow.department && invRow.department !== "General" ? invRow.department : "General");
+        const unitPrice = item.resolvedPrice;
+
+        logsToInsert.push({
+          store: targetStore,
+          transaction_mode: "sales",
+          style_code: styleCodeStr,
+          sku: item.sku || invRow.sku || p.sku || "-",
+          style_name: finalStyleName,
+          description: finalDescription,
+          color: finalColor,
+          size: finalSize,
+          department: finalDept,
+          price: unitPrice,
+          quantity: item.quantity,
+          revenue: unitPrice * item.quantity,
+          scanned_at: item.sale_date || defaultIso,
+        });
+
+        successCount++;
+      }
+
+      if (logsToInsert.length > 0) {
+        const { error: logInsertErr } = await supabase.from("scanned_logs").insert(logsToInsert);
+        if (logInsertErr) {
+          console.error("Failed to insert bulk sale logs:", logInsertErr);
+          alert(`Stock updated for ${successCount} items, but failed to write scanned_logs: ${logInsertErr.message}`);
+        }
+      }
+
+      setIsBulkSaleOpen(false);
+      setBulkSalePreview([]);
+      await fetchInventory();
+
+      if (skippedReasons.length > 0) {
+        alert(
+          `Bulk Sales completed with ${successCount} processed and ${skippedReasons.length} skipped:\n\n` +
+            skippedReasons.slice(0, 8).join("\n") +
+            (skippedReasons.length > 8 ? `\n...and ${skippedReasons.length - 8} more` : "")
+        );
+      } else {
+        alert(
+          `Bulk Sales committed! Successfully deducted stock and logged ${successCount} sale rows for ${targetStore}.`
+        );
+      }
+    } catch (err: any) {
+      console.error("Bulk sales upload failed:", err);
+      alert(`Bulk sales error: ${err?.message || "An error occurred"}`);
+    } finally {
+      setBulkSaleSubmitting(false);
+    }
+  };
+
+  // =========================================================================
+  // MANUAL SINGLE SALE HANDLER
+  // =========================================================================
   const handleManualSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedManualItem || manualQty <= 0) return;
@@ -712,12 +1029,10 @@ export default function InventoryMonitoringPage() {
       const styleCodeStr = String(selectedManualItem.style_code).trim();
       const skuStr = selectedManualItem.sku ? String(selectedManualItem.sku).trim() : "";
 
-      let masterProd: any = productsMaster.find(
-        (p: any) => {
-          const mc = String(p.style_code || "").trim();
-          return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
-        }
-      );
+      let masterProd: any = productsMaster.find((p: any) => {
+        const mc = String(p.style_code || "").trim();
+        return mc === styleCodeStr || mc.includes(styleCodeStr) || styleCodeStr.includes(mc);
+      });
 
       const p = masterProd || {};
 
@@ -725,7 +1040,8 @@ export default function InventoryMonitoringPage() {
       const finalDescription = p.description || selectedManualItem.description || finalStyleName;
       const finalColor = p.color || (selectedManualItem.color !== "Default" ? selectedManualItem.color : "-");
       const finalSize = p.size || (selectedManualItem.size !== "Free Size" ? selectedManualItem.size : "-");
-      const finalDept = p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
+      const finalDept =
+        p.department || (selectedManualItem.department !== "General" ? selectedManualItem.department : "General");
 
       const newCurrentStock = selectedManualItem.current_stock - manualQty;
       const newTotalSold = (selectedManualItem.total_out || 0) + manualQty;
@@ -735,31 +1051,29 @@ export default function InventoryMonitoringPage() {
 
       const { error: invErr } = await supabase
         .from("store_inventory")
-        .update({ 
+        .update({
           current_stock: newCurrentStock,
-          total_sold: newTotalSold
+          total_sold: newTotalSold,
         })
         .eq("id", selectedManualItem.id);
 
       if (invErr) throw invErr;
 
-      const { error: logErr } = await supabase
-        .from("scanned_logs")
-        .insert({
-          store: manualStore,
-          transaction_mode: "sales",
-          style_code: styleCodeStr,
-          sku: skuStr || p.sku || "-",
-          style_name: finalStyleName,
-          description: finalDescription,
-          color: finalColor,
-          size: finalSize,
-          department: finalDept,
-          price: unitPrice,
-          quantity: manualQty,
-          revenue: totalRev,
-          scanned_at: saleTimestamp,
-        });
+      const { error: logErr } = await supabase.from("scanned_logs").insert({
+        store: manualStore,
+        transaction_mode: "sales",
+        style_code: styleCodeStr,
+        sku: skuStr || p.sku || "-",
+        style_name: finalStyleName,
+        description: finalDescription,
+        color: finalColor,
+        size: finalSize,
+        department: finalDept,
+        price: unitPrice,
+        quantity: manualQty,
+        revenue: totalRev,
+        scanned_at: saleTimestamp,
+      });
 
       if (logErr) throw logErr;
 
@@ -888,17 +1202,25 @@ export default function InventoryMonitoringPage() {
         return (
           <div className="space-y-1 font-mono text-left">
             <span className="font-bold text-emerald-400 block text-sm tracking-wide">
-              {item.style_name && item.style_name !== item.style_code ? item.style_name : (item.sku || item.style_code)}
+              {item.style_name && item.style_name !== item.style_code ? item.style_name : item.sku || item.style_code}
             </span>
             <div className="text-[11px] text-slate-300 font-sans font-medium flex flex-wrap items-center justify-start gap-1.5">
-              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-white border border-slate-800 font-mono font-bold">Code: {item.style_code}</span>
+              <span className="bg-slate-900 px-1.5 py-0.5 rounded text-white border border-slate-800 font-mono font-bold">
+                Code: {item.style_code}
+              </span>
               {item.color && item.color !== "Default" && <span className="text-slate-400">• {item.color}</span>}
-              {item.size && item.size !== "Free Size" && <span className="text-slate-200 font-bold">• Size: {item.size}</span>}
+              {item.size && item.size !== "Free Size" && (
+                <span className="text-slate-200 font-bold">• Size: {item.size}</span>
+              )}
             </div>
           </div>
         );
       case "description":
-        return <span className="text-slate-200 font-sans text-left block">{item.description && item.description !== "-" ? item.description : "-"}</span>;
+        return (
+          <span className="text-slate-200 font-sans text-left block">
+            {item.description && item.description !== "-" ? item.description : "-"}
+          </span>
+        );
       case "sku":
         return <span className="text-blue-400 font-mono text-left block">{item.sku || "-"}</span>;
       case "status":
@@ -948,9 +1270,7 @@ export default function InventoryMonitoringPage() {
       case "last_replenished_at":
         return (
           <span className="text-slate-400 font-mono text-[11px] text-right block">
-            {item.last_replenished_at
-              ? new Date(item.last_replenished_at).toLocaleDateString("en-PH")
-              : "N/A"}
+            {item.last_replenished_at ? new Date(item.last_replenished_at).toLocaleDateString("en-PH") : "N/A"}
           </span>
         );
       default:
@@ -994,6 +1314,18 @@ export default function InventoryMonitoringPage() {
             <ShoppingBag className="w-4 h-4" />
             <span>Manual Sale</span>
           </button>
+
+          <label className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold px-3.5 py-2 rounded-lg text-xs transition cursor-pointer shadow-lg shadow-teal-900/20">
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Bulk Sale</span>
+            <input
+              ref={saleFileInputRef}
+              type="file"
+              accept=".csv, .xlsx, .xls"
+              onChange={handleBulkSaleFileUpload}
+              className="hidden"
+            />
+          </label>
 
           <button
             onClick={() => {
@@ -1056,7 +1388,9 @@ export default function InventoryMonitoringPage() {
               className="w-full bg-slate-950 text-white border border-slate-700 px-3 py-2.5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               {STORES.map((st) => (
-                <option key={st} value={st}>{st}</option>
+                <option key={st} value={st}>
+                  {st}
+                </option>
               ))}
             </select>
           </div>
@@ -1076,19 +1410,31 @@ export default function InventoryMonitoringPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setFilterStockStatus("ALL")}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "ALL" ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              filterStockStatus === "ALL"
+                ? "bg-indigo-600 text-white"
+                : "bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800"
+            }`}
           >
             All
           </button>
           <button
             onClick={() => setFilterStockStatus("LOW")}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "LOW" ? 'bg-amber-600 text-slate-950' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              filterStockStatus === "LOW"
+                ? "bg-amber-600 text-slate-950"
+                : "bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800"
+            }`}
           >
             Low Stock
           </button>
           <button
             onClick={() => setFilterStockStatus("OUT")}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${filterStockStatus === "OUT" ? 'bg-rose-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              filterStockStatus === "OUT"
+                ? "bg-rose-600 text-white"
+                : "bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800"
+            }`}
           >
             Out of Stock
           </button>
@@ -1104,14 +1450,24 @@ export default function InventoryMonitoringPage() {
                   <th
                     key={col.id}
                     onClick={() => col.sortable && handleHeaderSort(col.id)}
-                    className={`px-4 py-3.5 cursor-pointer hover:text-white transition select-none ${col.headerBg || ''} ${
+                    className={`px-4 py-3.5 cursor-pointer hover:text-white transition select-none ${col.headerBg || ""} ${
                       col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                     }`}
                   >
-                    <div className={`flex items-center gap-1.5 ${col.align === "right" ? "justify-end" : col.align === "center" ? "justify-center" : "justify-start"}`}>
+                    <div
+                      className={`flex items-center gap-1.5 ${
+                        col.align === "right"
+                          ? "justify-end"
+                          : col.align === "center"
+                          ? "justify-center"
+                          : "justify-start"
+                      }`}
+                    >
                       <span>{col.label}</span>
                       {col.sortable && (
-                        <ArrowUpDown className={`w-3 h-3 ${sortKey === col.id ? "text-indigo-400" : "text-slate-600"}`} />
+                        <ArrowUpDown
+                          className={`w-3 h-3 ${sortKey === col.id ? "text-indigo-400" : "text-slate-600"}`}
+                        />
                       )}
                     </div>
                   </th>
@@ -1196,7 +1552,7 @@ export default function InventoryMonitoringPage() {
         </div>
       </div>
 
-      {/* MANUAL SALE MODAL */}
+      {/* MANUAL SINGLE SALE MODAL */}
       {isManualModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1205,7 +1561,10 @@ export default function InventoryMonitoringPage() {
                 <ShoppingBag className="w-5 h-5" />
                 <h3 className="text-base font-bold text-white uppercase">Encode Manual Sale</h3>
               </div>
-              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button
+                onClick={() => setIsManualModalOpen(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1234,14 +1593,18 @@ export default function InventoryMonitoringPage() {
                   }}
                   className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
                 >
-                  {STORES.filter(s => s !== "All Stores").map((st) => (
-                    <option key={st} value={st}>{st}</option>
+                  {STORES.filter((s) => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Search Product by Style Code or SKU</label>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                  Search Product by Style Code or SKU
+                </label>
                 <input
                   type="text"
                   placeholder="Type to filter inventory..."
@@ -1251,21 +1614,33 @@ export default function InventoryMonitoringPage() {
                 />
                 <div className="max-h-36 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950 divide-y divide-slate-900">
                   {items
-                    .filter((i) => i.store.toLowerCase().trim() === manualStore.toLowerCase().trim() && (
-                      i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
-                      (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
-                      (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
-                      (i.description && i.description.toLowerCase().includes(manualSearchQuery.toLowerCase()))
-                    ))
+                    .filter(
+                      (i) =>
+                        i.store.toLowerCase().trim() === manualStore.toLowerCase().trim() &&
+                        (i.style_code.toLowerCase().includes(manualSearchQuery.toLowerCase()) ||
+                          (i.style_name && i.style_name.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                          (i.sku && i.sku.toLowerCase().includes(manualSearchQuery.toLowerCase())) ||
+                          (i.description && i.description.toLowerCase().includes(manualSearchQuery.toLowerCase())))
+                    )
                     .map((item) => (
                       <div
                         key={item.id}
                         onClick={() => handleSelectManualProduct(item)}
-                        className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${selectedManualItem?.id === item.id ? 'bg-indigo-600/30 border-l-4 border-indigo-500 text-white' : 'hover:bg-slate-900 text-slate-300'}`}
+                        className={`p-2.5 text-xs font-mono cursor-pointer transition flex items-center justify-between ${
+                          selectedManualItem?.id === item.id
+                            ? "bg-indigo-600/30 border-l-4 border-indigo-500 text-white"
+                            : "hover:bg-slate-900 text-slate-300"
+                        }`}
                       >
                         <div>
-                          <span className="font-bold text-emerald-400">{item.description && item.description !== "-" ? item.description : item.style_name || item.style_code}</span>
-                          <span className="text-slate-400 block text-[10px]">Code: {item.style_code} • SKU: {item.sku || '-'}</span>
+                          <span className="font-bold text-emerald-400">
+                            {item.description && item.description !== "-"
+                              ? item.description
+                              : item.style_name || item.style_code}
+                          </span>
+                          <span className="text-slate-400 block text-[10px]">
+                            Code: {item.style_code} • SKU: {item.sku || "-"}
+                          </span>
                         </div>
                         <span className="font-bold text-indigo-300">Stock: {item.current_stock}</span>
                       </div>
@@ -1276,10 +1651,20 @@ export default function InventoryMonitoringPage() {
               {selectedManualItem && (
                 <div className="bg-slate-950 border border-indigo-500/30 p-3.5 rounded-xl space-y-2 text-xs font-mono">
                   <p className="text-indigo-300 font-bold">Selected: {selectedManualItem.style_code}</p>
-                  <p className="text-white text-xs font-sans font-semibold">Description: {selectedManualItem.description || selectedManualItem.style_name || 'N/A'}</p>
+                  <p className="text-white text-xs font-sans font-semibold">
+                    Description: {selectedManualItem.description || selectedManualItem.style_name || "N/A"}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 text-slate-300 pt-1">
-                    <div>Available Stock: <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span></div>
-                    <div>Catalog Price: <span className="text-emerald-400 font-bold">{selectedMasterPrice > 0 ? `₱${selectedMasterPrice.toFixed(2)}` : 'Not Set'}</span></div>
+                    <div>
+                      Available Stock:{" "}
+                      <span className="text-emerald-400 font-bold">{selectedManualItem.current_stock} pcs</span>
+                    </div>
+                    <div>
+                      Catalog Price:{" "}
+                      <span className="text-emerald-400 font-bold">
+                        {selectedMasterPrice > 0 ? `₱${selectedMasterPrice.toFixed(2)}` : "Not Set"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1342,10 +1727,187 @@ export default function InventoryMonitoringPage() {
         </div>
       )}
 
+      {/* BULK SALES UPLOAD MODAL */}
+      {isBulkSaleOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 space-y-5 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-teal-500/15 border border-teal-500/30 rounded-xl text-teal-400">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white uppercase">Bulk Sales Upload Preview</h3>
+                  <p className="text-xs text-slate-400">
+                    Reviewing {bulkSalePreview.length} sale rows — deducts stock & logs sales automatically
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadBulkSaleTemplate}
+                  className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Sample Template</span>
+                </button>
+                <button
+                  onClick={() => setIsBulkSaleOpen(false)}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Target Store Location</label>
+                <select
+                  value={bulkSaleStore}
+                  onChange={(e) => setBulkSaleStore(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
+                >
+                  {STORES.filter((s) => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                  Default Sale Date & Time (If not in Excel)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={bulkSaleDefaultDate}
+                  onChange={(e) => setBulkSaleDefaultDate(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-teal-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Summary Metrics Strip */}
+            <div className="grid grid-cols-3 gap-3 bg-slate-950/80 border border-slate-800 rounded-xl p-3 font-mono text-xs">
+              <div>
+                <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">Total Units Sold</span>
+                <span className="text-base font-black text-teal-400">
+                  {enrichedBulkSalePreview.reduce((s, r) => s + r.quantity, 0)} pcs
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">
+                  Estimated Revenue
+                </span>
+                <span className="text-base font-black text-emerald-400">
+                  ₱
+                  {enrichedBulkSalePreview
+                    .reduce((s, r) => s + r.lineRevenue, 0)
+                    .toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">Stock Validation</span>
+                <span
+                  className={`text-xs font-bold ${
+                    enrichedBulkSalePreview.some((r) => r.isInsufficient) ? "text-amber-400" : "text-emerald-400"
+                  }`}
+                >
+                  {enrichedBulkSalePreview.filter((r) => !r.isInsufficient).length} Ready /{" "}
+                  {enrichedBulkSalePreview.filter((r) => r.isInsufficient).length} Flagged
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 border border-slate-800 rounded-xl max-h-64">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="px-3 py-2.5">Style Code</th>
+                    <th className="px-3 py-2.5">SKU</th>
+                    <th className="px-3 py-2.5 text-right">Avail</th>
+                    <th className="px-3 py-2.5 text-right">Sold Qty</th>
+                    <th className="px-3 py-2.5 text-right">Unit Price</th>
+                    <th className="px-3 py-2.5 text-right">Subtotal</th>
+                    <th className="px-3 py-2.5 text-center">Check</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {enrichedBulkSalePreview.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-800/40">
+                      <td className="px-3 py-2 text-emerald-400 font-bold">{item.style_code}</td>
+                      <td className="px-3 py-2 text-blue-400">{item.sku || item.invMatch?.sku || "-"}</td>
+                      <td className="px-3 py-2 text-right text-slate-300">
+                        {item.availableStock !== null ? item.availableStock : "N/A"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold text-white">{item.quantity}</td>
+                      <td className="px-3 py-2 text-right text-slate-300">₱{item.resolvedPrice.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right font-bold text-emerald-400">
+                        ₱{item.lineRevenue.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2 text-center font-sans">
+                        {item.isMissingInStore ? (
+                          <span className="bg-rose-500/15 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                            Not in Store
+                          </span>
+                        ) : item.isInsufficient ? (
+                          <span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                            Low Stock
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                            OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={bulkSaleAllowNegative}
+                onChange={(e) => setBulkSaleAllowNegative(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-950 text-teal-500 focus:ring-0"
+              />
+              <span>Force deduct even if available stock is lower than sold quantity (allows negative balance)</span>
+            </label>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsBulkSaleOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkSaleSubmitting || bulkSalePreview.length === 0}
+                onClick={handleBulkSaleSubmit}
+                className="px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-xl text-xs cursor-pointer disabled:opacity-50"
+              >
+                {bulkSaleSubmitting ? "Deducting Stock..." : `Commit ${bulkSalePreview.length} Sales`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SINGLE DELIVERY MODAL (WITH AUTO-CREATE NEW PRODUCT) */}
       {isRestockOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`bg-slate-900 border border-slate-800 rounded-2xl w-full ${isNewRestockProduct ? "max-w-xl" : "max-w-md"} p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto transition-all`}>
+          <div
+            className={`bg-slate-900 border border-slate-800 rounded-2xl w-full ${
+              isNewRestockProduct ? "max-w-xl" : "max-w-md"
+            } p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto transition-all`}
+          >
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <h3 className="text-base font-bold text-white uppercase">Single Delivery Intake</h3>
@@ -1372,8 +1934,10 @@ export default function InventoryMonitoringPage() {
                   onChange={(e) => setRestockStore(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
                 >
-                  {STORES.filter(s => s !== "All Stores").map((st) => (
-                    <option key={st} value={st}>{st}</option>
+                  {STORES.filter((s) => s !== "All Stores").map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1415,7 +1979,9 @@ export default function InventoryMonitoringPage() {
                       Existing Product: {matchedRestockProduct.style_name || matchedRestockProduct.style_code}
                     </p>
                     <p className="text-[11px] text-slate-300 font-mono">
-                      Code: {matchedRestockProduct.style_code} • SKU: {matchedRestockProduct.sku || "-"} • {matchedRestockProduct.color || "Default"} • {matchedRestockProduct.size || "Free Size"} • SRP: ₱{cleanNumericPrice(matchedRestockProduct.price || matchedRestockProduct.srp).toFixed(2)}
+                      Code: {matchedRestockProduct.style_code} • SKU: {matchedRestockProduct.sku || "-"} •{" "}
+                      {matchedRestockProduct.color || "Default"} • {matchedRestockProduct.size || "Free Size"} • SRP: ₱
+                      {cleanNumericPrice(matchedRestockProduct.price || matchedRestockProduct.srp).toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -1429,7 +1995,8 @@ export default function InventoryMonitoringPage() {
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wide">New Product Detected</p>
                       <p className="text-[11px] text-amber-200/80">
-                        Style Code <span className="font-mono font-bold text-white">{restockStyleCode.trim()}</span> is not yet in the database. Complete details below to register & stock it:
+                        Style Code <span className="font-mono font-bold text-white">{restockStyleCode.trim()}</span> is
+                        not yet in the database. Complete details below to register & stock it:
                       </p>
                     </div>
                   </div>
@@ -1448,7 +2015,9 @@ export default function InventoryMonitoringPage() {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Price (SRP ₱) *</label>
+                      <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+                        Price (SRP ₱) *
+                      </label>
                       <input
                         type="number"
                         step="0.01"
@@ -1578,14 +2147,18 @@ export default function InventoryMonitoringPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Target Store Location for Bulk Upload</label>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                Target Store Location for Bulk Upload
+              </label>
               <select
                 value={bulkDefaultStore}
                 onChange={(e) => setBulkDefaultStore(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white font-bold cursor-pointer"
               >
-                {STORES.filter(s => s !== "All Stores").map((st) => (
-                  <option key={st} value={st}>{st}</option>
+                {STORES.filter((s) => s !== "All Stores").map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1639,9 +2212,14 @@ export default function InventoryMonitoringPage() {
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-2 text-rose-400">
                 <Bell className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white uppercase">Low & Out of Stock Alerts ({alertItems.length})</h3>
+                <h3 className="text-base font-bold text-white uppercase">
+                  Low & Out of Stock Alerts ({alertItems.length})
+                </h3>
               </div>
-              <button onClick={() => setIsAlertModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button
+                onClick={() => setIsAlertModalOpen(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1659,18 +2237,26 @@ export default function InventoryMonitoringPage() {
                 <tbody className="divide-y divide-slate-800/60">
                   {alertItems.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="p-10 text-center text-slate-500 font-sans italic">All store inventories are above safety stock levels.</td>
+                      <td colSpan={4} className="p-10 text-center text-slate-500 font-sans italic">
+                        All store inventories are above safety stock levels.
+                      </td>
                     </tr>
                   ) : (
                     alertItems.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-800/40">
                         <td className="px-3 py-2.5 text-slate-300">{item.store}</td>
-                        <td className="px-3 py-2.5 text-emerald-400 font-bold">{item.style_name || item.style_code}</td>
+                        <td className="px-3 py-2.5 text-emerald-400 font-bold">
+                          {item.style_name || item.style_code}
+                        </td>
                         <td className="px-3 py-2.5 text-center">
                           {item.current_stock <= 0 ? (
-                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Out of Stock</span>
+                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                              Out of Stock
+                            </span>
                           ) : (
-                            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">Low Stock</span>
+                            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                              Low Stock
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold text-rose-400">{item.current_stock}</td>
