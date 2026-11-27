@@ -53,18 +53,20 @@ interface InventoryItem {
   id: string;
   store: string;
   style_code: string;
-  sku: string;
+  sku: string | null;
   style_name: string;
+  initial_stock: number;
   current_stock: number;
-  quantity: number;
-  available_stock: number;
+  total_sold?: number;
+  pull_out?: number;
+  safety_stock?: number;
 }
 
 interface StockHistoryItem {
   id: string;
   store: string;
   style_code: string;
-  sku: string;
+  sku: string | null;
   style_name: string;
   old_stock: number;
   new_stock: number;
@@ -119,6 +121,8 @@ export default function AdminDashboardPage() {
   // Edit Live Stock Modal State
   const [editingStockItem, setEditingStockItem] = useState<InventoryItem | null>(null);
   const [newStockValue, setNewStockValue] = useState<string>("");
+  const [isUpdatingStock, setIsUpdatingStock] = useState<boolean>(false);
+  const [stockModalError, setStockModalError] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -154,8 +158,8 @@ export default function AdminDashboardPage() {
       // Create a fast lookup map for style_code / sku -> style_name
       const productMap = new Map<string, string>();
       allProducts.forEach((p) => {
-        if (p.style_code) productMap.set(p.style_code.trim(), p.style_name);
-        if (p.sku) productMap.set(p.sku.trim(), p.style_name);
+        if (p.style_code) productMap.set(String(p.style_code).trim(), p.style_name);
+        if (p.sku) productMap.set(String(p.sku).trim(), p.style_name);
       });
 
       // 2. Fetch Store Inventory with chunking loop & in-memory product name resolution
@@ -181,14 +185,16 @@ export default function AdminDashboardPage() {
           fetchMoreInv = false;
         } else {
           const mappedInv = invData.map((item: any) => {
-            const resolvedName = 
-              item.style_name || 
-              (item.style_code ? productMap.get(item.style_code.trim()) : undefined) ||
-              (item.sku ? productMap.get(item.sku.trim()) : undefined) ||
+            const resolvedName =
+              item.style_name ||
+              (item.style_code ? productMap.get(String(item.style_code).trim()) : undefined) ||
+              (item.sku ? productMap.get(String(item.sku).trim()) : undefined) ||
               "Unassigned Item";
 
             return {
               ...item,
+              current_stock: Number(item.current_stock) || 0,
+              initial_stock: Number(item.initial_stock) || 0,
               style_name: resolvedName,
             };
           });
@@ -260,7 +266,7 @@ export default function AdminDashboardPage() {
   // Executive KPI summary calculations
   const totalCatalogProducts = products.length;
   const totalStockUnits = useMemo(() => {
-    return inventoryList.reduce((acc, curr) => acc + (Number(curr.available_stock ?? curr.current_stock ?? curr.quantity) || 0), 0);
+    return inventoryList.reduce((acc, curr) => acc + (Number(curr.current_stock) || 0), 0);
   }, [inventoryList]);
 
   // --- PRODUCT CREATE HANDLER ---
@@ -369,50 +375,60 @@ export default function AdminDashboardPage() {
 
   // --- LIVE INVENTORY STOCK UPDATE HANDLER WITH HISTORY LOGGING ---
   const handleOpenStockEdit = (item: InventoryItem) => {
+    setStockModalError("");
     setEditingStockItem(item);
-    setNewStockValue(String(item.current_stock ?? item.quantity ?? 0));
+    setNewStockValue(String(Number(item.current_stock) || 0));
   };
 
   const handleSaveStockEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStockItem) return;
+    if (!editingStockItem || isUpdatingStock) return;
 
     const parsedStock = parseInt(newStockValue, 10);
     if (isNaN(parsedStock) || parsedStock < 0) {
-      setErrorMsg("Please enter a valid stock quantity.");
+      setStockModalError("Please enter a valid stock quantity (0 or greater).");
       return;
     }
 
-    const oldStock = Number(editingStockItem.available_stock ?? editingStockItem.current_stock ?? editingStockItem.quantity) || 0;
+    const oldStock = Number(editingStockItem.current_stock) || 0;
+    const delta = parsedStock - oldStock;
+    const timestamp = new Date().toISOString();
+
+    setIsUpdatingStock(true);
+    setStockModalError("");
 
     try {
-      // 1. Update store_inventory table
-      const { error: updateError } = await supabase
+      // 1. Update valid store_inventory column (`current_stock`)
+      const { data: updatedRows, error: updateError } = await supabase
         .from("store_inventory")
         .update({
           current_stock: parsedStock,
-          quantity: parsedStock,
-          available_stock: parsedStock,
         })
-        .eq("id", editingStockItem.id);
+        .eq("id", editingStockItem.id)
+        .select();
 
       if (updateError) throw updateError;
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error("Update blocked or row not found. Check Supabase RLS UPDATE policy on store_inventory.");
+      }
 
-      // 2. Insert into stock_history table
-      const timestamp = new Date().toISOString();
-      const { data: histData, error: historyError } = await supabase.from("stock_history").insert([
-        {
-          inventory_id: editingStockItem.id,
-          store: editingStockItem.store,
-          style_code: editingStockItem.style_code,
-          sku: editingStockItem.sku,
-          style_name: editingStockItem.style_name || "Unassigned Item",
-          old_stock: oldStock,
-          new_stock: parsedStock,
-          changed_by: "Admin",
-          created_at: timestamp,
-        }
-      ]).select();
+      // 2. Insert into stock_history audit log
+      const { data: histData, error: historyError } = await supabase
+        .from("stock_history")
+        .insert([
+          {
+            inventory_id: editingStockItem.id,
+            store: editingStockItem.store,
+            style_code: editingStockItem.style_code,
+            sku: editingStockItem.sku || "-",
+            style_name: editingStockItem.style_name || "Unassigned Item",
+            old_stock: oldStock,
+            new_stock: parsedStock,
+            changed_by: "Admin",
+            created_at: timestamp,
+          },
+        ])
+        .select();
 
       if (historyError) {
         console.error("Failed to record stock history:", historyError.message);
@@ -420,21 +436,58 @@ export default function AdminDashboardPage() {
         setStockHistoryList((prev) => [histData[0], ...prev]);
       }
 
-      // Update local state
+      // 3. Log stock adjustment in scanned_logs so QlikView & SQL Server ETL reflect the change
+      if (delta !== 0) {
+        const matchedProd = products.find(
+          (p) =>
+            String(p.style_code || "").trim().toLowerCase() ===
+              String(editingStockItem.style_code || "").trim().toLowerCase() ||
+            (editingStockItem.sku &&
+              String(p.sku || "").trim().toLowerCase() ===
+                String(editingStockItem.sku).trim().toLowerCase())
+        );
+
+        const unitPrice = Number(matchedProd?.price) || 0;
+        const { error: logErr } = await supabase.from("scanned_logs").insert({
+          store: editingStockItem.store,
+          transaction_mode: "adjustment",
+          style_code: editingStockItem.style_code,
+          sku: editingStockItem.sku || matchedProd?.sku || "-",
+          style_name: editingStockItem.style_name || matchedProd?.style_name || editingStockItem.style_code,
+          description: matchedProd?.description || editingStockItem.style_name || editingStockItem.style_code,
+          color: matchedProd?.color || "-",
+          size: matchedProd?.size || "-",
+          department: matchedProd?.department || "General",
+          price: unitPrice,
+          quantity: delta,
+          revenue: unitPrice * delta,
+          scanned_at: timestamp,
+        });
+
+        if (logErr) {
+          console.error("Failed to insert adjustment scanned_log:", logErr.message);
+        }
+      }
+
+      // 4. Update local state immediately
       setInventoryList((prev) =>
         prev.map((item) =>
           item.id === editingStockItem.id
-            ? { ...item, current_stock: parsedStock, quantity: parsedStock, available_stock: parsedStock }
+            ? { ...item, current_stock: parsedStock }
             : item
         )
       );
 
       setEditingStockItem(null);
-      setSuccessMsg("Live stock updated & recorded in audit history log!");
-      setTimeout(() => setSuccessMsg(""), 3000);
+      setSuccessMsg(
+        `Live stock updated (${oldStock} → ${parsedStock} pcs) & recorded in audit history log!`
+      );
+      setTimeout(() => setSuccessMsg(""), 3500);
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to update live inventory stock.");
-      setTimeout(() => setErrorMsg(""), 3000);
+      console.error("Failed to update live inventory stock:", err);
+      setStockModalError(err.message || "Failed to update live inventory stock.");
+    } finally {
+      setIsUpdatingStock(false);
     }
   };
 
@@ -443,12 +496,12 @@ export default function AdminDashboardPage() {
     const q = searchQuery.toLowerCase();
     return products.filter(
       (p) =>
-        p.style_name.toLowerCase().includes(q) ||
-        p.style_code.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.department.toLowerCase().includes(q) ||
-        p.color.toLowerCase().includes(q)
+        String(p.style_name || "").toLowerCase().includes(q) ||
+        String(p.style_code || "").toLowerCase().includes(q) ||
+        String(p.sku || "").toLowerCase().includes(q) ||
+        String(p.category || "").toLowerCase().includes(q) ||
+        String(p.department || "").toLowerCase().includes(q) ||
+        String(p.color || "").toLowerCase().includes(q)
     );
   }, [products, searchQuery]);
 
@@ -857,7 +910,7 @@ export default function AdminDashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 text-xs">
                     {paginatedInventory.map((item, index) => {
-                      const stockQty = Number(item.available_stock ?? item.current_stock ?? item.quantity) || 0;
+                      const stockQty = Number(item.current_stock) || 0;
                       return (
                         <tr
                           key={item.id}
@@ -870,7 +923,7 @@ export default function AdminDashboardPage() {
                             {item.style_code}
                           </td>
                           <td className="py-3.5 px-5 font-mono font-bold text-blue-400">
-                            {item.sku}
+                            {item.sku || "-"}
                           </td>
                           <td className="py-3.5 px-5 font-bold text-white max-w-xs truncate">
                             {item.style_name || "Unassigned Item"}
@@ -1412,6 +1465,13 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
+            {stockModalError && (
+              <div className="bg-rose-500/10 border border-rose-500/40 text-rose-300 p-3 rounded-xl flex items-center space-x-2">
+                <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+                <p className="text-xs font-bold">{stockModalError}</p>
+              </div>
+            )}
+
             <div className="space-y-3 font-mono text-xs text-slate-300 bg-slate-950 p-4 rounded-2xl border border-slate-800/80 shadow-inner">
               <div className="flex justify-between">
                 <span className="text-slate-500">Store Outlet:</span>
@@ -1423,7 +1483,11 @@ export default function AdminDashboardPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Style / SKU:</span>
-                <span className="text-blue-400">{editingStockItem.style_code} ({editingStockItem.sku})</span>
+                <span className="text-blue-400">{editingStockItem.style_code} ({editingStockItem.sku || "-"})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Current On-Hand:</span>
+                <span className="text-amber-400 font-bold">{editingStockItem.current_stock} pcs</span>
               </div>
             </div>
 
@@ -1445,16 +1509,18 @@ export default function AdminDashboardPage() {
               <button
                 type="button"
                 onClick={() => setEditingStockItem(null)}
+                disabled={isUpdatingStock}
                 className="bg-slate-950 hover:bg-slate-800 text-slate-300 font-bold px-4 py-2.5 rounded-xl text-xs transition border border-slate-800 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
+                disabled={isUpdatingStock}
+                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold px-6 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 transition cursor-pointer shadow-lg shadow-amber-500/20"
               >
                 <Save className="h-4 w-4" />
-                <span>Update Stock</span>
+                <span>{isUpdatingStock ? "Updating..." : "Update Stock"}</span>
               </button>
             </div>
           </form>
