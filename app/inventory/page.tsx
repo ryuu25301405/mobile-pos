@@ -449,8 +449,78 @@ export default function InventoryMonitoringPage() {
     return cleanNumericPrice(manualPrice) || cleanNumericPrice(selectedManualItem.price) || 0;
   }, [selectedManualItem, manualPrice]);
 
+  // Helper to build a consistent scanned_logs record for deliveries
+  const buildDeliveryScannedLog = useCallback(
+    (
+      targetStore: string,
+      styleCodeStr: string,
+      skuStr: string | null,
+      qty: number,
+      timestamp: string,
+      invRow?: any,
+      overrideProduct?: {
+        style_name?: string;
+        description?: string;
+        color?: string;
+        size?: string;
+        department?: string;
+        price?: number;
+      }
+    ) => {
+      const masterProd: any =
+        productsMaster.find(
+          (p) =>
+            String(p.style_code || "").trim().toLowerCase() === styleCodeStr.toLowerCase() ||
+            (skuStr && String(p.sku || "").trim().toLowerCase() === skuStr.toLowerCase())
+        ) || {};
+
+      const unitPrice =
+        overrideProduct?.price !== undefined
+          ? overrideProduct.price
+          : cleanNumericPrice(invRow?.price) ||
+            cleanNumericPrice(
+              masterProd.price || masterProd.unit_price || masterProd.srp || masterProd.amount
+            ) ||
+            0;
+
+      const finalStyleName =
+        overrideProduct?.style_name || masterProd.style_name || invRow?.style_name || styleCodeStr;
+      const finalDescription =
+        overrideProduct?.description || masterProd.description || invRow?.description || finalStyleName;
+      const finalColor =
+        overrideProduct?.color ||
+        masterProd.color ||
+        (invRow?.color && invRow.color !== "Default" ? invRow.color : "-");
+      const finalSize =
+        overrideProduct?.size ||
+        masterProd.size ||
+        (invRow?.size && invRow.size !== "Free Size" ? invRow.size : "-");
+      const finalDept =
+        overrideProduct?.department ||
+        masterProd.department ||
+        (invRow?.department && invRow.department !== "General" ? invRow.department : "General");
+
+      return {
+        store: targetStore,
+        transaction_mode: "delivery",
+        style_code: styleCodeStr,
+        sku: skuStr || invRow?.sku || masterProd.sku || "-",
+        style_name: finalStyleName,
+        description: finalDescription,
+        color: finalColor,
+        size: finalSize,
+        department: finalDept,
+        price: unitPrice,
+        quantity: qty,
+        revenue: unitPrice * qty,
+        scanned_at: timestamp,
+      };
+    },
+    [productsMaster]
+  );
+
   // =========================================================================
-  // SINGLE DELIVERY SUBMIT (WITH AUTO-CREATE NEW PRODUCT)
+  // SINGLE DELIVERY SUBMIT (WITH AUTO-CREATE PRODUCT + SCANNED_LOGS SYNC)
   // =========================================================================
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -466,11 +536,35 @@ export default function InventoryMonitoringPage() {
         : matchedRestockProduct?.sku
         ? String(matchedRestockProduct.sku).trim()
         : null;
+      const qtyNum = Number(restockQty);
+
+      let overrideProdDetails:
+        | {
+            style_name?: string;
+            description?: string;
+            color?: string;
+            size?: string;
+            department?: string;
+            price?: number;
+          }
+        | undefined;
 
       if (isNewRestockProduct) {
         const parsedPrice = cleanNumericPrice(newProdPrice);
         const finalStyleName = newProdStyleName.trim() || codeStr;
         const finalDescription = newProdDescription.trim() || finalStyleName;
+        const finalColor = newProdColor.trim() || "Default";
+        const finalSize = newProdSize.trim() || "Free Size";
+        const finalDept = newProdDepartment.trim() || "General";
+
+        overrideProdDetails = {
+          style_name: finalStyleName,
+          description: finalDescription,
+          color: finalColor,
+          size: finalSize,
+          department: finalDept,
+          price: parsedPrice,
+        };
 
         const { error: createProdErr } = await supabase.from("products").insert({
           style_code: codeStr,
@@ -478,9 +572,9 @@ export default function InventoryMonitoringPage() {
           style_name: finalStyleName,
           description: finalDescription,
           category: newProdCategory.trim() || "General",
-          department: newProdDepartment.trim() || "General",
-          color: newProdColor.trim() || "Default",
-          size: newProdSize.trim() || "Free Size",
+          department: finalDept,
+          color: finalColor,
+          size: finalSize,
           price: parsedPrice,
         });
 
@@ -501,8 +595,8 @@ export default function InventoryMonitoringPage() {
       const now = new Date().toISOString();
 
       if (existing) {
-        const newInitial = (Number(existing.initial_stock) || 0) + Number(restockQty);
-        const newCurrent = (Number(existing.current_stock) || 0) + Number(restockQty);
+        const newInitial = (Number(existing.initial_stock) || 0) + qtyNum;
+        const newCurrent = (Number(existing.current_stock) || 0) + qtyNum;
 
         const { error: updateErr } = await supabase
           .from("store_inventory")
@@ -520,13 +614,28 @@ export default function InventoryMonitoringPage() {
           store: restockStore,
           style_code: codeStr,
           sku: skuStr,
-          initial_stock: Number(restockQty),
-          current_stock: Number(restockQty),
+          initial_stock: qtyNum,
+          current_stock: qtyNum,
           safety_stock: 5,
           last_replenished_at: now,
         });
 
         if (insertErr) throw insertErr;
+      }
+
+      // Log delivery transaction to scanned_logs so QlikView reflects it
+      const deliveryLogRow = buildDeliveryScannedLog(
+        restockStore,
+        codeStr,
+        skuStr,
+        qtyNum,
+        now,
+        existing,
+        overrideProdDetails
+      );
+      const { error: logErr } = await supabase.from("scanned_logs").insert(deliveryLogRow);
+      if (logErr) {
+        console.error("Failed to insert single delivery log:", logErr);
       }
 
       setIsRestockOpen(false);
@@ -541,7 +650,7 @@ export default function InventoryMonitoringPage() {
   };
 
   // =========================================================================
-  // BULK DELIVERY UPLOAD HANDLERS
+  // BULK DELIVERY UPLOAD HANDLERS (WITH SCANNED_LOGS SYNC)
   // =========================================================================
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -629,11 +738,13 @@ export default function InventoryMonitoringPage() {
       }
 
       let successCount = 0;
-      let errorMessages: string[] = [];
+      const errorMessages: string[] = [];
+      const deliveryLogsToInsert: any[] = [];
 
       for (const item of bulkPreview) {
         const styleCodeStr = String(item.style_code).trim();
         const skuStr = item.sku ? String(item.sku).trim() : null;
+        const qty = Number(item.quantity);
 
         let existing = existingMap.get(styleCodeStr);
         if (!existing && existingStoreRows) {
@@ -644,7 +755,7 @@ export default function InventoryMonitoringPage() {
         }
 
         if (existing) {
-          const newInitial = Number(item.quantity);
+          const newInitial = qty;
           const currentOut = Math.max(
             0,
             (Number(existing.initial_stock) || 0) - (Number(existing.current_stock) || 0)
@@ -664,6 +775,9 @@ export default function InventoryMonitoringPage() {
           if (updateErr) {
             errorMessages.push(updateErr.message);
           } else {
+            deliveryLogsToInsert.push(
+              buildDeliveryScannedLog(targetStore, styleCodeStr, skuStr, qty, now, existing)
+            );
             successCount++;
           }
         } else {
@@ -671,8 +785,8 @@ export default function InventoryMonitoringPage() {
             store: targetStore,
             style_code: styleCodeStr,
             sku: skuStr,
-            initial_stock: Number(item.quantity),
-            current_stock: Number(item.quantity),
+            initial_stock: qty,
+            current_stock: qty,
             safety_stock: 5,
             last_replenished_at: now,
           });
@@ -687,7 +801,7 @@ export default function InventoryMonitoringPage() {
                 .maybeSingle();
 
               if (refetchRow) {
-                const newInitial = Number(item.quantity);
+                const newInitial = qty;
                 const currentOut = Math.max(
                   0,
                   (Number(refetchRow.initial_stock) || 0) - (Number(refetchRow.current_stock) || 0)
@@ -704,6 +818,9 @@ export default function InventoryMonitoringPage() {
                   .eq("id", refetchRow.id);
 
                 if (!retryErr) {
+                  deliveryLogsToInsert.push(
+                    buildDeliveryScannedLog(targetStore, styleCodeStr, skuStr, qty, now, refetchRow)
+                  );
                   successCount++;
                   continue;
                 }
@@ -711,19 +828,35 @@ export default function InventoryMonitoringPage() {
             }
             errorMessages.push(insertErr.message);
           } else {
+            deliveryLogsToInsert.push(
+              buildDeliveryScannedLog(targetStore, styleCodeStr, skuStr, qty, now)
+            );
             successCount++;
           }
         }
       }
 
+      if (deliveryLogsToInsert.length > 0) {
+        const { error: logErr } = await supabase.from("scanned_logs").insert(deliveryLogsToInsert);
+        if (logErr) {
+          console.error("Failed to insert bulk delivery scanned_logs:", logErr);
+          errorMessages.push(`scanned_logs insert failed: ${logErr.message}`);
+        }
+      }
+
       setIsBulkOpen(false);
       setBulkPreview([]);
-      fetchInventory();
+      await fetchInventory();
 
       if (errorMessages.length > 0) {
-        alert(`Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.`);
+        alert(
+          `Bulk delivery finished with errors. Success: ${successCount} out of ${bulkPreview.length}.\n\n` +
+            errorMessages.slice(0, 5).join("\n")
+        );
       } else {
-        alert(`Bulk delivery committed! Successfully processed ${successCount} items to ${targetStore}.`);
+        alert(
+          `Bulk delivery committed! Successfully processed and logged ${successCount} delivery items to ${targetStore}.`
+        );
       }
     } catch (err: any) {
       console.error("Bulk upload failed:", err);
@@ -885,7 +1018,6 @@ export default function InventoryMonitoringPage() {
         ? new Date(bulkSaleDefaultDate).toISOString()
         : new Date().toISOString();
 
-      // Fetch fresh store_inventory rows for targetStore to guarantee accurate stock deduction
       const { data: freshStoreRows, error: fetchErr } = await supabase
         .from("store_inventory")
         .select("*")
@@ -939,7 +1071,6 @@ export default function InventoryMonitoringPage() {
           continue;
         }
 
-        // Update local reference in case the Excel sheet has multiple rows for the same Style Code
         invRow.current_stock = newCurrentStock;
         invRow.total_sold = newTotalSold;
 
@@ -1790,7 +1921,6 @@ export default function InventoryMonitoringPage() {
               </div>
             </div>
 
-            {/* Summary Metrics Strip */}
             <div className="grid grid-cols-3 gap-3 bg-slate-950/80 border border-slate-800 rounded-xl p-3 font-mono text-xs">
               <div>
                 <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">Total Units Sold</span>
@@ -2139,7 +2269,9 @@ export default function InventoryMonitoringPage() {
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <h3 className="text-base font-bold text-white uppercase">Bulk Delivery Preview</h3>
-                <p className="text-xs text-slate-400">Reviewing {bulkPreview.length} items parsed from spreadsheet</p>
+                <p className="text-xs text-slate-400">
+                  Reviewing {bulkPreview.length} items parsed from spreadsheet — updates stock & logs delivery mode
+                </p>
               </div>
               <button onClick={() => setIsBulkOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
